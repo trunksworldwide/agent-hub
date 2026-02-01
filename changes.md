@@ -17,6 +17,7 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
   - `GET /api/agents` (v1 returns only the primary agent profile)
   - `GET /api/agents/:id/files/:type` where type is `soul|user|memory_long|memory_today`
   - `POST /api/agents/:id/files/:type` to save file contents
+    - Now also auto-commits edits into the workspace git repo and returns the commit hash.
   - `POST /api/restart` to restart the Clawdbot gateway (best effort)
 - The Control API reads/writes the real agent “brain” files from the Clawdbot workspace:
   - `/Users/trunks/clawd/SOUL.md`
@@ -40,9 +41,9 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - The background dev processes were started via the Clawdbot tool runner, but that environment can SIGKILL long-running processes after a short window. This does not affect the code itself; it just means we should run `npm run dev:api` and `npm run dev` normally on the Mac mini (or set them up as a proper service) during active development.
 
 ## Next planned work
-- Add git-backed save history:
-  - UI saves file -> server writes file -> server commits to git with a message.
-  - UI can show diffs and roll back.
+- Add git-backed save history (partially done):
+  - Server now auto-commits brain file edits to the workspace git repo and returns the commit hash.
+  - Next: UI should display commit hash + add diff/rollback UI.
 - Add real endpoints for:
   - sessions/sub-agents
   - cron jobs

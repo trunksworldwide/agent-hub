@@ -8,6 +8,8 @@ const exec = promisify(_exec);
 
 const PORT = Number(process.env.PORT || 3737);
 const WORKSPACE = process.env.CLAWD_WORKSPACE || '/Users/trunks/clawd';
+// Repo to commit edits to (defaults to the Clawdbot workspace repo).
+const BRAIN_REPO = process.env.CLAWD_BRAIN_REPO || WORKSPACE;
 const ALLOW_ORIGIN = process.env.CLAWDOS_ALLOW_ORIGIN || '*';
 
 function sendJson(res, statusCode, obj) {
@@ -50,6 +52,28 @@ async function readBodyJson(req) {
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
   return JSON.parse(raw);
+}
+
+async function gitCommitFile(filePath, message) {
+  // Commit edits into the brain repo for audit/rollback.
+  // If there is nothing to commit, return null.
+  const rel = path.relative(BRAIN_REPO, filePath);
+
+  // Ensure file is inside the repo.
+  if (rel.startsWith('..')) return null;
+
+  try {
+    await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git add ${JSON.stringify(rel)}`);
+    const status = await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git status --porcelain ${JSON.stringify(rel)}`);
+    if (!status.stdout.trim()) return null;
+
+    await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git commit -m ${JSON.stringify(message)} -- ${JSON.stringify(rel)}`);
+    const head = await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git rev-parse HEAD`);
+    return head.stdout.trim();
+  } catch (e) {
+    // Don’t fail the whole request if commit fails; return error context.
+    return { error: String(e?.message || e) };
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -117,7 +141,9 @@ const server = http.createServer(async (req, res) => {
 
       await writeFile(fp, content, 'utf8');
 
-      return sendJson(res, 200, { ok: true });
+      const commit = await gitCommitFile(fp, `ClawdOS: update ${type}`);
+
+      return sendJson(res, 200, { ok: true, commit });
     }
 
     if (req.method === 'GET' && url.pathname === '/api/skills') {

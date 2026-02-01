@@ -262,9 +262,9 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
   };
 }
 
-export async function saveAgentFile(agentId: string, type: AgentFile['type'], content: string): Promise<{ ok: boolean }> {
+export async function saveAgentFile(agentId: string, type: AgentFile['type'], content: string): Promise<{ ok: boolean; commit?: string | null | { error: string } }> {
   if (USE_REMOTE) {
-    return requestJson<{ ok: boolean }>(`/api/agents/${agentId}/files/${type}`, {
+    return requestJson<{ ok: boolean; commit?: string | null | { error: string } }>(`/api/agents/${agentId}/files/${type}`, {
       method: 'POST',
       body: JSON.stringify({ content }),
     });
