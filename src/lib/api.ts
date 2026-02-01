@@ -21,11 +21,17 @@ export interface AgentFile {
 
 export interface Session {
   id: string;
-  label: string;
+  // v1 from clawdbot sessions store
+  key?: string;
+  kind?: string;
+  label?: string;
   status: 'active' | 'completed' | 'error';
-  lastMessage: string;
+  lastMessage?: string;
   startedAt: string;
-  agentId: string;
+  updatedAt?: string;
+  agentId?: string;
+  model?: string;
+  totalTokens?: number;
 }
 
 export interface Skill {
@@ -293,6 +299,8 @@ export async function restartSystem(): Promise<{ ok: boolean }> {
 }
 
 export async function getSessions(agentId?: string): Promise<Session[]> {
+  if (USE_REMOTE) return requestJson<Session[]>('/api/sessions');
+
   await delay(150);
   return agentId 
     ? mockSessions.filter(s => s.agentId === agentId)

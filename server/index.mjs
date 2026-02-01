@@ -196,6 +196,26 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/sessions') {
+      try {
+        const { stdout } = await exec('clawdbot sessions --json --active 10080');
+        const data = JSON.parse(stdout || '{"sessions": []}');
+        const sessions = (data.sessions || []).map((s) => ({
+          id: s.sessionId || s.key,
+          key: s.key,
+          kind: s.kind,
+          status: s.abortedLastRun ? 'error' : 'active',
+          startedAt: new Date(Date.now() - (s.ageMs || 0)).toISOString(),
+          updatedAt: new Date(s.updatedAt || Date.now()).toISOString(),
+          model: s.model,
+          totalTokens: s.totalTokens,
+        }));
+        return sendJson(res, 200, sessions);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/cron') {
       try {
         const { stdout } = await exec('clawdbot cron list --json');

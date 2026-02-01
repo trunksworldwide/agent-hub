@@ -4,12 +4,13 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 
 ## 2026-02-01
 
-### Control API now powers Skills/Cron/Status
+### Control API now powers Skills/Cron/Status/Sessions
 - `GET /api/status` now attempts to fetch the active session count via `clawdbot sessions --json`.
+- `GET /api/sessions` now exposes the session store (`clawdbot sessions --json --active 10080`) to the UI.
 - `GET /api/skills` now lists installed skills by scanning the local Clawdbot skills directory and parsing `SKILL.md`.
 - `GET /api/cron` now reads `clawdbot cron list --json`.
 - `POST /api/cron/:id/run` can run a cron job immediately.
-- Frontend `getSkills()` and `getCronJobs()` now call these endpoints when `VITE_API_BASE_URL` is set.
+- Frontend `getSkills()`, `getCronJobs()`, and `getSessions()` now call these endpoints when `VITE_API_BASE_URL` is set.
 
 
 ### Wired the UI to a real backend (optional)
