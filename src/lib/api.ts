@@ -201,11 +201,31 @@ const mockChannels: Channel[] = [
   { id: 'slack', name: 'Slack', type: 'messaging', status: 'disconnected', lastActivity: '2 days ago' },
 ];
 
-// Simulated delay for realistic feel
+// Simulated delay for realistic feel (used only in mock mode)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const USE_REMOTE = Boolean(API_BASE_URL);
+
+async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
+  const url = `${API_BASE_URL}${p}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`API ${res.status} ${res.statusText}: ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 // API Functions
 export async function getStatus(): Promise<SystemStatus> {
+  if (USE_REMOTE) return requestJson<SystemStatus>('/api/status');
+
   await delay(100);
   return {
     online: true,
@@ -217,20 +237,24 @@ export async function getStatus(): Promise<SystemStatus> {
 }
 
 export async function getAgents(): Promise<Agent[]> {
+  if (USE_REMOTE) return requestJson<Agent[]>('/api/agents');
+
   await delay(150);
   return mockAgents;
 }
 
 export async function getAgentFile(agentId: string, type: AgentFile['type']): Promise<AgentFile> {
+  if (USE_REMOTE) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
+
   await delay(200);
-  
+
   const contentMap: Record<AgentFile['type'], string> = {
     soul: mockSoulContent,
     user: mockUserContent,
     memory_long: mockMemoryLong,
     memory_today: mockMemoryToday,
   };
-  
+
   return {
     type,
     content: contentMap[type],
@@ -239,18 +263,30 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
 }
 
 export async function saveAgentFile(agentId: string, type: AgentFile['type'], content: string): Promise<{ ok: boolean }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean }>(`/api/agents/${agentId}/files/${type}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
   await delay(300);
   console.log(`[API] Saving ${type} for agent ${agentId}`);
   return { ok: true };
 }
 
 export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {
+  // v1 maps reload -> restart (gateway restart)
+  if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+
   await delay(500);
   console.log(`[API] Reloading agent${agentId ? `: ${agentId}` : 's'}`);
   return { ok: true };
 }
 
 export async function restartSystem(): Promise<{ ok: boolean }> {
+  if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+
   await delay(1000);
   console.log('[API] Restarting system');
   return { ok: true };
