@@ -195,10 +195,33 @@
     scrollbar-color: hsl(var(--border)) transparent;
   }
   
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-always {
+  scrollbar-gutter: stable;
+}
+
+.scrollbar-always::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-always::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 4px;
+}
+
+.scrollbar-always::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+.scrollbar-always::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
   
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;

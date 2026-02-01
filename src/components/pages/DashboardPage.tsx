@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { getAgents, getSessions, type Agent, type Session } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { ArrowRight, MessageSquare, Clock } from 'lucide-react';
+import { ArrowRight, MessageSquare, Clock, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 
 // Task types for the Kanban board
 interface Task {
@@ -60,6 +61,7 @@ export function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false);
 
   useEffect(() => {
     getAgents().then(setAgents);
@@ -110,51 +112,68 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Agents Sidebar */}
-      <aside className="w-56 border-r border-border bg-sidebar flex flex-col">
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+      {/* Collapsible Agents Sidebar */}
+      <aside className={cn(
+        "border-r border-border bg-sidebar flex flex-col transition-all duration-300",
+        agentPanelCollapsed ? "w-12" : "w-56"
+      )}>
+        <div className="p-2 border-b border-border flex items-center justify-between">
+          {!agentPanelCollapsed && (
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2 px-2">
               <span className="w-2 h-2 rounded-full bg-primary" />
               AGENTS
             </h2>
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-              {agents.length}
-            </span>
-          </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => setAgentPanelCollapsed(!agentPanelCollapsed)}
+            title={agentPanelCollapsed ? "Expand agents" : "Collapse agents"}
+          >
+            {agentPanelCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </Button>
         </div>
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+          <div className={cn("space-y-1", agentPanelCollapsed ? "p-1" : "p-2")}>
             {agents.map((agent) => (
               <div
                 key={agent.id}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer",
+                  agentPanelCollapsed ? "p-2 justify-center" : "p-3"
+                )}
+                title={agentPanelCollapsed ? `${agent.name} - ${agent.status}` : undefined}
               >
-                <span className="text-xl">{agent.avatar}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{agent.name}</span>
-                    {agent.status === 'running' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">
-                        LEAD
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
-                </div>
-                <span className={cn("badge-status text-[10px]", getStatusBadge(agent.status))}>
-                  {agent.status === 'running' ? 'WORKING' : agent.status.toUpperCase()}
-                </span>
+                <span className={cn("text-xl", agentPanelCollapsed && "text-lg")}>{agent.avatar}</span>
+                {!agentPanelCollapsed && (
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{agent.name}</span>
+                        {agent.status === 'running' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">
+                            LEAD
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
+                    </div>
+                    <span className={cn("badge-status text-[10px]", getStatusBadge(agent.status))}>
+                      {agent.status === 'running' ? 'WORKING' : agent.status.toUpperCase()}
+                    </span>
+                  </>
+                )}
               </div>
             ))}
           </div>
         </ScrollArea>
       </aside>
 
-      {/* Main Content - Stacked Layout */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Main Content - Scrollable */}
+      <div className="flex-1 flex flex-col overflow-y-auto">
         {/* Dashboard Header */}
-        <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
+        <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-8">
             <h1 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -181,9 +200,9 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Kanban Columns - Fixed height, no vertical scroll */}
-        <div className="h-[55%] min-h-[300px] overflow-x-auto p-4 shrink-0">
-          <div className="flex gap-4 h-full">
+        {/* Kanban Columns - Immersive height, always visible scrollbar */}
+        <div className="min-h-[calc(100vh-10rem)] p-4 overflow-x-scroll scrollbar-always">
+          <div className="flex gap-4 h-full min-h-[calc(100vh-12rem)]">
             {columns.map((column) => (
               <div key={column.id} className="w-64 flex flex-col bg-muted/20 rounded-lg overflow-hidden flex-shrink-0">
                 {/* Column Header */}
@@ -206,8 +225,8 @@ export function DashboardPage() {
                   </span>
                 </div>
 
-                {/* Column Tasks */}
-                <ScrollArea className="flex-1 p-2">
+                {/* Column Tasks - Always visible scrollbar */}
+                <div className="flex-1 p-2 overflow-y-auto scrollbar-always">
                   <div className="space-y-2">
                     {column.tasks.map((task) => (
                       <div
@@ -251,14 +270,14 @@ export function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Live Feed - Bottom Section */}
-        <div className="flex-1 border-t border-border bg-sidebar/50 flex flex-col overflow-hidden">
+        {/* Live Feed - Bottom Section, Vertical Stack */}
+        <div className="border-t border-border bg-sidebar/50 flex flex-col shrink-0">
           <div className="px-6 py-3 border-b border-border flex items-center justify-between shrink-0">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -296,34 +315,33 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Feed Items - Horizontal scrolling */}
-          <ScrollArea className="flex-1">
-            <div className="p-4 flex gap-4 overflow-x-auto">
-              {mockFeed.map((item) => (
-                <div 
-                  key={item.id} 
-                  className="flex-shrink-0 w-80 p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">{item.agentAvatar}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium">{item.agentName}</span>
-                        {' '}
-                        <span className="text-muted-foreground">{item.content}</span>
-                      </p>
-                      <p className="text-primary text-sm mt-1 hover:underline cursor-pointer truncate">
+          {/* Feed Items - Vertical Stack */}
+          <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto scrollbar-always">
+            {mockFeed.map((item) => (
+              <div 
+                key={item.id} 
+                className="p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{item.agentAvatar}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium">{item.agentName}</span>
+                      {' '}
+                      <span className="text-muted-foreground">{item.content}</span>
+                      {' '}
+                      <span className="text-primary hover:underline cursor-pointer">
                         "{item.target}"
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {item.createdAt}
-                      </p>
-                    </div>
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {item.createdAt}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </ScrollArea>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
