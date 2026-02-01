@@ -1,4 +1,4 @@
-import { useClawdOS, type AgentTab } from '@/lib/store';
+import { useClawdOffice, type AgentTab } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { SoulEditor } from './agent-tabs/SoulEditor';
 import { UserEditor } from './agent-tabs/UserEditor';
@@ -17,7 +17,7 @@ const agentTabs: { id: AgentTab; label: string; icon: string }[] = [
 ];
 
 export function AgentDetail() {
-  const { selectedAgentId, activeAgentTab, setActiveAgentTab, files } = useClawdOS();
+  const { selectedAgentId, activeAgentTab, setActiveAgentTab, files } = useClawdOffice();
 
   if (!selectedAgentId) {
     return (

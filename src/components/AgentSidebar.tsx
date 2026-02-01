@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useClawdOS } from '@/lib/store';
+import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export function AgentSidebar() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const { selectedAgentId, setSelectedAgentId } = useClawdOS();
+  const { selectedAgentId, setSelectedAgentId } = useClawdOffice();
 
   useEffect(() => {
     getAgents().then(setAgents);

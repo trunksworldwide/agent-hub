@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Save, RotateCcw, FileText, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useClawdOS } from '@/lib/store';
+import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 export function MemoryEditor() {
-  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOS();
+  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   const [activeMemoryTab, setActiveMemoryTab] = useState<'long' | 'today'>('long');
   

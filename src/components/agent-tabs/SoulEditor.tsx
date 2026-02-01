@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
 import { Save, RotateCcw, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useClawdOS } from '@/lib/store';
+import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
 export function SoulEditor() {
-  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOS();
+  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   
   const fileKey = `${selectedAgentId}-soul`;

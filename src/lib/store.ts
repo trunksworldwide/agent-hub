@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
 
+export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'skills' | 'channels' | 'cron' | 'config';
 export type AgentTab = 'soul' | 'user' | 'memory' | 'tools' | 'skills' | 'sessions';
 
@@ -12,7 +13,11 @@ interface FileState {
   lastSaved: string | null;
 }
 
-interface ClawdOSState {
+interface ClawdOfficeState {
+  // View mode (Dashboard vs Manage)
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  
   // Navigation
   activeMainTab: MainTab;
   setActiveMainTab: (tab: MainTab) => void;
@@ -45,7 +50,11 @@ interface ClawdOSState {
   setIsRefreshing: (value: boolean) => void;
 }
 
-export const useClawdOS = create<ClawdOSState>((set, get) => ({
+export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
+  // View mode
+  viewMode: 'manage',
+  setViewMode: (mode) => set({ viewMode: mode }),
+  
   // Navigation
   activeMainTab: 'agents',
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
