@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { MessageSquare, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getSessions, type Session } from '@/lib/api';
-import { useClawdOS } from '@/lib/store';
+import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 export function SessionsView() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const { selectedAgentId } = useClawdOS();
+  const { selectedAgentId } = useClawdOffice();
 
   useEffect(() => {
     if (selectedAgentId) {

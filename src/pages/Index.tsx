@@ -4,12 +4,13 @@ import { SkillsPage } from '@/components/pages/SkillsPage';
 import { ChannelsPage } from '@/components/pages/ChannelsPage';
 import { CronPage } from '@/components/pages/CronPage';
 import { ConfigPage } from '@/components/pages/ConfigPage';
-import { useClawdOS } from '@/lib/store';
+import { DashboardPage } from '@/components/pages/DashboardPage';
+import { useClawdOffice } from '@/lib/store';
 
 const Index = () => {
-  const { activeMainTab } = useClawdOS();
+  const { activeMainTab, viewMode } = useClawdOffice();
 
-  const renderPage = () => {
+  const renderManagePage = () => {
     switch (activeMainTab) {
       case 'agents':
         return <AgentsPage />;
@@ -30,7 +31,7 @@ const Index = () => {
     <div className="flex flex-col h-screen bg-background">
       <TopBar />
       <main className="flex-1 overflow-hidden">
-        {renderPage()}
+        {viewMode === 'dashboard' ? <DashboardPage /> : renderManagePage()}
       </main>
     </div>
   );

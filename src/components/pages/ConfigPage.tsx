@@ -1,6 +1,6 @@
 import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useClawdOS } from '@/lib/store';
+import { useClawdOffice } from '@/lib/store';
 import { restartSystem, getStatus } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -24,7 +24,7 @@ export function ConfigPage() {
     isRefreshing,
     setIsRefreshing,
     setLastRefresh,
-  } = useClawdOS();
+  } = useClawdOffice();
   const { toast } = useToast();
 
   const handleRefresh = async () => {
@@ -116,7 +116,7 @@ export function ConfigPage() {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Restart ClawdBot?</AlertDialogTitle>
+                  <AlertDialogTitle>Restart ClawdOffice?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will restart the entire agent runtime. All active sessions will be 
                     interrupted and pending jobs may fail.

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { RefreshCw, RotateCcw, Bot } from 'lucide-react';
+import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useClawdOS, type MainTab } from '@/lib/store';
+import { useClawdOffice, type MainTab, type ViewMode } from '@/lib/store';
 import { getStatus, restartSystem } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
@@ -35,7 +35,9 @@ export function TopBar() {
     isRestarting,
     setIsRestarting,
     setLastRefresh,
-  } = useClawdOS();
+    viewMode,
+    setViewMode,
+  } = useClawdOffice();
 
   const fetchStatus = async () => {
     setIsRefreshing(true);
@@ -66,11 +68,39 @@ export function TopBar() {
 
   return (
     <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-50">
-      {/* Left: Logo and Nav */}
+      {/* Left: Logo, View Toggle, and Nav */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
           <Bot className="w-6 h-6 text-primary" />
-          <span className="font-semibold text-lg">ClawdOS</span>
+          <span className="font-semibold text-lg">ClawdOffice</span>
+        </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center p-1 rounded-lg bg-secondary/50">
+          <button
+            onClick={() => setViewMode('dashboard')}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              viewMode === 'dashboard' 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            Dashboard
+          </button>
+          <button
+            onClick={() => setViewMode('manage')}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              viewMode === 'manage' 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Settings2 className="w-4 h-4" />
+            Manage
+          </button>
         </div>
         
         {/* Status Badge */}
@@ -95,22 +125,24 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Main Navigation */}
-        <nav className="flex items-center gap-1">
-          {navTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveMainTab(tab.id)}
-              className={cn(
-                "nav-tab flex items-center gap-2",
-                activeMainTab === tab.id && "nav-tab-active"
-              )}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </nav>
+        {/* Main Navigation - Only show in Manage mode */}
+        {viewMode === 'manage' && (
+          <nav className="flex items-center gap-1">
+            {navTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveMainTab(tab.id)}
+                className={cn(
+                  "nav-tab flex items-center gap-2",
+                  activeMainTab === tab.id && "nav-tab-active"
+                )}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
 
       {/* Right: Status and Actions */}
@@ -149,7 +181,7 @@ export function TopBar() {
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Restart ClawdBot?</AlertDialogTitle>
+              <AlertDialogTitle>Restart ClawdOffice?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will restart the agent runtime. All active sessions will be interrupted. 
                 The system should be back online within a few seconds.
