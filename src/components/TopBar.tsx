@@ -67,15 +67,9 @@ export function TopBar() {
   }, []);
 
   return (
-    <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-50">
-      {/* Left: Logo, View Toggle, and Nav */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <Bot className="w-6 h-6 text-primary" />
-          <span className="font-semibold text-lg">ClawdOffice</span>
-        </div>
-
-        {/* View Mode Toggle */}
+    <div className="sticky top-0 z-50">
+      {/* View Mode Toggle Bar */}
+      <div className="h-10 border-b border-border bg-background flex items-center justify-center px-4">
         <div className="flex items-center p-1 rounded-lg bg-secondary/50">
           <button
             onClick={() => setViewMode('dashboard')}
@@ -102,100 +96,104 @@ export function TopBar() {
             Manage
           </button>
         </div>
-        
-        {/* Status Badge */}
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/50 text-sm">
-          <span className={cn(
-            "status-dot",
-            status?.online ? "status-dot-online" : "status-dot-offline"
-          )} />
-          <span className="text-muted-foreground">
-            {status?.online ? 'Connected' : 'Offline'}
-          </span>
-          {status?.port && (
-            <>
-              <span className="text-muted-foreground/50">•</span>
-              <span className="text-muted-foreground">Port {status.port}</span>
-            </>
-          )}
-          {status?.environment && (
-            <span className="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground">
-              {status.environment}
+      </div>
+
+      {/* Main Navigation Bar */}
+      <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4">
+        {/* Left: Logo and Nav */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Bot className="w-6 h-6 text-primary" />
+            <span className="font-semibold text-lg">ClawdOffice</span>
+          </div>
+          
+          {/* Status Badge */}
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/50 text-sm">
+            <span className={cn(
+              "status-dot",
+              status?.online ? "status-dot-online" : "status-dot-offline"
+            )} />
+            <span className="text-muted-foreground">
+              {status?.online ? 'Connected' : 'Offline'}
             </span>
+            {status?.environment && (
+              <span className="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground">
+                {status.environment}
+              </span>
+            )}
+          </div>
+
+          {/* Main Navigation - Only show in Manage mode */}
+          {viewMode === 'manage' && (
+            <nav className="flex items-center gap-1">
+              {navTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveMainTab(tab.id)}
+                  className={cn(
+                    "nav-tab flex items-center gap-2",
+                    activeMainTab === tab.id && "nav-tab-active"
+                  )}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </nav>
           )}
         </div>
 
-        {/* Main Navigation - Only show in Manage mode */}
-        {viewMode === 'manage' && (
-          <nav className="flex items-center gap-1">
-            {navTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveMainTab(tab.id)}
-                className={cn(
-                  "nav-tab flex items-center gap-2",
-                  activeMainTab === tab.id && "nav-tab-active"
-                )}
+        {/* Right: Status and Actions */}
+        <div className="flex items-center gap-3">
+          {status && (
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Bot className="w-4 h-4" />
+                {status.activeSessions} active
+              </span>
+            </div>
+          )}
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={fetchStatus}
+            disabled={isRefreshing}
+            title="Refresh"
+          >
+            <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={isRestarting}
               >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-        )}
-      </div>
-
-      {/* Right: Status and Actions */}
-      <div className="flex items-center gap-3">
-        {status && (
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Bot className="w-4 h-4" />
-              {status.activeSessions} active
-            </span>
-          </div>
-        )}
-        
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={fetchStatus}
-          disabled={isRefreshing}
-          className="gap-2"
-        >
-          <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-          Refresh
-        </Button>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              disabled={isRestarting}
-            >
-              <RotateCcw className={cn("w-4 h-4", isRestarting && "animate-spin")} />
-              Restart
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Restart ClawdOffice?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will restart the agent runtime. All active sessions will be interrupted. 
-                The system should be back online within a few seconds.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleRestart} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                <RotateCcw className={cn("w-4 h-4", isRestarting && "animate-spin")} />
                 Restart
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </header>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Restart ClawdOffice?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will restart the agent runtime. All active sessions will be interrupted. 
+                  The system should be back online within a few seconds.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRestart} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Restart
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </header>
+    </div>
   );
 }
