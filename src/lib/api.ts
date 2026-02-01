@@ -300,6 +300,8 @@ export async function getSessions(agentId?: string): Promise<Session[]> {
 }
 
 export async function getSkills(): Promise<Skill[]> {
+  if (USE_REMOTE) return requestJson<Skill[]>('/api/skills');
+
   await delay(150);
   return mockSkills;
 }
@@ -310,17 +312,22 @@ export async function getTools(): Promise<Tool[]> {
 }
 
 export async function getCronJobs(): Promise<CronJob[]> {
+  if (USE_REMOTE) return requestJson<CronJob[]>('/api/cron');
+
   await delay(150);
   return mockCronJobs;
 }
 
 export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ ok: boolean }> {
+  // TODO v2: add endpoints for enable/disable/edit.
   await delay(200);
   console.log(`[API] Setting cron job ${jobId} enabled: ${enabled}`);
   return { ok: true };
 }
 
 export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
+  if (USE_REMOTE) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
+
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
   return { ok: true };

@@ -90,9 +90,18 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
     if (req.method === 'GET' && url.pathname === '/api/status') {
+      let activeSessions = null;
+      try {
+        const { stdout } = await exec('clawdbot sessions --json --active 10080');
+        const data = JSON.parse(stdout || '{"count":0}');
+        activeSessions = data.count ?? null;
+      } catch {
+        // ignore
+      }
+
       return sendJson(res, 200, {
         online: true,
-        activeSessions: null,
+        activeSessions,
         lastUpdated: new Date().toISOString(),
         port: PORT,
         environment: 'local',
@@ -101,6 +110,15 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/agents') {
       // Minimal v1: only the primary agent profile.
+      let skillCount = null;
+      try {
+        const skillsDir = '/opt/homebrew/lib/node_modules/clawdbot/skills';
+        const entries = await readdir(skillsDir, { withFileTypes: true });
+        skillCount = entries.filter((e) => e.isDirectory()).length;
+      } catch {
+        // ignore
+      }
+
       return sendJson(res, 200, [
         {
           id: 'trunks',
@@ -108,7 +126,7 @@ const server = http.createServer(async (req, res) => {
           role: 'Primary Agent',
           status: 'online',
           lastActive: 'now',
-          skillCount: null,
+          skillCount,
           avatar: '⚡',
         },
       ]);
@@ -147,13 +165,65 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/skills') {
-      // Minimal v1: show installed skills in the Clawdbot global install (best effort).
-      // For now, return empty and let UI render.
-      return sendJson(res, 200, []);
+      // v1: list installed skills from the local node_modules skills folder.
+      try {
+        const skillsDir = '/opt/homebrew/lib/node_modules/clawdbot/skills';
+        const entries = await readdir(skillsDir, { withFileTypes: true });
+        const skills = [];
+        for (const ent of entries) {
+          if (!ent.isDirectory()) continue;
+          const skillName = ent.name;
+          const fp = path.join(skillsDir, skillName, 'SKILL.md');
+          const st = await safeStat(fp);
+          if (!st) continue;
+          const content = await readFile(fp, 'utf8');
+          const firstLines = content.split('\n').slice(0, 40).join('\n');
+          const descMatch = firstLines.match(/description:\s*(.*)/);
+          const desc = descMatch ? descMatch[1].trim() : '';
+          skills.push({
+            id: skillName,
+            name: skillName,
+            slug: skillName,
+            description: desc,
+            version: 'local',
+            installed: true,
+            lastUpdated: st.mtime.toISOString(),
+          });
+        }
+        return sendJson(res, 200, skills);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/cron') {
-      return sendJson(res, 200, []);
+      try {
+        const { stdout } = await exec('clawdbot cron list --json');
+        const data = JSON.parse(stdout || '{"jobs": []}');
+        const jobs = (data.jobs || []).map((j) => ({
+          id: j.id || j.jobId || j.name,
+          name: j.name || j.id,
+          schedule: j.cron || j.schedule || '',
+          enabled: j.enabled !== false,
+          nextRun: j.nextRun || '',
+          lastRunStatus: null,
+          instructions: j.text || j.instructions || '',
+        }));
+        return sendJson(res, 200, jobs);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    const cronRunMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/run$/);
+    if (cronRunMatch && req.method === 'POST') {
+      const [, jobId] = cronRunMatch;
+      try {
+        await exec(`clawdbot cron run ${JSON.stringify(jobId)}`);
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
     }
 
     if (req.method === 'POST' && url.pathname === '/api/restart') {
