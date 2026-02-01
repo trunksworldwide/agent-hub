@@ -72,10 +72,17 @@ export interface Channel {
 
 export interface SystemStatus {
   online: boolean;
-  activeSessions: number;
+  activeSessions: number | null;
   lastUpdated: string;
   port: number;
   environment: string;
+}
+
+export interface ActivityItem {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
 }
 
 // Mock Data
@@ -339,6 +346,13 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
   return { ok: true };
+}
+
+export async function getActivity(): Promise<ActivityItem[]> {
+  if (USE_REMOTE) return requestJson<ActivityItem[]>('/api/activity');
+
+  await delay(100);
+  return [];
 }
 
 export async function getChannels(): Promise<Channel[]> {

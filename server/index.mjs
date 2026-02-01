@@ -246,6 +246,30 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/activity') {
+      // Recent git commits from the brain repo as a basic activity feed.
+      try {
+        const { stdout } = await exec(
+          `cd ${JSON.stringify(BRAIN_REPO)} && git log -n 25 --pretty=format:%H%x09%an%x09%ad%x09%s --date=iso-strict`
+        );
+        const commits = (stdout || '')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const [hash, author, date, ...msgParts] = line.split('\t');
+            return {
+              hash,
+              author,
+              date,
+              message: msgParts.join('\t'),
+            };
+          });
+        return sendJson(res, 200, commits);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/restart') {
       // Restart the gateway (best effort). If this fails, report the error.
       try {
