@@ -65,6 +65,10 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
   - cron jobs (`GET /api/cron`)
   - activity feed from git commits (`GET /api/activity`)
 
+### No-mock mode for non-dev builds (Lovable/remote)
+- The frontend will no longer silently fall back to mock data when `VITE_API_BASE_URL` is missing.
+- Mock data is now only allowed in local development when no API is configured.
+
 ## Next planned work
 - Projects layer:
   - projects.json + project selector

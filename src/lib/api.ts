@@ -1,6 +1,7 @@
 // ClawdOS API Layer - Mock implementation, easily swappable for real backend
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const IS_DEV = import.meta.env.MODE === 'development';
 
 // Types
 export interface Agent {
@@ -217,9 +218,17 @@ const mockChannels: Channel[] = [
 // Simulated delay for realistic feel (used only in mock mode)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// In dev, allow mock mode when no API is configured.
+// In any non-dev environment (Lovable preview/publish), we REQUIRE a real API.
 const USE_REMOTE = Boolean(API_BASE_URL);
+const ALLOW_MOCKS = IS_DEV && !USE_REMOTE;
 
 async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new Error(
+      'Missing VITE_API_BASE_URL. This build is configured for real data only (no mocks).'
+    );
+  }
   const url = `${API_BASE_URL}${p}`;
   const res = await fetch(url, {
     ...init,
@@ -238,6 +247,7 @@ async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
 // API Functions
 export async function getStatus(): Promise<SystemStatus> {
   if (USE_REMOTE) return requestJson<SystemStatus>('/api/status');
+  if (!ALLOW_MOCKS) return requestJson<SystemStatus>('/api/status');
 
   await delay(100);
   return {
@@ -251,6 +261,7 @@ export async function getStatus(): Promise<SystemStatus> {
 
 export async function getAgents(): Promise<Agent[]> {
   if (USE_REMOTE) return requestJson<Agent[]>('/api/agents');
+  if (!ALLOW_MOCKS) return requestJson<Agent[]>('/api/agents');
 
   await delay(150);
   return mockAgents;
@@ -258,6 +269,7 @@ export async function getAgents(): Promise<Agent[]> {
 
 export async function getAgentFile(agentId: string, type: AgentFile['type']): Promise<AgentFile> {
   if (USE_REMOTE) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
+  if (!ALLOW_MOCKS) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
 
   await delay(200);
 
@@ -282,6 +294,12 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
       body: JSON.stringify({ content }),
     });
   }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean; commit?: string | null | { error: string } }>(`/api/agents/${agentId}/files/${type}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
 
   await delay(300);
   console.log(`[API] Saving ${type} for agent ${agentId}`);
@@ -291,6 +309,7 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
 export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {
   // v1 maps reload -> restart (gateway restart)
   if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
 
   await delay(500);
   console.log(`[API] Reloading agent${agentId ? `: ${agentId}` : 's'}`);
@@ -299,6 +318,7 @@ export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {
 
 export async function restartSystem(): Promise<{ ok: boolean }> {
   if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
 
   await delay(1000);
   console.log('[API] Restarting system');
@@ -307,6 +327,7 @@ export async function restartSystem(): Promise<{ ok: boolean }> {
 
 export async function getSessions(agentId?: string): Promise<Session[]> {
   if (USE_REMOTE) return requestJson<Session[]>('/api/sessions');
+  if (!ALLOW_MOCKS) return requestJson<Session[]>('/api/sessions');
 
   await delay(150);
   return agentId 
@@ -316,6 +337,7 @@ export async function getSessions(agentId?: string): Promise<Session[]> {
 
 export async function getSkills(): Promise<Skill[]> {
   if (USE_REMOTE) return requestJson<Skill[]>('/api/skills');
+  if (!ALLOW_MOCKS) return requestJson<Skill[]>('/api/skills');
 
   await delay(150);
   return mockSkills;
@@ -328,6 +350,7 @@ export async function getTools(): Promise<Tool[]> {
 
 export async function getCronJobs(): Promise<CronJob[]> {
   if (USE_REMOTE) return requestJson<CronJob[]>('/api/cron');
+  if (!ALLOW_MOCKS) return requestJson<CronJob[]>('/api/cron');
 
   await delay(150);
   return mockCronJobs;
@@ -342,6 +365,7 @@ export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ 
 
 export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
   if (USE_REMOTE) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
+  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
 
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
@@ -350,6 +374,7 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
 
 export async function getActivity(): Promise<ActivityItem[]> {
   if (USE_REMOTE) return requestJson<ActivityItem[]>('/api/activity');
+  if (!ALLOW_MOCKS) return requestJson<ActivityItem[]>('/api/activity');
 
   await delay(100);
   return [];
