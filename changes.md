@@ -66,6 +66,10 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
   - activity feed from git commits (`GET /api/activity`)
 
 ## Next planned work
+- Projects layer:
+  - projects.json + project selector
+  - Control API routing by project (workspace switching)
+  - (later) chat dropdown targets project PMs
 - UI: display commit hash returned on save + add diff/rollback UI.
 - Cron: enable/disable/edit endpoints + wire toggles.
 - Add safer “reload” behaviors (lightweight reload vs full gateway restart) with guardrails.
