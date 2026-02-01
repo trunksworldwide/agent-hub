@@ -151,10 +151,10 @@ export function DashboardPage() {
         </ScrollArea>
       </aside>
 
-      {/* Mission Queue - Kanban Board */}
+      {/* Main Content - Stacked Layout */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Dashboard Header */}
-        <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-6">
+        <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-8">
             <h1 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -181,13 +181,13 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Kanban Columns */}
-        <div className="flex-1 overflow-x-auto p-4">
-          <div className="flex gap-4 h-full min-w-max">
+        {/* Kanban Columns - Fixed height, no vertical scroll */}
+        <div className="h-[55%] min-h-[300px] overflow-x-auto p-4 shrink-0">
+          <div className="flex gap-4 h-full">
             {columns.map((column) => (
-              <div key={column.id} className="w-72 flex flex-col bg-muted/20 rounded-lg overflow-hidden">
+              <div key={column.id} className="w-64 flex flex-col bg-muted/20 rounded-lg overflow-hidden flex-shrink-0">
                 {/* Column Header */}
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2">
                     <span className={cn(
                       "w-2 h-2 rounded-full",
@@ -256,81 +256,76 @@ export function DashboardPage() {
             ))}
           </div>
         </div>
-      </div>
 
-      {/* Live Feed Sidebar */}
-      <aside className="w-80 border-l border-border bg-sidebar flex flex-col">
-        <div className="p-4 border-b border-border">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            LIVE FEED
-          </h2>
-        </div>
-        
-        {/* Feed Filters */}
-        <div className="px-4 py-2 border-b border-border">
-          <div className="flex flex-wrap gap-1">
-            {['All', 'Tasks', 'Comments', 'Decisions', 'Status'].map((filter, i) => (
-              <button
-                key={filter}
-                className={cn(
-                  "text-xs px-2 py-1 rounded transition-colors",
-                  i === 0 
-                    ? "bg-primary text-primary-foreground" 
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                )}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Live Feed - Bottom Section */}
+        <div className="flex-1 border-t border-border bg-sidebar/50 flex flex-col overflow-hidden">
+          <div className="px-6 py-3 border-b border-border flex items-center justify-between shrink-0">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              LIVE FEED
+            </h2>
+            
+            {/* Feed Filters */}
+            <div className="flex gap-1">
+              {['All', 'Tasks', 'Comments', 'Decisions', 'Status'].map((filter, i) => (
+                <button
+                  key={filter}
+                  className={cn(
+                    "text-xs px-2 py-1 rounded transition-colors",
+                    i === 0 
+                      ? "bg-primary text-primary-foreground" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
 
-        {/* Agent Quick Stats */}
-        <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-muted-foreground">All Agents</span>
+            {/* Agent Quick Stats */}
+            <div className="flex items-center gap-2">
+              {agents.map((agent) => (
+                <span
+                  key={agent.id}
+                  className="text-xs px-2 py-1 rounded bg-muted/50 text-muted-foreground flex items-center gap-1"
+                >
+                  <span>{agent.avatar}</span>
+                  <span className="opacity-60">{agent.skillCount}</span>
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-1">
-            {agents.map((agent) => (
-              <span
-                key={agent.id}
-                className="text-xs px-2 py-1 rounded bg-muted/50 text-muted-foreground flex items-center gap-1"
-              >
-                <span>{agent.avatar}</span>
-                <span>{agent.name}</span>
-                <span className="opacity-60">{agent.skillCount}</span>
-              </span>
-            ))}
-          </div>
-        </div>
 
-        {/* Feed Items */}
-        <ScrollArea className="flex-1">
-          <div className="p-4 space-y-4">
-            {mockFeed.map((item) => (
-              <div key={item.id} className="flex gap-3">
-                <div className="text-amber-500 mt-1">›</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">
-                    <span className="font-medium">{item.agentName}</span>
-                    {' '}
-                    <span className="text-muted-foreground">{item.content}</span>
-                    {' '}
-                    <span className="text-primary hover:underline cursor-pointer">
-                      "{item.target}"
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                    <span>{item.agentAvatar}</span>
-                    {item.agentName} · {item.createdAt}
-                  </p>
+          {/* Feed Items - Horizontal scrolling */}
+          <ScrollArea className="flex-1">
+            <div className="p-4 flex gap-4 overflow-x-auto">
+              {mockFeed.map((item) => (
+                <div 
+                  key={item.id} 
+                  className="flex-shrink-0 w-80 p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">{item.agentAvatar}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm">
+                        <span className="font-medium">{item.agentName}</span>
+                        {' '}
+                        <span className="text-muted-foreground">{item.content}</span>
+                      </p>
+                      <p className="text-primary text-sm mt-1 hover:underline cursor-pointer truncate">
+                        "{item.target}"
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {item.createdAt}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </aside>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
