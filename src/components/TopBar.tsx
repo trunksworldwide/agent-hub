@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useClawdOffice, type MainTab, type ViewMode } from '@/lib/store';
-import { getStatus, restartSystem } from '@/lib/api';
+import { useClawdOffice, type MainTab } from '@/lib/store';
+import { getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -26,6 +26,8 @@ const navTabs: { id: MainTab; label: string; icon: string }[] = [
 
 export function TopBar() {
   const { 
+    selectedProjectId,
+    setSelectedProjectId,
     activeMainTab, 
     setActiveMainTab, 
     status, 
@@ -38,6 +40,24 @@ export function TopBar() {
     viewMode,
     setViewMode,
   } = useClawdOffice();
+
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  useEffect(() => {
+    getProjects().then(setProjects).catch(() => setProjects([]));
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('clawdos.project', selectedProjectId);
+    } catch {
+      // ignore
+    }
+  }, [selectedProjectId]);
+
+  const selectedProject = useMemo(() => {
+    return projects.find((p) => p.id === selectedProjectId) || projects[0];
+  }, [projects, selectedProjectId]);
 
   const fetchStatus = async () => {
     setIsRefreshing(true);
@@ -101,14 +121,31 @@ export function TopBar() {
       {/* Main Navigation Bar */}
       <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4">
         {/* Left: Logo and Nav */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3 md:gap-6 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🦞</span>
-            <span className="font-semibold text-lg">ClawdOffice</span>
+            <span className="font-semibold text-lg">ClawdOS</span>
             <span className={cn(
               "status-dot ml-1",
               status?.online ? "status-dot-online" : "status-dot-offline"
             )} title={status?.online ? 'Connected' : 'Offline'} />
+          </div>
+
+          {/* Project selector (global) */}
+          <div className="hidden sm:flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Project</span>
+            <select
+              className="h-9 rounded-md bg-background border border-border px-2 text-sm max-w-[220px]"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              title={selectedProject?.workspace}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Main Navigation - Only show in Manage mode */}

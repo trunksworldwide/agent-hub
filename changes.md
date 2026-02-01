@@ -69,11 +69,20 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - The frontend will no longer silently fall back to mock data when `VITE_API_BASE_URL` is missing.
 - Mock data is now only allowed in local development when no API is configured.
 
+### Projects dropdown (workspace selector)
+- Added `projects.json` and a Project selector in the top bar.
+- Control API now supports scoping by project via `x-clawdos-project` header.
+- UI stores the selected project in localStorage (key: `clawdos.project`).
+
+### Dashboard restored to a task manager
+- Dashboard is now a task board again (Kanban) backed by `memory/tasks.json` in the selected project workspace.
+- Added basic Create Task and Move Task actions.
+- Sessions are no longer the primary dashboard object (they were confusing in the UI).
+
 ## Next planned work
-- Projects layer:
-  - projects.json + project selector
-  - Control API routing by project (workspace switching)
-  - (later) chat dropdown targets project PMs
+- Agents sidebar alignment:
+  - Treat agents as session keys (per the Mission Control article).
+  - Show “Runs” separately (cron wakeups, isolated runs).
 - UI: display commit hash returned on save + add diff/rollback UI.
 - Cron: enable/disable/edit endpoints + wire toggles.
 - Add safer “reload” behaviors (lightweight reload vs full gateway restart) with guardrails.

@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { readFile, writeFile, stat, readdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -7,9 +8,34 @@ import { promisify } from 'node:util';
 const exec = promisify(_exec);
 
 const PORT = Number(process.env.PORT || 3737);
-const WORKSPACE = process.env.CLAWD_WORKSPACE || '/Users/trunks/clawd';
-// Repo to commit edits to (defaults to the Clawdbot workspace repo).
-const BRAIN_REPO = process.env.CLAWD_BRAIN_REPO || WORKSPACE;
+const DEFAULT_WORKSPACE = process.env.CLAWD_WORKSPACE || '/Users/trunks/clawd';
+const PROJECTS_FILE = process.env.CLAWD_PROJECTS_FILE || path.join(process.cwd(), 'projects.json');
+
+function loadProjectsSync() {
+  try {
+    // Read projects.json from repo root.
+    const raw = readFileSync(PROJECTS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch {
+    return [];
+  }
+}
+
+function getProjectIdFromReq(req) {
+  return (req.headers['x-clawdos-project'] || '').toString() || 'front-office';
+}
+
+function resolveWorkspace(projectId) {
+  const projects = loadProjectsSync();
+  const p = projects.find((x) => x.id === projectId);
+  return p?.workspace || DEFAULT_WORKSPACE;
+}
+
+function resolveBrainRepo(workspace) {
+  return process.env.CLAWD_BRAIN_REPO || workspace;
+}
+
 const ALLOW_ORIGIN = process.env.CLAWDOS_ALLOW_ORIGIN || '*';
 
 function sendJson(res, statusCode, obj) {
@@ -35,13 +61,13 @@ async function safeStat(p) {
   }
 }
 
-function filePathFor(type) {
-  if (type === 'soul') return path.join(WORKSPACE, 'SOUL.md');
-  if (type === 'user') return path.join(WORKSPACE, 'USER.md');
-  if (type === 'memory_long') return path.join(WORKSPACE, 'MEMORY.md');
+function filePathFor(workspace, type) {
+  if (type === 'soul') return path.join(workspace, 'SOUL.md');
+  if (type === 'user') return path.join(workspace, 'USER.md');
+  if (type === 'memory_long') return path.join(workspace, 'MEMORY.md');
   if (type === 'memory_today') {
     const today = new Date().toISOString().slice(0, 10);
-    return path.join(WORKSPACE, 'memory', `${today}.md`);
+    return path.join(workspace, 'memory', `${today}.md`);
   }
   return null;
 }
@@ -54,21 +80,21 @@ async function readBodyJson(req) {
   return JSON.parse(raw);
 }
 
-async function gitCommitFile(filePath, message) {
+async function gitCommitFile(brainRepo, filePath, message) {
   // Commit edits into the brain repo for audit/rollback.
   // If there is nothing to commit, return null.
-  const rel = path.relative(BRAIN_REPO, filePath);
+  const rel = path.relative(brainRepo, filePath);
 
   // Ensure file is inside the repo.
   if (rel.startsWith('..')) return null;
 
   try {
-    await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git add ${JSON.stringify(rel)}`);
-    const status = await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git status --porcelain ${JSON.stringify(rel)}`);
+    await exec(`cd ${JSON.stringify(brainRepo)} && git add ${JSON.stringify(rel)}`);
+    const status = await exec(`cd ${JSON.stringify(brainRepo)} && git status --porcelain ${JSON.stringify(rel)}`);
     if (!status.stdout.trim()) return null;
 
-    await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git commit -m ${JSON.stringify(message)} -- ${JSON.stringify(rel)}`);
-    const head = await exec(`cd ${JSON.stringify(BRAIN_REPO)} && git rev-parse HEAD`);
+    await exec(`cd ${JSON.stringify(brainRepo)} && git commit -m ${JSON.stringify(message)} -- ${JSON.stringify(rel)}`);
+    const head = await exec(`cd ${JSON.stringify(brainRepo)} && git rev-parse HEAD`);
     return head.stdout.trim();
   } catch (e) {
     // Don’t fail the whole request if commit fails; return error context.
@@ -89,6 +115,10 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
+    const projectId = getProjectIdFromReq(req);
+    const workspace = resolveWorkspace(projectId);
+    const brainRepo = resolveBrainRepo(workspace);
+
     if (req.method === 'GET' && url.pathname === '/api/status') {
       let activeSessions = null;
       try {
@@ -105,7 +135,14 @@ const server = http.createServer(async (req, res) => {
         lastUpdated: new Date().toISOString(),
         port: PORT,
         environment: 'local',
+        projectId,
+        workspace,
       });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/projects') {
+      const projects = loadProjectsSync();
+      return sendJson(res, 200, projects);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/agents') {
@@ -136,7 +173,7 @@ const server = http.createServer(async (req, res) => {
     if (agentFileMatch && req.method === 'GET') {
       const [, agentId, type] = agentFileMatch;
       if (agentId !== 'trunks') return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
-      const fp = filePathFor(type);
+      const fp = filePathFor(workspace, type);
       if (!fp) return sendJson(res, 400, { ok: false, error: 'bad_type' });
 
       const st = await safeStat(fp);
@@ -151,7 +188,7 @@ const server = http.createServer(async (req, res) => {
     if (agentFileMatch && req.method === 'POST') {
       const [, agentId, type] = agentFileMatch;
       if (agentId !== 'trunks') return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
-      const fp = filePathFor(type);
+      const fp = filePathFor(workspace, type);
       if (!fp) return sendJson(res, 400, { ok: false, error: 'bad_type' });
 
       const body = await readBodyJson(req);
@@ -159,9 +196,77 @@ const server = http.createServer(async (req, res) => {
 
       await writeFile(fp, content, 'utf8');
 
-      const commit = await gitCommitFile(fp, `ClawdOS: update ${type}`);
+      const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: update ${type}`);
 
       return sendJson(res, 200, { ok: true, commit });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/tasks') {
+      try {
+        const fp = path.join(workspace, 'memory', 'tasks.json');
+        const st = await safeStat(fp);
+        if (!st) return sendJson(res, 200, []);
+        const raw = await readFile(fp, 'utf8');
+        const data = JSON.parse(raw || '[]');
+        return sendJson(res, 200, Array.isArray(data) ? data : []);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/tasks') {
+      try {
+        const body = await readBodyJson(req);
+        const input = body.input || {};
+        const now = new Date().toISOString();
+        const task = {
+          id: `t_${Math.random().toString(36).slice(2, 10)}`,
+          title: String(input.title || 'Untitled'),
+          description: input.description ? String(input.description) : '',
+          status: input.status || 'inbox',
+          assigneeAgentKey: input.assigneeAgentKey || null,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const fp = path.join(workspace, 'memory', 'tasks.json');
+        const st = await safeStat(fp);
+        const current = st ? JSON.parse(await readFile(fp, 'utf8')) : [];
+        const next = Array.isArray(current) ? [task, ...current] : [task];
+        await writeFile(fp, JSON.stringify(next, null, 2) + '\n', 'utf8');
+
+        const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: create task ${task.id}`);
+        return sendJson(res, 200, { ok: true, task, commit });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    const taskUpdateMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
+    if (taskUpdateMatch && req.method === 'POST') {
+      const [, taskId] = taskUpdateMatch;
+      try {
+        const body = await readBodyJson(req);
+        const patch = body.patch || {};
+        const fp = path.join(workspace, 'memory', 'tasks.json');
+        const st = await safeStat(fp);
+        const current = st ? JSON.parse(await readFile(fp, 'utf8')) : [];
+        const arr = Array.isArray(current) ? current : [];
+        const now = new Date().toISOString();
+        const next = arr.map((t) => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            ...patch,
+            updatedAt: now,
+          };
+        });
+        await writeFile(fp, JSON.stringify(next, null, 2) + '\n', 'utf8');
+        const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: update task ${taskId}`);
+        return sendJson(res, 200, { ok: true, commit });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/skills') {
@@ -250,7 +355,7 @@ const server = http.createServer(async (req, res) => {
       // Recent git commits from the brain repo as a basic activity feed.
       try {
         const { stdout } = await exec(
-          `cd ${JSON.stringify(BRAIN_REPO)} && git log -n 25 --pretty=format:%H%x09%an%x09%ad%x09%s --date=iso-strict`
+          `cd ${JSON.stringify(brainRepo)} && git log -n 25 --pretty=format:%H%x09%an%x09%ad%x09%s --date=iso-strict`
         );
         const commits = (stdout || '')
           .split('\n')

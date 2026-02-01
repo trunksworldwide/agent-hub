@@ -14,6 +14,10 @@ interface FileState {
 }
 
 interface ClawdOfficeState {
+  // Project selection
+  selectedProjectId: string;
+  setSelectedProjectId: (id: string) => void;
+
   // View mode (Dashboard vs Manage)
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
@@ -51,6 +55,10 @@ interface ClawdOfficeState {
 }
 
 export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
+  // Project selection
+  selectedProjectId: 'front-office',
+  setSelectedProjectId: (id) => set({ selectedProjectId: id }),
+
   // View mode
   viewMode: 'manage',
   setViewMode: (mode) => set({ viewMode: mode }),

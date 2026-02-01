@@ -86,6 +86,25 @@ export interface ActivityItem {
   message: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  workspace: string;
+  tag?: string;
+}
+
+export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  assigneeAgentKey?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Mock Data
 const mockAgents: Agent[] = [
   { id: 'trunks', name: 'Trunks', role: 'Primary Agent', status: 'online', lastActive: '2 min ago', skillCount: 12, avatar: '🤖' },
@@ -223,6 +242,14 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const USE_REMOTE = Boolean(API_BASE_URL);
 const ALLOW_MOCKS = IS_DEV && !USE_REMOTE;
 
+function getProjectId(): string {
+  try {
+    return localStorage.getItem('clawdos.project') || 'front-office';
+  } catch {
+    return 'front-office';
+  }
+}
+
 async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
   if (!API_BASE_URL) {
     throw new Error(
@@ -234,6 +261,7 @@ async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       'content-type': 'application/json',
+      'x-clawdos-project': getProjectId(),
       ...(init?.headers || {}),
     },
   });
@@ -369,6 +397,60 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
 
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
+  return { ok: true };
+}
+
+export async function getProjects(): Promise<Project[]> {
+  if (USE_REMOTE) return requestJson<Project[]>('/api/projects');
+  if (!ALLOW_MOCKS) return requestJson<Project[]>('/api/projects');
+
+  await delay(50);
+  return [
+    { id: 'front-office', name: 'Front Office', workspace: '/Users/trunks/clawd', tag: 'system' },
+  ];
+}
+
+export async function getTasks(): Promise<Task[]> {
+  if (USE_REMOTE) return requestJson<Task[]>('/api/tasks');
+  if (!ALLOW_MOCKS) return requestJson<Task[]>('/api/tasks');
+
+  await delay(80);
+  return [];
+}
+
+export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'status' | 'assigneeAgentKey' | 'title' | 'description'>>): Promise<{ ok: boolean }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, {
+      method: 'POST',
+      body: JSON.stringify({ patch }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, {
+      method: 'POST',
+      body: JSON.stringify({ patch }),
+    });
+  }
+
+  await delay(80);
+  return { ok: true };
+}
+
+export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task, 'description' | 'assigneeAgentKey' | 'status'>>): Promise<{ ok: boolean; task?: Task }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean; task?: Task }>(`/api/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean; task?: Task }>(`/api/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+
+  await delay(80);
   return { ok: true };
 }
 

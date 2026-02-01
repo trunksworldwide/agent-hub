@@ -1,0 +1,10 @@
+{
+  "projects": [
+    {
+      "id": "front-office",
+      "name": "Front Office",
+      "workspace": "/Users/trunks/clawd",
+      "tag": "system"
+    }
+  ]
+}

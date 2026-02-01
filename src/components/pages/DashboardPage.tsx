@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getActivity, getAgents, getCronJobs, getSessions, type ActivityItem, type Agent, type CronJob, type Session } from '@/lib/api';
+import { createTask, getActivity, getAgents, getCronJobs, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Clock, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Clock, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 interface FeedItem {
   id: string;
-  type: 'session' | 'cron' | 'commit';
+  type: 'cron' | 'commit';
   title: string;
   subtitle?: string;
   createdAt: string;
@@ -16,7 +16,7 @@ interface FeedItem {
 
 export function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -24,14 +24,14 @@ export function DashboardPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const refresh = async () => {
-    const [a, s, c, act] = await Promise.all([
+    const [a, t, c, act] = await Promise.all([
       getAgents(),
-      getSessions(),
+      getTasks(),
       getCronJobs(),
       getActivity(),
     ]);
     setAgents(a);
-    setSessions(s);
+    setTasks(t);
     setCronJobs(c);
     setActivity(act);
   };
@@ -51,17 +51,7 @@ export function DashboardPage() {
   const feed: FeedItem[] = useMemo(() => {
     const items: FeedItem[] = [];
 
-    for (const s of sessions.slice(0, 10)) {
-      items.push({
-        id: `session-${s.id}`,
-        type: 'session',
-        title: s.key || s.label || 'session',
-        subtitle: s.model ? `model: ${s.model}` : undefined,
-        createdAt: s.updatedAt || s.startedAt,
-      });
-    }
-
-    for (const j of cronJobs.slice(0, 5)) {
+    for (const j of cronJobs.slice(0, 10)) {
       items.push({
         id: `cron-${j.id}`,
         type: 'cron',
@@ -71,7 +61,7 @@ export function DashboardPage() {
       });
     }
 
-    for (const c of activity.slice(0, 10)) {
+    for (const c of activity.slice(0, 20)) {
       items.push({
         id: `commit-${c.hash}`,
         type: 'commit',
@@ -81,12 +71,11 @@ export function DashboardPage() {
       });
     }
 
-    // Newest first
     return items
       .filter(Boolean)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, 25);
-  }, [sessions, cronJobs, activity]);
+  }, [cronJobs, activity]);
 
   const getStatusBadge = (status: Agent['status']) => {
     const styles = {
@@ -116,7 +105,7 @@ export function DashboardPage() {
   };
 
   const activeAgentsCount = agents.filter(a => a.status === 'online' || a.status === 'running').length;
-  const totalSessions = sessions.length;
+  const totalTasks = tasks.length;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -237,8 +226,8 @@ export function DashboardPage() {
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Agents Active</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold">{totalSessions}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Sessions</div>
+              <div className="text-3xl font-bold">{totalTasks}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Tasks</div>
             </div>
           </div>
           
@@ -249,75 +238,87 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Live Overview (real) */}
-        <div className="p-4 space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Active Sessions */}
-            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sessions</h3>
-                <span className="text-xs text-muted-foreground">{sessions.length}</span>
-              </div>
-              <div className="p-2 max-h-[340px] overflow-y-auto scrollbar-always">
-                {sessions.length === 0 ? (
-                  <div className="p-6 text-sm text-muted-foreground">No recent sessions.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {sessions.map((s) => (
-                      <div key={s.id} className="p-3 rounded-lg border border-border bg-background/30">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{s.key || s.label || s.id}</div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {s.model ? `model: ${s.model}` : ''}{s.totalTokens ? ` • tokens: ${s.totalTokens}` : ''}
+        {/* Task board (real) */}
+        <div className="min-h-[calc(100vh-10rem)] p-4 overflow-x-auto scrollbar-always">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Task Queue</h2>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={async () => {
+                const title = prompt('New task title');
+                if (!title) return;
+                await createTask({ title });
+                await refresh();
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              New Task
+            </Button>
+          </div>
+
+          {(() => {
+            const columns: { id: TaskStatus; title: string }[] = [
+              { id: 'inbox', title: 'INBOX' },
+              { id: 'assigned', title: 'ASSIGNED' },
+              { id: 'in_progress', title: 'IN PROGRESS' },
+              { id: 'review', title: 'REVIEW' },
+              { id: 'done', title: 'DONE' },
+              { id: 'blocked', title: 'BLOCKED' },
+            ];
+
+            const byStatus = (status: TaskStatus) => tasks.filter((t) => t.status === status);
+
+            return (
+              <div className="flex gap-4">
+                {columns.map((col) => (
+                  <div key={col.id} className="w-72 flex flex-col bg-muted/20 rounded-lg overflow-hidden flex-shrink-0">
+                    <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{col.title}</h3>
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                        {byStatus(col.id).length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 p-2 overflow-y-auto max-h-[60vh]">
+                      <div className="space-y-2">
+                        {byStatus(col.id).map((t) => (
+                          <div key={t.id} className="p-3 rounded-lg border border-border bg-card">
+                            <div className="font-medium text-sm mb-2">{t.title}</div>
+                            {t.description ? (
+                              <div className="text-xs text-muted-foreground mb-2 line-clamp-2">{t.description}</div>
+                            ) : null}
+
+                            <div className="flex flex-wrap gap-1">
+                              {(['inbox','assigned','in_progress','review','done','blocked'] as TaskStatus[])
+                                .filter((s) => s !== t.status)
+                                .slice(0, 3)
+                                .map((s) => (
+                                  <button
+                                    key={s}
+                                    className="text-[10px] px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground"
+                                    onClick={async () => {
+                                      await updateTask(t.id, { status: s });
+                                      await refresh();
+                                    }}
+                                  >
+                                    Move to {s}
+                                  </button>
+                                ))}
                             </div>
                           </div>
-                          <span className={cn(
-                            "text-[10px] px-2 py-0.5 rounded",
-                            s.status === 'error' ? 'bg-destructive/20 text-destructive' : 'bg-muted text-muted-foreground'
-                          )}>
-                            {s.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+                        ))}
 
-            {/* Cron Jobs */}
-            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Schedule</h3>
-                <span className="text-xs text-muted-foreground">{cronJobs.length}</span>
-              </div>
-              <div className="p-2 max-h-[340px] overflow-y-auto scrollbar-always">
-                {cronJobs.length === 0 ? (
-                  <div className="p-6 text-sm text-muted-foreground">No cron jobs configured.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {cronJobs.map((j) => (
-                      <div key={j.id} className="p-3 rounded-lg border border-border bg-background/30">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{j.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">{j.schedule}</div>
-                          </div>
-                          <span className={cn(
-                            "text-[10px] px-2 py-0.5 rounded",
-                            j.enabled ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
-                          )}>
-                            {j.enabled ? 'enabled' : 'disabled'}
-                          </span>
-                        </div>
+                        {byStatus(col.id).length === 0 ? (
+                          <div className="p-4 text-xs text-muted-foreground">Empty</div>
+                        ) : null}
                       </div>
-                    ))}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
 
         {/* Live Feed - Bottom Section, Vertical Stack */}
