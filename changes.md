@@ -66,12 +66,8 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
   - activity feed from git commits (`GET /api/activity`)
 
 ## Next planned work
-- Add git-backed save history (partially done):
-  - Server now auto-commits brain file edits to the workspace git repo and returns the commit hash.
-  - Next: UI should display commit hash + add diff/rollback UI.
-- Add real endpoints for:
-  - sessions/sub-agents
-  - cron jobs
-  - installed skills
+- UI: display commit hash returned on save + add diff/rollback UI.
+- Cron: enable/disable/edit endpoints + wire toggles.
 - Add safer “reload” behaviors (lightweight reload vs full gateway restart) with guardrails.
 - UI polish: animations, empty states, error states, realtime updates.
+- Remote access path (Tailscale/Cloudflare) + authentication.
