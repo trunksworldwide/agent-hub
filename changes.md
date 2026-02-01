@@ -49,6 +49,12 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 ### Notes / known issues
 - The background dev processes were started via the Clawdbot tool runner, but that environment can SIGKILL long-running processes after a short window. This does not affect the code itself; it just means we should run `npm run dev:api` and `npm run dev` normally on the Mac mini (or set them up as a proper service) during active development.
 
+### Mobile-first improvements (Agents page)
+- Sidebar is now responsive:
+  - Desktop: fixed left sidebar.
+  - Mobile: sidebar becomes a slide-over drawer (hamburger button in agent header).
+- Agent sub-tabs now horizontally scroll on small screens.
+
 ## Next planned work
 - Add git-backed save history (partially done):
   - Server now auto-commits brain file edits to the workspace git repo and returns the commit hash.

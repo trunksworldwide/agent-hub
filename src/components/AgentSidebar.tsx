@@ -3,7 +3,7 @@ import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-export function AgentSidebar() {
+export function AgentSidebar({ className, onSelect }: { className?: string; onSelect?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const { selectedAgentId, setSelectedAgentId } = useClawdOffice();
 
@@ -22,7 +22,7 @@ export function AgentSidebar() {
   };
 
   return (
-    <aside className="w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin">
+    <aside className={cn("w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin", className)}>
       <div className="p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Agents
@@ -31,7 +31,10 @@ export function AgentSidebar() {
           {agents.map((agent) => (
             <button
               key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
+              onClick={() => {
+                setSelectedAgentId(agent.id);
+                onSelect?.();
+              }}
               className={cn(
                 "agent-card w-full text-left",
                 selectedAgentId === agent.id && "agent-card-active"

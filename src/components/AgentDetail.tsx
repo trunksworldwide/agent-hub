@@ -1,5 +1,7 @@
+import { PanelLeft } from 'lucide-react';
 import { useClawdOffice, type AgentTab } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { SoulEditor } from './agent-tabs/SoulEditor';
 import { UserEditor } from './agent-tabs/UserEditor';
 import { MemoryEditor } from './agent-tabs/MemoryEditor';
@@ -16,7 +18,7 @@ const agentTabs: { id: AgentTab; label: string; icon: string }[] = [
   { id: 'sessions', label: 'Sessions', icon: '💬' },
 ];
 
-export function AgentDetail() {
+export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
   const { selectedAgentId, activeAgentTab, setActiveAgentTab, files } = useClawdOffice();
 
   if (!selectedAgentId) {
@@ -55,16 +57,26 @@ export function AgentDetail() {
       {/* Agent Header */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => onOpenSidebar?.()}
+            title="Agents"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </Button>
+
           <span className="text-3xl">🤖</span>
-          <div>
-            <h1 className="text-xl font-semibold capitalize">{selectedAgentId}</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold capitalize truncate">{selectedAgentId}</h1>
             <p className="text-sm text-muted-foreground">Primary Agent</p>
           </div>
         </div>
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-muted/30">
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-muted/30 overflow-x-auto whitespace-nowrap">
         {agentTabs.map((tab) => {
           const tabFileKey = `${selectedAgentId}-${tab.id}`;
           const tabIsDirty = files[tabFileKey]?.isDirty || false;
