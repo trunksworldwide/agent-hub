@@ -69,7 +69,7 @@ export function TopBar() {
   return (
     <div className="sticky top-0 z-50">
       {/* View Mode Toggle Bar */}
-      <div className="h-10 border-b border-border bg-background flex items-center justify-center px-4">
+      <div className="h-12 border-b border-border bg-background flex items-center justify-center px-4">
         <div className="flex items-center p-1 rounded-lg bg-secondary/50">
           <button
             onClick={() => setViewMode('dashboard')}
@@ -103,24 +103,12 @@ export function TopBar() {
         {/* Left: Logo and Nav */}
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <Bot className="w-6 h-6 text-primary" />
+            <span className="text-2xl">🦞</span>
             <span className="font-semibold text-lg">ClawdOffice</span>
-          </div>
-          
-          {/* Status Badge */}
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/50 text-sm">
             <span className={cn(
-              "status-dot",
+              "status-dot ml-1",
               status?.online ? "status-dot-online" : "status-dot-offline"
-            )} />
-            <span className="text-muted-foreground">
-              {status?.online ? 'Connected' : 'Offline'}
-            </span>
-            {status?.environment && (
-              <span className="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground">
-                {status.environment}
-              </span>
-            )}
+            )} title={status?.online ? 'Connected' : 'Offline'} />
           </div>
 
           {/* Main Navigation - Only show in Manage mode */}
