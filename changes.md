@@ -96,3 +96,9 @@
 
 ### Fix: restore selected project on reload
 - Zustand store now initializes `selectedProjectId` from `localStorage` (`clawdos.project`) so project scoping stays consistent across refreshes.
+
+### Activity feed: human-readable task move messages
+- When a task is moved in Supabase mode, we now look up the task title and write activity messages like `Moved “Title” → in_progress` instead of `taskId -> status`.
+
+### Tooling: log build updates to Supabase
+- Added `scripts/log-build-update.mjs` to insert a short `activities` row (`type=build_update`) from the CLI (expects Supabase env vars).

@@ -643,11 +643,26 @@ export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'stat
     if (error) throw error;
 
     // Write an activity row (best effort)
+    // Make the feed human-readable by including the task title.
     if (patch.status) {
+      let title: string | null = null;
+      try {
+        const { data } = await supabase
+          .from('tasks')
+          .select('title')
+          .eq('project_id', projectId)
+          .eq('id', taskId)
+          .maybeSingle();
+        title = (data as any)?.title ?? null;
+      } catch {
+        // ignore
+      }
+
+      const label = title ? `“${title}”` : taskId;
       await supabase.from('activities').insert({
         project_id: projectId,
         type: 'task_moved',
-        message: `${taskId} -> ${patch.status}`,
+        message: `Moved ${label} → ${patch.status}`,
         actor_agent_key: 'agent:main:main',
         task_id: taskId,
       });
