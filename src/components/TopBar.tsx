@@ -88,15 +88,45 @@ export function TopBar() {
 
   return (
     <div className="sticky top-0 z-50">
-      {/* Project Selector Bar - Top of hierarchy */}
+      {/* Main Header Bar - Logo, View Toggle, Project Selector */}
       <div className="h-14 border-b border-border bg-background flex items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🦞</span>
-          <span className="font-semibold text-lg">ClawdOS</span>
-          <span className={cn(
-            "status-dot ml-1",
-            status?.online ? "status-dot-online" : "status-dot-offline"
-          )} title={status?.online ? 'Connected' : 'Offline'} />
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🦞</span>
+            <span className="font-semibold text-lg">ClawdOS</span>
+            <span className={cn(
+              "status-dot ml-1",
+              status?.online ? "status-dot-online" : "status-dot-offline"
+            )} title={status?.online ? 'Connected' : 'Offline'} />
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center p-1 rounded-lg bg-secondary/50">
+            <button
+              onClick={() => setViewMode('dashboard')}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                viewMode === 'dashboard' 
+                  ? "bg-primary text-primary-foreground shadow-sm" 
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Dashboard
+            </button>
+            <button
+              onClick={() => setViewMode('manage')}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                viewMode === 'manage' 
+                  ? "bg-primary text-primary-foreground shadow-sm" 
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Settings2 className="w-4 h-4" />
+              Manage
+            </button>
+          </div>
         </div>
         
         <div className="flex items-center gap-3">
@@ -113,36 +143,6 @@ export function TopBar() {
               </option>
             ))}
           </select>
-        </div>
-      </div>
-
-      {/* View Mode Toggle Bar */}
-      <div className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-center px-6">
-        <div className="flex items-center p-1.5 rounded-lg bg-secondary/50">
-          <button
-            onClick={() => setViewMode('dashboard')}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-              viewMode === 'dashboard' 
-                ? "bg-primary text-primary-foreground shadow-sm" 
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Dashboard
-          </button>
-          <button
-            onClick={() => setViewMode('manage')}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-              viewMode === 'manage' 
-                ? "bg-primary text-primary-foreground shadow-sm" 
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Settings2 className="w-4 h-4" />
-            Manage
-          </button>
         </div>
       </div>
 
