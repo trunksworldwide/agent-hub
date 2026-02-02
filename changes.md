@@ -85,3 +85,7 @@
 - When resolving an agent's dashboard status (online/idle/offline), we now use the most recent of `last_activity_at` and `last_heartbeat_at` from Supabase `agent_status`.
 - This prevents agents from showing as "idle" when they are heartbeating but not emitting activity events.
 - Agent profile panel now shows its "Since …" helper based on the same "last seen" concept (newest activity/heartbeat).
+
+### Presence: auto-create missing agent_status rows
+- When Supabase is configured, `getAgents()` now upserts default `agent_status` rows for any agents missing presence.
+- This keeps the dashboard/profile panel presence fields populated without manual seeding.

@@ -335,6 +335,39 @@ export async function getAgents(): Promise<Agent[]> {
 
     const statusByKey = new Map((statuses || []).map((s: any) => [s.agent_key, s]));
 
+    // Best-effort: ensure each agent has an agent_status row so presence renders.
+    // The DB seeds agents, but not agent_status by default.
+    const missingStatus = (agents || []).filter((a: any) => !statusByKey.has(a.agent_key));
+    if (missingStatus.length > 0) {
+      try {
+        const nowIso = new Date().toISOString();
+        await supabase.from('agent_status').upsert(
+          missingStatus.map((a: any) => ({
+            project_id: projectId,
+            agent_key: a.agent_key,
+            state: 'idle',
+            note: null,
+            last_activity_at: nowIso,
+          })),
+          { onConflict: 'project_id,agent_key' }
+        );
+
+        // Mirror defaults locally so the UI doesn't need a second round-trip.
+        for (const a of missingStatus) {
+          statusByKey.set(a.agent_key, {
+            agent_key: a.agent_key,
+            state: 'idle',
+            current_task_id: null,
+            last_heartbeat_at: null,
+            last_activity_at: nowIso,
+            note: null,
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to upsert missing agent_status rows:', e);
+      }
+    }
+
     const now = Date.now();
     const msSince = (iso: string | null | undefined) => {
       if (!iso) return null;
