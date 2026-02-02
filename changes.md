@@ -1,3 +1,7 @@
+### Notifications: click global activity to switch projects
+- Global activity items in the notification bell are now clickable.
+- Clicking an item switches the selected project to that activity’s project and returns you to Dashboard view.
+
 ### Notifications: clear unread badge when you open the bell
 - The global activity bell now keeps a `lastSeenAt` value in React state (not only `localStorage`).
 - When the notifications popover opens, we update both `localStorage` *and* state so the unread badge clears immediately (no refresh required).

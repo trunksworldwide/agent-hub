@@ -222,7 +222,16 @@ export function TopBar() {
                 ) : (
                   <div className="divide-y divide-border">
                     {globalActivity.map((a) => (
-                      <div key={a.id} className="p-4 hover:bg-muted/40">
+                      <button
+                        key={a.id}
+                        type="button"
+                        className="w-full text-left p-4 hover:bg-muted/40 transition-colors"
+                        onClick={() => {
+                          setSelectedProjectId(a.projectId);
+                          setViewMode('dashboard');
+                        }}
+                        title={`Switch to ${a.projectName}`}
+                      >
                         <div className="flex items-start gap-3">
                           <span className="text-lg">
                             {a.type === 'brain_doc_updated'
@@ -247,7 +256,7 @@ export function TopBar() {
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
