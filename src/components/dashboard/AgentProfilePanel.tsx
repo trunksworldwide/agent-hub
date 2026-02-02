@@ -13,11 +13,23 @@ interface AgentProfilePanelProps {
 }
 
 // Mock data for the profile - these will be connected to real data later
-const mockStatusReason = "Onboarded. Health monitoring framework ready. Coordinating with Fury on churn analysis.";
 const mockAbout = "I am the Primary Agent. Guardian of the workspace. I handle task coordination, communication routing, and system orchestration. My tools: Slack monitoring, email handling, calendar management. My mission: Keep everything running smoothly.";
 const mockSkills = ['coordination', 'communication', 'scheduling', 'monitoring', 'automation', 'reporting'];
 
 export function AgentProfilePanel({ agent, onClose }: AgentProfilePanelProps) {
+  const statusReason =
+    (agent.statusNote && agent.statusNote.trim().length > 0 ? agent.statusNote : null) ||
+    'No status note yet.';
+
+  const formatSince = (iso: string | null | undefined) => {
+    if (!iso) return null;
+    const ms = Date.now() - Date.parse(iso);
+    if (Number.isNaN(ms) || ms < 0) return null;
+    if (ms < 60_000) return 'Since just now';
+    if (ms < 60 * 60_000) return `Since about ${Math.round(ms / 60_000)} min ago`;
+    if (ms < 24 * 60 * 60_000) return `Since about ${Math.round(ms / (60 * 60_000))} hour(s) ago`;
+    return `Since about ${Math.round(ms / (24 * 60 * 60_000))} day(s) ago`;
+  };
   const getStatusColor = (status: Agent['status']) => {
     switch (status) {
       case 'online':
@@ -95,12 +107,14 @@ export function AgentProfilePanel({ agent, onClose }: AgentProfilePanelProps) {
               STATUS REASON:
             </h4>
             <p className="text-sm text-foreground leading-relaxed">
-              {mockStatusReason}
+              {statusReason}
             </p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              Since about 1 hour ago
-            </p>
+            {formatSince(agent.lastActivityAt) ? (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {formatSince(agent.lastActivityAt)}
+              </p>
+            ) : null}
           </div>
 
           {/* About */}

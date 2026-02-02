@@ -97,3 +97,9 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - Add safer “reload” behaviors (lightweight reload vs full gateway restart) with guardrails.
 - UI polish: animations, empty states, error states, realtime updates.
 - Remote access path (Tailscale/Cloudflare) + authentication.
+
+### Agent presence (Supabase agent_status)
+- `getAgents()` now merges `agents` + `agent_status` (when Supabase is configured).
+- Dashboard status is derived from `agent_status.state` + recency of `last_activity_at` (online/idle/offline) with `working → running`.
+- Agent profile panel now shows the real `agent_status.note` (when present) and a rough "since" based on `last_activity_at`.
+

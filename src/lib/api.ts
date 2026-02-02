@@ -15,6 +15,13 @@ export interface Agent {
   lastActive: string;
   skillCount: number;
   avatar?: string;
+
+  // Presence/status fields (optional; populated when Supabase agent_status is configured)
+  statusState?: 'idle' | 'working' | 'blocked' | 'sleeping';
+  statusNote?: string | null;
+  lastActivityAt?: string | null;
+  lastHeartbeatAt?: string | null;
+  currentTaskId?: string | null;
 }
 
 export interface AgentFile {
@@ -295,23 +302,74 @@ export async function getAgents(): Promise<Agent[]> {
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
 
-    const { data: agents, error } = await supabase
-      .from('agents')
-      .select('agent_key,name,role,emoji,color,created_at')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: true });
+    const [{ data: agents, error: agentsError }, { data: statuses, error: statusError }] =
+      await Promise.all([
+        supabase
+          .from('agents')
+          .select('agent_key,name,role,emoji,color,created_at')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('agent_status')
+          .select('agent_key,state,current_task_id,last_heartbeat_at,last_activity_at,note')
+          .eq('project_id', projectId),
+      ]);
 
-    if (error) throw error;
+    if (agentsError) throw agentsError;
+    if (statusError) throw statusError;
 
-    return (agents || []).map((a: any) => ({
-      id: a.agent_key,
-      name: a.name || a.agent_key,
-      role: a.role || '',
-      status: 'idle',
-      lastActive: '',
-      skillCount: 0,
-      avatar: a.emoji || '🤖',
-    }));
+    const statusByKey = new Map((statuses || []).map((s: any) => [s.agent_key, s]));
+
+    const now = Date.now();
+    const msSince = (iso: string | null | undefined) => {
+      if (!iso) return null;
+      const t = Date.parse(iso);
+      if (Number.isNaN(t)) return null;
+      return now - t;
+    };
+
+    const formatLastActive = (ms: number | null) => {
+      if (ms === null) return '';
+      if (ms < 30_000) return 'just now';
+      if (ms < 60 * 60_000) return `${Math.max(1, Math.round(ms / 60_000))}m ago`;
+      if (ms < 24 * 60 * 60_000) return `${Math.round(ms / (60 * 60_000))}h ago`;
+      return `${Math.round(ms / (24 * 60 * 60_000))}d ago`;
+    };
+
+    const resolveDashboardStatus = (
+      state: Agent['statusState'] | undefined,
+      lastActivityAt: string | null | undefined
+    ): Agent['status'] => {
+      if (state === 'sleeping') return 'offline';
+      if (state === 'working') return 'running';
+
+      const age = msSince(lastActivityAt);
+      if (age === null) return 'idle';
+      if (age <= 5 * 60_000) return 'online';
+      if (age >= 60 * 60_000) return 'offline';
+      return 'idle';
+    };
+
+    return (agents || []).map((a: any) => {
+      const st = statusByKey.get(a.agent_key);
+      const lastActivityAt: string | null | undefined = st?.last_activity_at;
+      const state: Agent['statusState'] | undefined = st?.state;
+
+      return {
+        id: a.agent_key,
+        name: a.name || a.agent_key,
+        role: a.role || '',
+        status: resolveDashboardStatus(state, lastActivityAt),
+        lastActive: formatLastActive(msSince(lastActivityAt)),
+        skillCount: 0,
+        avatar: a.emoji || '🤖',
+        statusState: state,
+        statusNote: st?.note ?? null,
+        lastActivityAt: st?.last_activity_at ?? null,
+        lastHeartbeatAt: st?.last_heartbeat_at ?? null,
+        currentTaskId: st?.current_task_id ?? null,
+      };
+    });
   }
 
   if (USE_REMOTE) return requestJson<Agent[]>('/api/agents');
