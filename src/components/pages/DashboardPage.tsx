@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createTask, getActivity, getAgents, getCronJobs, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
+import { createTask, getActivity, getAgents, getCronJobs, getStatus, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
@@ -52,6 +52,13 @@ export function DashboardPage() {
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
+    // Presence keepalive: `/api/status` best-effort upserts agent_status on the server.
+    // This helps keep the dashboard agent "online" while the UI is open, even if no other
+    // activity is being emitted.
+    const presence = setInterval(() => {
+      getStatus().catch(() => {});
+    }, 60_000);
+
     // Default to polling, but when Supabase is configured we prefer realtime updates
     // and fall back to a slower poll to self-heal if a subscription drops.
     const pollMs = hasSupabase() ? 30_000 : 5_000;
@@ -82,6 +89,7 @@ export function DashboardPage() {
 
     return () => {
       clearInterval(timer);
+      clearInterval(presence);
       clearInterval(poll);
       if (queued) clearTimeout(queued);
       unsubscribe();

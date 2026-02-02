@@ -1,3 +1,7 @@
+### Dashboard: presence keepalive (agent_status)
+- Dashboard now pings `/api/status` every 60s while open (best effort).
+  - This keeps Supabase `agent_status` fresh (server-side upsert happens on `/api/status`) so agents don’t drift offline when the UI is idle.
+
 ### Server: Supabase service-role support + presence heartbeat
 - `server/index.mjs` now prefers `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SERVICE_KEY`) when present.
   - This fixes server-side inserts/upserts that were blocked by RLS when only anon keys were available.
