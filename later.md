@@ -6,6 +6,7 @@ Future ideas / backlog for ClawdOS.
 - Drag-to-reorder agents in the left sidebar.
 - Each agent has a unique emoji + color theme.
 - Animations for agents actively working (subtle glowing beam/halo around the agent card).
+- AgentProfilePanel (Dashboard): clicking an agent opens a right-side panel with profile + status + what they’re working on (agentprofilepanel.tsx).
 - Subtle, “alive” animations (page transitions, hover states, status pulses).
 
 ## Chat inside ClawdOS
