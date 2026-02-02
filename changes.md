@@ -67,3 +67,7 @@
 ### Fix: Control API can create project memory/ files on first write
 - Control API now `mkdir -p`s the parent directory before writing agent files (`memory/YYYY-MM-DD.md`) and `memory/tasks.json`.
 - This prevents 500s when a new project workspace doesn’t already have a `memory/` folder.
+
+### Front Office project highlighting
+- Top bar now shows a **Front Office** badge when the selected project is tagged `system`.
+- Project selector prefixes system projects with a star ("★") so it’s obvious when you’re editing the admin system itself.

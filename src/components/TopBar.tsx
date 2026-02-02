@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useClawdOffice, type MainTab } from '@/lib/store';
 import { getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -131,6 +132,11 @@ export function TopBar() {
         
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">Project</span>
+          {selectedProject?.tag === 'system' && (
+            <Badge variant="secondary" className="border border-border/60">
+              Front Office
+            </Badge>
+          )}
           <select
             className="h-9 rounded-md bg-secondary border border-border px-3 text-sm min-w-[180px]"
             value={selectedProjectId}
@@ -139,7 +145,7 @@ export function TopBar() {
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {p.tag === 'system' ? `★ ${p.name}` : p.name}
               </option>
             ))}
           </select>
