@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2, LogOut, User } from 'lucide-react';
+import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice, type MainTab } from '@/lib/store';
 import { getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/components/AuthProvider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,13 +15,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 const navTabs: { id: MainTab; label: string; icon: string }[] = [
   { id: 'agents', label: 'Agents', icon: '🤖' },
@@ -33,7 +25,6 @@ const navTabs: { id: MainTab; label: string; icon: string }[] = [
 ];
 
 export function TopBar() {
-  const { user, signOut } = useAuth();
   const { 
     selectedProjectId,
     setSelectedProjectId,
@@ -197,28 +188,6 @@ export function TopBar() {
           >
             <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
           </Button>
-
-          {/* User Menu */}
-          {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <User className="w-4 h-4" />
-                  <span className="hidden sm:inline max-w-[120px] truncate">{user.email}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                  {user.email}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut} className="text-destructive">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
