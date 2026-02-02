@@ -1,3 +1,8 @@
+### Agents sidebar: optional drag-to-reorder (custom sort mode)
+- Agents sidebar now supports a per-project **Custom** ordering mode (toggle button).
+- In custom mode, agent cards are draggable and the order persists in `localStorage` (`clawdos.agentOrder.<projectId>`).
+- Default behavior remains status-priority sorting.
+
 ### AgentProfilePanel: Messages tab shows logged session notes
 - AgentProfilePanel now renders a lightweight “Messages” tab by filtering `type=session` activity rows.
 - Sending a message now encodes the recipient agent key in the activity message (`To agent:<name>:<kind>:`) so the per-agent inbox works without a dedicated messages table.

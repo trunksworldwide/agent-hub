@@ -1,21 +1,77 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, RefreshCw, ArrowUpDown } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
 import { createAgent, getAgents, type Agent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+
+function getAgentOrderStorageKey(projectId: string) {
+  return `clawdos.agentOrder.${projectId}`;
+}
+
+function getAgentSortModeStorageKey(projectId: string) {
+  return `clawdos.agentSortMode.${projectId}`;
+}
+
+type AgentSortMode = 'status' | 'custom';
 
 export function AgentSidebar({ className, onSelect }: { className?: string; onSelect?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const { selectedAgentId, setSelectedAgentId } = useClawdOffice();
+  const [dragAgentId, setDragAgentId] = useState<string | null>(null);
+  const [overAgentId, setOverAgentId] = useState<string | null>(null);
 
+  const { selectedAgentId, setSelectedAgentId, selectedProjectId } = useClawdOffice();
+
+  const [sortMode, setSortMode] = useState<AgentSortMode>(() => {
+    try {
+      const raw = localStorage.getItem(getAgentSortModeStorageKey(selectedProjectId));
+      return raw === 'custom' ? 'custom' : 'status';
+    } catch {
+      return 'status';
+    }
+  });
+
+  const [customOrder, setCustomOrder] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(getAgentOrderStorageKey(selectedProjectId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Keep time ticking so "Seen … ago" labels update.
   useEffect(() => {
     const t = window.setInterval(() => setCurrentTime(new Date()), 1000);
     return () => window.clearInterval(t);
   }, []);
+
+  // When project changes, re-load sort preferences.
+  useEffect(() => {
+    try {
+      const rawMode = localStorage.getItem(getAgentSortModeStorageKey(selectedProjectId));
+      setSortMode(rawMode === 'custom' ? 'custom' : 'status');
+    } catch {
+      setSortMode('status');
+    }
+
+    try {
+      const raw = localStorage.getItem(getAgentOrderStorageKey(selectedProjectId));
+      if (!raw) {
+        setCustomOrder([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setCustomOrder(Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []);
+    } catch {
+      setCustomOrder([]);
+    }
+  }, [selectedProjectId]);
 
   useEffect(() => {
     let alive = true;
@@ -27,6 +83,26 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
         if (!alive) return;
         setAgents(next);
         setLastRefreshedAt(new Date());
+
+        // Best-effort keep custom order in sync as agents appear/disappear.
+        setCustomOrder((prev) => {
+          const ids = next.map((a) => a.id);
+          const seen = new Set<string>();
+          const pruned = prev.filter((id) => {
+            if (!ids.includes(id)) return false;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+          const missing = ids.filter((id) => !seen.has(id));
+          const merged = [...pruned, ...missing];
+          try {
+            localStorage.setItem(getAgentOrderStorageKey(selectedProjectId), JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+          return merged;
+        });
       } catch (e) {
         // Sidebar should fail soft.
         console.warn('Failed to load agents:', e);
@@ -41,7 +117,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
       alive = false;
       window.clearInterval(t);
     };
-  }, []);
+  }, [selectedProjectId]);
 
   const getStatusBadge = (status: Agent['status']) => {
     const styles = {
@@ -84,13 +160,74 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     }
   }
 
+  const displayedAgents = useMemo(() => {
+    const byId = new Map(agents.map((a) => [a.id, a] as const));
+
+    if (sortMode === 'custom') {
+      const ordered: Agent[] = [];
+      for (const id of customOrder) {
+        const a = byId.get(id);
+        if (a) ordered.push(a);
+      }
+      // Any agents not in the stored order get appended.
+      for (const a of agents) {
+        if (!customOrder.includes(a.id)) ordered.push(a);
+      }
+      return ordered;
+    }
+
+    // Default: keep the existing behavior (status priority + name).
+    return [...agents].sort((a, b) => {
+      const pri: Record<Agent['status'], number> = {
+        running: 0,
+        online: 1,
+        idle: 2,
+        offline: 3,
+      };
+      const pa = pri[a.status] ?? 99;
+      const pb = pri[b.status] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return a.name.localeCompare(b.name);
+    });
+  }, [agents, customOrder, sortMode]);
+
+  function persistCustomOrder(next: string[]) {
+    setCustomOrder(next);
+    try {
+      localStorage.setItem(getAgentOrderStorageKey(selectedProjectId), JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+
+  function persistSortMode(next: AgentSortMode) {
+    setSortMode(next);
+    try {
+      localStorage.setItem(getAgentSortModeStorageKey(selectedProjectId), next);
+    } catch {
+      // ignore
+    }
+  }
+
+  function reorderCustomOrder(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+
+    const ids = displayedAgents.map((a) => a.id);
+    const sourceIdx = ids.indexOf(sourceId);
+    const targetIdx = ids.indexOf(targetId);
+    if (sourceIdx < 0 || targetIdx < 0) return;
+
+    const next = [...ids];
+    next.splice(sourceIdx, 1);
+    next.splice(targetIdx, 0, sourceId);
+    persistCustomOrder(next);
+  }
+
   return (
-    <aside className={cn("w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin", className)}>
+    <aside className={cn('w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin', className)}>
       <div className="p-4">
         <div className="flex items-center justify-between mb-3 gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Agents
-          </h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agents</h2>
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-muted-foreground">
@@ -98,6 +235,20 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                 ? `Updated ${Math.max(0, Math.floor((currentTime.getTime() - lastRefreshedAt.getTime()) / 1000))}s ago`
                 : 'Not yet updated'}
             </span>
+
+            <Button
+              variant={sortMode === 'custom' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => {
+                const next = sortMode === 'custom' ? 'status' : 'custom';
+                persistSortMode(next);
+              }}
+              title={sortMode === 'custom' ? 'Switch to status sorting' : 'Switch to custom ordering (drag to reorder)'}
+            >
+              <ArrowUpDown className="w-4 h-4" />
+            </Button>
+
             <Button
               variant="ghost"
               size="sm"
@@ -138,31 +289,49 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
         </div>
 
         <div className="space-y-1">
-          {[...agents]
-            .sort((a, b) => {
-              const pri: Record<Agent['status'], number> = {
-                running: 0,
-                online: 1,
-                idle: 2,
-                offline: 3,
-              };
-              const pa = pri[a.status] ?? 99;
-              const pb = pri[b.status] ?? 99;
-              if (pa !== pb) return pa - pb;
-              return a.name.localeCompare(b.name);
-            })
-            .map((agent) => (
+          {displayedAgents.map((agent) => (
             <button
               key={agent.id}
+              draggable={sortMode === 'custom'}
+              onDragStart={(e) => {
+                if (sortMode !== 'custom') return;
+                setDragAgentId(agent.id);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', agent.id);
+              }}
+              onDragOver={(e) => {
+                if (sortMode !== 'custom') return;
+                e.preventDefault();
+                setOverAgentId(agent.id);
+              }}
+              onDragLeave={() => {
+                if (sortMode !== 'custom') return;
+                setOverAgentId((prev) => (prev === agent.id ? null : prev));
+              }}
+              onDrop={(e) => {
+                if (sortMode !== 'custom') return;
+                e.preventDefault();
+                const sourceId = e.dataTransfer.getData('text/plain') || dragAgentId;
+                if (sourceId) reorderCustomOrder(sourceId, agent.id);
+                setDragAgentId(null);
+                setOverAgentId(null);
+              }}
+              onDragEnd={() => {
+                if (sortMode !== 'custom') return;
+                setDragAgentId(null);
+                setOverAgentId(null);
+              }}
               onClick={() => {
                 setSelectedAgentId(agent.id);
                 onSelect?.();
               }}
               className={cn(
-                "agent-card w-full text-left",
-                agent.status === 'running' && "agent-card-running",
-                selectedAgentId === agent.id && "agent-card-active"
+                'agent-card w-full text-left',
+                agent.status === 'running' && 'agent-card-running',
+                selectedAgentId === agent.id && 'agent-card-active',
+                sortMode === 'custom' && overAgentId === agent.id && dragAgentId !== agent.id && 'ring-2 ring-primary/40'
               )}
+              title={sortMode === 'custom' ? 'Drag to reorder' : undefined}
             >
               <div className="flex items-start gap-3">
                 <div className="relative">
@@ -178,9 +347,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate">{agent.name}</span>
-                    <span className={cn("badge-status", getStatusBadge(agent.status))}>
-                      {agent.status}
-                    </span>
+                    <span className={cn('badge-status', getStatusBadge(agent.status))}>{agent.status}</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{agent.role}</p>
                   <p className="text-xs text-muted-foreground mt-1">
