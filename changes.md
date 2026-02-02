@@ -151,3 +151,8 @@
 
 ### AgentProfilePanel: timeline now matches normalized Supabase actor keys
 - Fixed AgentProfilePanel timeline filtering to handle compound actor keys (e.g. `agent:<agentKey>:<sessionKind>`), so per-agent activity shows up reliably.
+
+### Cron: edit job name/schedule/instructions (Control API + UI)
+- Control API now supports `POST /api/cron/:id/edit` (maps to `clawdbot cron edit`) so jobs can be updated from the web UI.
+- Cron page now has an **Edit** dialog for updating a job's name, cron expression, and instructions.
+- Increased cron list/enable/disable/run timeouts in the Control API to avoid gateway timeouts on slower responses.

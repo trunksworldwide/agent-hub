@@ -594,6 +594,25 @@ export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ 
   return { ok: true, enabled };
 }
 
+export async function editCronJob(jobId: string, patch: { name?: string; schedule?: string; instructions?: string; enabled?: boolean }): Promise<{ ok: boolean }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  await delay(200);
+  console.log(`[API] Editing cron job ${jobId}`, patch);
+  return { ok: true };
+}
+
 export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
   if (USE_REMOTE) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
   if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });

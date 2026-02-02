@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Play, Clock, Check, X, ChevronDown, RefreshCw } from 'lucide-react';
+import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { getCronJobs, toggleCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getCronJobs, toggleCronJob, editCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -19,6 +22,13 @@ export function CronPage() {
   const [loadingRuns, setLoadingRuns] = useState<Record<string, boolean>>({});
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null);
+
+  const [editingJob, setEditingJob] = useState<CronJob | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSchedule, setEditSchedule] = useState('');
+  const [editInstructions, setEditInstructions] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const { toast } = useToast();
 
   const lastRefreshedLabel = useMemo(() => {
@@ -93,6 +103,41 @@ export function CronPage() {
       });
     } finally {
       setRunningJob(null);
+    }
+  };
+
+  const openEdit = (job: CronJob) => {
+    setEditingJob(job);
+    setEditName(job.name || '');
+    setEditSchedule(job.schedule || '');
+    setEditInstructions(job.instructions || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingJob || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      await editCronJob(editingJob.id, {
+        name: editName,
+        schedule: editSchedule,
+        instructions: editInstructions,
+      });
+
+      toast({
+        title: 'Job updated',
+        description: `${editingJob.name} saved.`,
+      });
+
+      setEditingJob(null);
+      await loadJobs();
+    } catch (err: any) {
+      toast({
+        title: 'Failed to update job',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -171,6 +216,15 @@ export function CronPage() {
                           {job.lastRunStatus || 'Never run'}
                         </span>
                       </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEdit(job)}
+                        className="gap-2"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -262,6 +316,50 @@ export function CronPage() {
           ))}
         </div>
       </div>
+
+      <Dialog open={Boolean(editingJob)} onOpenChange={(open) => { if (!open) setEditingJob(null); }}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Edit scheduled job</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Name</div>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Job name" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Schedule (cron expression)</div>
+              <Input value={editSchedule} onChange={(e) => setEditSchedule(e.target.value)} placeholder="*/30 * * * *" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Instructions</div>
+              <Textarea
+                value={editInstructions}
+                onChange={(e) => setEditInstructions(e.target.value)}
+                placeholder="What should this job do?"
+                className="min-h-[140px] font-mono"
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Saves through the Control API (clawdbot cron edit). This edits the job’s systemEvent payload.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingJob(null)} disabled={savingEdit}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit} className="gap-2">
+              {savingEdit ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

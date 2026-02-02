@@ -420,7 +420,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/cron') {
       try {
-        const { stdout } = await exec('clawdbot cron list --json');
+        // Cron list can take longer than the default gateway timeout.
+        const { stdout } = await exec('clawdbot cron list --json --timeout 60000');
         const data = JSON.parse(stdout || '{"jobs": []}');
         const jobs = (data.jobs || []).map((j) => ({
           id: j.id || j.jobId || j.name,
@@ -442,18 +443,18 @@ const server = http.createServer(async (req, res) => {
       const [, jobId, action] = cronToggleMatch;
       try {
         if (action === 'enable') {
-          await exec(`clawdbot cron enable ${JSON.stringify(jobId)}`);
+          await exec(`clawdbot cron enable ${JSON.stringify(jobId)} --timeout 60000`);
           return sendJson(res, 200, { ok: true, enabled: true });
         }
         if (action === 'disable') {
-          await exec(`clawdbot cron disable ${JSON.stringify(jobId)}`);
+          await exec(`clawdbot cron disable ${JSON.stringify(jobId)} --timeout 60000`);
           return sendJson(res, 200, { ok: true, enabled: false });
         }
 
         // toggle: expects JSON body { enabled: boolean }
         const body = await readBodyJson(req);
         const enabled = Boolean(body.enabled);
-        await exec(`clawdbot cron ${enabled ? 'enable' : 'disable'} ${JSON.stringify(jobId)}`);
+        await exec(`clawdbot cron ${enabled ? 'enable' : 'disable'} ${JSON.stringify(jobId)} --timeout 60000`);
         return sendJson(res, 200, { ok: true, enabled });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
@@ -479,7 +480,46 @@ const server = http.createServer(async (req, res) => {
     if (cronRunMatch && req.method === 'POST') {
       const [, jobId] = cronRunMatch;
       try {
-        await exec(`clawdbot cron run ${JSON.stringify(jobId)}`);
+        await exec(`clawdbot cron run ${JSON.stringify(jobId)} --timeout 60000`);
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    const cronEditMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/edit$/);
+    if (cronEditMatch && req.method === 'POST') {
+      const [, jobId] = cronEditMatch;
+      try {
+        // Body supports: { name?, schedule?, instructions?, enabled? }
+        const body = await readBodyJson(req);
+        const args = [];
+
+        if (typeof body.name === 'string' && body.name.trim()) {
+          args.push('--name', body.name.trim());
+        }
+
+        if (typeof body.schedule === 'string' && body.schedule.trim()) {
+          // Cron expression
+          args.push('--cron', body.schedule.trim());
+        }
+
+        if (typeof body.instructions === 'string') {
+          // We map UI "instructions" to the cron job's systemEvent payload.
+          // This preserves the v1 mental model: "instructions" are what the job does.
+          args.push('--system-event', body.instructions);
+        }
+
+        if (typeof body.enabled === 'boolean') {
+          args.push(body.enabled ? '--enable' : '--disable');
+        }
+
+        const cmd =
+          `clawdbot cron edit ${JSON.stringify(jobId)} ` +
+          args.map((a) => (a.startsWith('--') ? a : JSON.stringify(a))).join(' ') +
+          ' --timeout 60000';
+
+        await exec(cmd);
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
