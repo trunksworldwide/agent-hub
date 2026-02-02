@@ -9,7 +9,7 @@ import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 
 interface FeedItem {
   id: string;
-  type: 'cron' | 'commit' | 'session' | 'task_created' | 'task_updated';
+  type: 'cron' | 'commit' | 'build_update' | 'session' | 'task_created' | 'task_moved' | 'task_updated';
   title: string;
   subtitle?: string;
   createdAt: string;
@@ -63,11 +63,12 @@ export function DashboardPage() {
     }
 
     for (const c of activity.slice(0, 20)) {
+      const kind = (c.type || 'commit') as FeedItem['type'];
       items.push({
-        id: `commit-${c.hash}`,
-        type: 'commit',
+        id: `${kind}-${c.hash}`,
+        type: kind,
         title: c.message,
-        subtitle: c.author,
+        subtitle: c.author || undefined,
         createdAt: c.date,
       });
     }
@@ -365,7 +366,17 @@ export function DashboardPage() {
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">
-                      {item.type === 'session' ? '💬' : item.type === 'cron' ? '⏰' : '✅'}
+                      {item.type === 'session'
+                        ? '💬'
+                        : item.type === 'cron'
+                        ? '⏰'
+                        : item.type === 'task_created'
+                        ? '🆕'
+                        : item.type === 'task_moved' || item.type === 'task_updated'
+                        ? '🗂️'
+                        : item.type === 'build_update'
+                        ? '🔧'
+                        : '✅'}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{item.title}</p>
@@ -374,7 +385,10 @@ export function DashboardPage() {
                       )}
                       <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {item.createdAt}
+                        {(() => {
+                          const d = new Date(item.createdAt);
+                          return Number.isNaN(d.getTime()) ? item.createdAt : `${formatDate(d)} ${formatTime(d)}`;
+                        })()}
                       </p>
                     </div>
                   </div>

@@ -94,6 +94,10 @@ export interface ActivityItem {
   author: string;
   date: string;
   message: string;
+
+  // Optional richer typing when backed by Supabase `activities`
+  type?: string;
+  taskId?: string | null;
 }
 
 export interface Project {
@@ -667,7 +671,9 @@ export async function getActivity(): Promise<ActivityItem[]> {
       hash: a.id,
       author: a.actor_agent_key || '',
       date: a.created_at,
-      message: `[${a.type}] ${a.message}`,
+      message: a.message,
+      type: a.type,
+      taskId: a.task_id,
     }));
   }
 
