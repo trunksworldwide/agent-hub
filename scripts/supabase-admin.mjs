@@ -1,5 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+
+// Prefer local dev env files.
+dotenv.config();
+dotenv.config({ path: '.env.local', override: false });
 
 const url = process.env.VITE_SUPABASE_URL;
 const anon = process.env.VITE_SUPABASE_ANON_KEY;
