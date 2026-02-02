@@ -6,8 +6,6 @@ import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 
-import { createClient } from '@supabase/supabase-js';
-
 const exec = promisify(_exec);
 
 const PORT = Number(process.env.PORT || 3737);
@@ -541,6 +539,14 @@ const server = http.createServer(async (req, res) => {
     if (cronRunMatch && req.method === 'POST') {
       const [, jobId] = cronRunMatch;
       try {
+        const projectId = getProjectIdFromReq(req);
+        await logSupabaseActivity({
+          projectId,
+          type: 'cron_run_requested',
+          message: `Requested cron run: ${jobId}`,
+          actor: 'agent:main:main',
+        });
+
         await exec(`clawdbot cron run ${JSON.stringify(jobId)} --timeout 60000`);
         return sendJson(res, 200, { ok: true });
       } catch (err) {

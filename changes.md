@@ -183,3 +183,9 @@
 
 ### Build: suppress noisy Browserslist old-data warning
 - Build scripts now set BROWSERSLIST_IGNORE_OLD_DATA=1 so CI/local builds aren’t spammed by the caniuse-lite age warning (until bun is available for update-browserslist-db).
+
+### Cron: log run requests to Supabase activity feed
+- `POST /api/cron/:id/run` now best-effort inserts an `activities` row (`type=cron_run_requested`) before triggering `clawdbot cron run`.
+
+### Server: cleanup duplicate Supabase import
+- Removed a duplicate `createClient` import in `server/index.mjs`.
