@@ -168,3 +168,6 @@
 ### Cron: stable next-run timestamps (nextRunAtMs)
 - Control API now passes through `nextRunAtMs` (when provided by `clawdbot cron list`).
 - Cron page and Dashboard feed prefer the numeric timestamp for rendering/sorting, and fall back to the old `nextRun` string.
+
+### Build: suppress noisy Browserslist old-data warning
+- Build scripts now set BROWSERSLIST_IGNORE_OLD_DATA=1 so CI/local builds aren’t spammed by the caniuse-lite age warning (until bun is available for update-browserslist-db).
