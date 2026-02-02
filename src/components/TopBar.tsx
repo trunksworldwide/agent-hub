@@ -109,13 +109,13 @@ export function TopBar() {
   }, []);
 
   const lastSeenKey = 'clawdos.globalActivity.lastSeenAt';
-  const lastSeenAtIso = (() => {
+  const [lastSeenAtIso, setLastSeenAtIso] = useState<string>(() => {
     try {
       return localStorage.getItem(lastSeenKey) || '';
     } catch {
       return '';
     }
-  })();
+  });
 
   const unreadCount = (() => {
     const last = Date.parse(lastSeenAtIso);
@@ -188,6 +188,7 @@ export function TopBar() {
               try {
                 const newest = globalActivity[0]?.createdAt || new Date().toISOString();
                 localStorage.setItem(lastSeenKey, newest);
+                setLastSeenAtIso(newest);
               } catch {
                 // ignore
               }

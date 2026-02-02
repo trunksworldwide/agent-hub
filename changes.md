@@ -1,3 +1,7 @@
+### Notifications: clear unread badge when you open the bell
+- The global activity bell now keeps a `lastSeenAt` value in React state (not only `localStorage`).
+- When the notifications popover opens, we update both `localStorage` *and* state so the unread badge clears immediately (no refresh required).
+
 ### Presence: upsert agent_status for *all* active agents from /api/sessions
 - Control API `GET /api/sessions` now upserts Supabase `agent_status` for every inferred `agent:<name>:<kind>` key (not just `agent:main:main`).
   - Ensures multi-agent dashboards show accurate online/working + last_activity_at.
