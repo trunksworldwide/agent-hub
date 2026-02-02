@@ -1,3 +1,7 @@
+### AgentProfilePanel: Messages tab shows logged session notes
+- AgentProfilePanel now renders a lightweight “Messages” tab by filtering `type=session` activity rows.
+- Sending a message now encodes the recipient agent key in the activity message (`To agent:<name>:<kind>:`) so the per-agent inbox works without a dedicated messages table.
+
 ### Activity feed: display-friendly author labels
 - Supabase-backed activity items now derive `authorLabel` as a human-friendly display name (e.g. `agent:main:main` → `main`).
 - AgentProfilePanel timeline matching still works with both raw keys and legacy/looser author formats.

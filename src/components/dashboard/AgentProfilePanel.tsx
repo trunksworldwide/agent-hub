@@ -36,7 +36,9 @@ export function AgentProfilePanel({
     try {
       await createActivity({
         type: 'session',
-        message: `To ${agent.name}: ${msg}`,
+        // v1 routing: encode the recipient agent key in the message so we can render a per-agent inbox
+        // before we have a dedicated messages table.
+        message: `To ${agent.id}: ${msg}`,
         actorAgentKey: 'dashboard',
       });
       setMessageDraft('');
@@ -159,6 +161,20 @@ export function AgentProfilePanel({
   };
 
   const timeline = activity.filter((a) => matchesAgent(a, agent.id)).slice(0, 12);
+
+  const messages = activity
+    .filter((a) => a.type === 'session')
+    .filter((a) => {
+      const m = (a.message || '').trim();
+      // Support both legacy (name-based) and new (agent key-based) formats.
+      return (
+        m.startsWith(`To ${agent.id}:`) ||
+        m.startsWith(`To ${agent.name}:`) ||
+        m.includes(`To ${agent.id}:`) ||
+        m.includes(`To ${agent.name}:`)
+      );
+    })
+    .slice(0, 10);
 
   const iconForActivityType = (type: string | undefined) => {
     switch (type) {
@@ -331,9 +347,23 @@ export function AgentProfilePanel({
             </TabsContent>
 
             <TabsContent value="messages" className="mt-4">
-              <div className="text-sm text-muted-foreground text-center py-6">
-                Direct messaging wiring coming soon.
-              </div>
+              {messages.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  No messages yet.
+                  <div className="text-xs mt-2">
+                    (v1: sending a message logs a <span className="font-mono">session</span> activity row.)
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {messages.map((a) => (
+                    <div key={a.hash} className="p-3 rounded-lg border border-border bg-card">
+                      <div className="text-sm whitespace-pre-wrap break-words">{a.message}</div>
+                      <div className="text-xs text-muted-foreground mt-1">{formatAt(a.date)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>
