@@ -72,7 +72,16 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
               )}
             >
               <div className="flex items-start gap-3">
-                <span className="text-2xl">{agent.avatar}</span>
+                <div className="relative">
+                  {agent.color ? (
+                    <span
+                      className="absolute -left-1 -top-1 h-3 w-3 rounded-full ring-2 ring-background"
+                      style={{ backgroundColor: agent.color }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  <span className="text-2xl">{agent.avatar}</span>
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate">{agent.name}</span>

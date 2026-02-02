@@ -16,6 +16,9 @@ export interface Agent {
   skillCount: number;
   avatar?: string;
 
+  // Optional theme fields (from Supabase `agents` table)
+  color?: string | null;
+
   // Presence/status fields (optional; populated when Supabase agent_status is configured)
   statusState?: 'idle' | 'working' | 'blocked' | 'sleeping';
   statusNote?: string | null;
@@ -428,6 +431,7 @@ export async function getAgents(): Promise<Agent[]> {
         lastActive: formatLastActive(msSince(lastSeenAt)),
         skillCount: 0,
         avatar: a.emoji || '🤖',
+        color: a.color ?? null,
         statusState: state,
         statusNote: st?.note ?? null,
         lastActivityAt: st?.last_activity_at ?? null,

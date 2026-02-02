@@ -114,3 +114,11 @@
 ### Agents sidebar: live refresh + status-priority sorting
 - Agents list now auto-refreshes every 30s (fails soft if the request errors).
 - Sidebar sorts agents by status priority (running → online → idle → offline), then name.
+
+### Agents sidebar: show per-agent color theme
+- Agent roster now carries through the Supabase  field (when present).
+- Sidebar renders a small colored dot on each agent card, making distinct agents easier to scan.
+
+### Agents sidebar: show per-agent color theme
+- Agent roster now carries through the Supabase `agents.color` field (when present).
+- Sidebar renders a small colored dot on each agent card, making distinct agents easier to scan.
