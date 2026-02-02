@@ -88,13 +88,41 @@ export function TopBar() {
 
   return (
     <div className="sticky top-0 z-50">
+      {/* Project Selector Bar - Top of hierarchy */}
+      <div className="h-14 border-b border-border bg-background flex items-center justify-between px-6">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🦞</span>
+          <span className="font-semibold text-lg">ClawdOS</span>
+          <span className={cn(
+            "status-dot ml-1",
+            status?.online ? "status-dot-online" : "status-dot-offline"
+          )} title={status?.online ? 'Connected' : 'Offline'} />
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">Project</span>
+          <select
+            className="h-9 rounded-md bg-secondary border border-border px-3 text-sm min-w-[180px]"
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            title={selectedProject?.workspace}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* View Mode Toggle Bar */}
-      <div className="h-12 border-b border-border bg-background flex items-center justify-center px-4">
-        <div className="flex items-center p-1 rounded-lg bg-secondary/50">
+      <div className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-center px-6">
+        <div className="flex items-center p-1.5 rounded-lg bg-secondary/50">
           <button
             onClick={() => setViewMode('dashboard')}
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
               viewMode === 'dashboard' 
                 ? "bg-primary text-primary-foreground shadow-sm" 
                 : "text-muted-foreground hover:text-foreground"
@@ -106,7 +134,7 @@ export function TopBar() {
           <button
             onClick={() => setViewMode('manage')}
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
               viewMode === 'manage' 
                 ? "bg-primary text-primary-foreground shadow-sm" 
                 : "text-muted-foreground hover:text-foreground"
@@ -118,59 +146,27 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Main Navigation Bar */}
-      <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4">
-        {/* Left: Logo and Nav */}
-        <div className="flex items-center gap-3 md:gap-6 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🦞</span>
-            <span className="font-semibold text-lg">ClawdOS</span>
-            <span className={cn(
-              "status-dot ml-1",
-              status?.online ? "status-dot-online" : "status-dot-offline"
-            )} title={status?.online ? 'Connected' : 'Offline'} />
-          </div>
+      {/* Main Navigation Bar - Only show in Manage mode */}
+      {viewMode === 'manage' && (
+        <header className="h-12 border-b border-border bg-card/30 flex items-center justify-between px-6">
+          <nav className="flex items-center gap-1">
+            {navTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveMainTab(tab.id)}
+                className={cn(
+                  "nav-tab flex items-center gap-2",
+                  activeMainTab === tab.id && "nav-tab-active"
+                )}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
 
-          {/* Project selector (global) */}
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Project</span>
-            <select
-              className="h-9 rounded-md bg-background border border-border px-2 text-sm max-w-[220px]"
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              title={selectedProject?.workspace}
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Main Navigation - Only show in Manage mode */}
-          {viewMode === 'manage' && (
-            <nav className="flex items-center gap-1">
-              {navTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveMainTab(tab.id)}
-                  className={cn(
-                    "nav-tab flex items-center gap-2",
-                    activeMainTab === tab.id && "nav-tab-active"
-                  )}
-                >
-                  <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </nav>
-          )}
-        </div>
-
-        {/* Right: Status and Actions */}
-        <div className="flex items-center gap-3">
-          {status && (
+          <div className="flex items-center gap-3">
+            {status && (
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Bot className="w-4 h-4" />
@@ -216,9 +212,34 @@ export function TopBar() {
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </header>
+            </AlertDialog>
+          </div>
+        </header>
+      )}
+
+      {/* Dashboard mode: minimal status bar */}
+      {viewMode === 'dashboard' && (
+        <header className="h-10 border-b border-border bg-card/30 flex items-center justify-end px-6">
+          <div className="flex items-center gap-3">
+            {status && (
+              <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Bot className="w-4 h-4" />
+                {status.activeSessions} active
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fetchStatus}
+              disabled={isRefreshing}
+              title="Refresh"
+              className="h-8 w-8"
+            >
+              <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+            </Button>
+          </div>
+        </header>
+      )}
     </div>
   );
 }
