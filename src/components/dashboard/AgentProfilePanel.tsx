@@ -110,9 +110,19 @@ export function AgentProfilePanel({
     }
   };
 
+  const currentTask = agent.currentTaskId
+    ? tasks.find((t) => t.id === agent.currentTaskId) || null
+    : null;
+
+  const currentTaskLabel = agent.currentTaskId
+    ? currentTask
+      ? `${currentTask.title} (${agent.currentTaskId})`
+      : agent.currentTaskId
+    : null;
+
   const presenceRows: Array<{ label: string; value: string | null | undefined }> = [
     { label: 'State', value: agent.statusState || null },
-    { label: 'Current Task', value: agent.currentTaskId || null },
+    { label: 'Current task', value: currentTaskLabel },
     { label: 'Last heartbeat', value: agent.lastHeartbeatAt ? formatAt(agent.lastHeartbeatAt) : null },
     { label: 'Last activity', value: agent.lastActivityAt ? formatAt(agent.lastActivityAt) : null },
   ];

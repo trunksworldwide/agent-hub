@@ -1,3 +1,7 @@
+### AgentProfilePanel: resolve current task title from tasks
+- Presence section now shows the **task title** (when available in the dashboard task list) alongside the raw `current_task_id`.
+- Falls back to displaying the raw task id when we don't have the task locally yet.
+
 ### Dashboard Live Feed: show agent avatars + type in subtitle
 - Live Feed items attributed to a known agent now render the agent’s emoji in a tinted tile (uses agent `color` when present).
 - Feed subtitle prefers the agent’s display name (instead of raw `actor_agent_key`) and also shows the activity `type` (monospace) for fast scanning.
