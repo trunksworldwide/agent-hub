@@ -14,7 +14,244 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activities: {
+        Row: {
+          actor_agent_key: string | null
+          created_at: string
+          id: string
+          message: string
+          project_id: string
+          task_id: string | null
+          type: string
+        }
+        Insert: {
+          actor_agent_key?: string | null
+          created_at?: string
+          id?: string
+          message: string
+          project_id: string
+          task_id?: string | null
+          type: string
+        }
+        Update: {
+          actor_agent_key?: string | null
+          created_at?: string
+          id?: string
+          message?: string
+          project_id?: string
+          task_id?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activities_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_status: {
+        Row: {
+          agent_key: string
+          current_task_id: string | null
+          id: string
+          last_activity_at: string
+          last_heartbeat_at: string | null
+          note: string | null
+          project_id: string
+          state: string
+        }
+        Insert: {
+          agent_key: string
+          current_task_id?: string | null
+          id?: string
+          last_activity_at?: string
+          last_heartbeat_at?: string | null
+          note?: string | null
+          project_id: string
+          state?: string
+        }
+        Update: {
+          agent_key?: string
+          current_task_id?: string | null
+          id?: string
+          last_activity_at?: string
+          last_heartbeat_at?: string | null
+          note?: string | null
+          project_id?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_status_current_task_id_fkey"
+            columns: ["current_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_status_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agents: {
+        Row: {
+          agent_key: string
+          color: string | null
+          created_at: string
+          emoji: string | null
+          id: string
+          name: string
+          project_id: string
+          role: string | null
+        }
+        Insert: {
+          agent_key: string
+          color?: string | null
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name: string
+          project_id: string
+          role?: string | null
+        }
+        Update: {
+          agent_key?: string
+          color?: string | null
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name?: string
+          project_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          workspace_path: string | null
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          name: string
+          workspace_path?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          workspace_path?: string | null
+        }
+        Relationships: []
+      }
+      task_comments: {
+        Row: {
+          author_agent_key: string | null
+          content: string
+          created_at: string
+          id: string
+          project_id: string
+          task_id: string
+        }
+        Insert: {
+          author_agent_key?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          project_id: string
+          task_id: string
+        }
+        Update: {
+          author_agent_key?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          project_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_comments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          assignee_agent_key: string | null
+          created_at: string
+          description: string | null
+          id: string
+          project_id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_agent_key?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          project_id: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_agent_key?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          project_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
