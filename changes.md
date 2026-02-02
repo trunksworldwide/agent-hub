@@ -57,3 +57,9 @@
 
 ### Fix: Control API server startup log
 - Fixed a `ReferenceError` on server startup (`WORKSPACE` was undefined) by logging `DEFAULT_WORKSPACE` instead.
+
+### AgentProfilePanel wiring: real attention + timeline
+- Agent profile panel now accepts `tasks` + `activity` from the Dashboard.
+- **Attention** tab shows real assigned (non-done) tasks for the agent.
+- **Timeline** tab shows recent activity rows authored by the agent (from Supabase `activities` when configured).
+- Replaced mock “about/skills” placeholders with lightweight, real presence fields (state/current task/last heartbeat/activity) and skillCount.

@@ -5,19 +5,25 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import type { Agent } from '@/lib/api';
+import type { ActivityItem, Agent, Task } from '@/lib/api';
 
 interface AgentProfilePanelProps {
   agent: Agent;
   onClose: () => void;
   variant?: 'sidebar' | 'sheet';
+
+  // Optional wiring from the Dashboard so the panel can show real data.
+  activity?: ActivityItem[];
+  tasks?: Task[];
 }
 
-// Mock data for the profile - these will be connected to real data later
-const mockAbout = "I am the Primary Agent. Guardian of the workspace. I handle task coordination, communication routing, and system orchestration. My tools: Slack monitoring, email handling, calendar management. My mission: Keep everything running smoothly.";
-const mockSkills = ['coordination', 'communication', 'scheduling', 'monitoring', 'automation', 'reporting'];
-
-export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: AgentProfilePanelProps) {
+export function AgentProfilePanel({
+  agent,
+  onClose,
+  variant = 'sidebar',
+  activity = [],
+  tasks = [],
+}: AgentProfilePanelProps) {
   const statusReason =
     (agent.statusNote && agent.statusNote.trim().length > 0 ? agent.statusNote : null) ||
     'No status note yet.';
@@ -31,6 +37,20 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
     if (ms < 24 * 60 * 60_000) return `Since about ${Math.round(ms / (60 * 60_000))} hour(s) ago`;
     return `Since about ${Math.round(ms / (24 * 60 * 60_000))} day(s) ago`;
   };
+
+  const formatAt = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  };
+
   const getStatusColor = (status: Agent['status']) => {
     switch (status) {
       case 'online':
@@ -53,6 +73,40 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
         return 'IDLE';
       case 'offline':
         return 'OFFLINE';
+    }
+  };
+
+  const presenceRows: Array<{ label: string; value: string | null | undefined }> = [
+    { label: 'State', value: agent.statusState || null },
+    { label: 'Current Task', value: agent.currentTaskId || null },
+    { label: 'Last heartbeat', value: agent.lastHeartbeatAt ? formatAt(agent.lastHeartbeatAt) : null },
+    { label: 'Last activity', value: agent.lastActivityAt ? formatAt(agent.lastActivityAt) : null },
+  ];
+
+  const attentionTasks = tasks
+    .filter((t) => t.assigneeAgentKey && t.assigneeAgentKey === agent.id)
+    .filter((t) => t.status !== 'done')
+    .slice(0, 8);
+
+  const timeline = activity
+    .filter((a) => a.author && a.author === agent.id)
+    .slice(0, 12);
+
+  const iconForActivityType = (type: string | undefined) => {
+    switch (type) {
+      case 'task_created':
+        return '🆕';
+      case 'task_moved':
+      case 'task_updated':
+        return '🗂️';
+      case 'build_update':
+        return '🔧';
+      case 'cron':
+        return '⏰';
+      case 'session':
+        return '💬';
+      default:
+        return '✅';
     }
   };
 
@@ -91,30 +145,26 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
 
           {/* Status Badge */}
           <div>
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className={cn(
-                "gap-2 px-3 py-1.5 text-sm font-medium border-0",
-                agent.status === 'running' || agent.status === 'online' 
-                  ? "bg-green-500/10 text-green-500" 
+                'gap-2 px-3 py-1.5 text-sm font-medium border-0',
+                agent.status === 'running' || agent.status === 'online'
+                  ? 'bg-green-500/10 text-green-500'
                   : agent.status === 'idle'
-                  ? "bg-amber-500/10 text-amber-500"
-                  : "bg-muted text-muted-foreground"
+                    ? 'bg-amber-500/10 text-amber-500'
+                    : 'bg-muted text-muted-foreground'
               )}
             >
-              <span className={cn("w-2 h-2 rounded-full", getStatusColor(agent.status))} />
+              <span className={cn('w-2 h-2 rounded-full', getStatusColor(agent.status))} />
               {getStatusLabel(agent.status)}
             </Badge>
           </div>
 
           {/* Status Reason */}
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              STATUS REASON:
-            </h4>
-            <p className="text-sm text-foreground leading-relaxed">
-              {statusReason}
-            </p>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">STATUS REASON:</h4>
+            <p className="text-sm text-foreground leading-relaxed">{statusReason}</p>
             {formatSince(agent.lastActivityAt) ? (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -123,32 +173,27 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
             ) : null}
           </div>
 
-          {/* About */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              ABOUT
-            </h4>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {mockAbout}
-            </p>
-          </div>
-
-          {/* Skills */}
+          {/* Presence */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              SKILLS
-            </h4>
-            <div className="flex flex-wrap gap-2">
-              {mockSkills.map((skill) => (
-                <Badge 
-                  key={skill} 
-                  variant="secondary" 
-                  className="text-xs font-normal bg-muted hover:bg-muted"
-                >
-                  {skill}
-                </Badge>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRESENCE</h4>
+            <div className="space-y-2">
+              {presenceRows.map((row) => (
+                <div key={row.label} className="flex items-start justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">{row.label}</span>
+                  <span className="text-xs font-mono text-foreground text-right break-all">
+                    {row.value || '—'}
+                  </span>
+                </div>
               ))}
             </div>
+          </div>
+
+          {/* Skills (light wiring) */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SKILLS</h4>
+            <p className="text-sm text-muted-foreground">
+              Skill count: <span className="font-mono">{agent.skillCount ?? 0}</span>
+            </p>
           </div>
 
           {/* Tabs */}
@@ -157,7 +202,9 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
               <TabsTrigger value="attention" className="flex-1 gap-1.5 text-xs">
                 <AlertTriangle className="w-3 h-3" />
                 Attention
-                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">2</Badge>
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  {attentionTasks.length}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="timeline" className="flex-1 gap-1.5 text-xs">
                 <Clock className="w-3 h-3" />
@@ -168,22 +215,52 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
                 Messages
               </TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="attention" className="mt-4">
-              <div className="text-sm text-muted-foreground text-center py-6">
-                Tasks & mentions needing {agent.name}'s attention
-              </div>
+              {attentionTasks.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">No assigned tasks needing attention.</div>
+              ) : (
+                <div className="space-y-2">
+                  {attentionTasks.map((t) => (
+                    <div key={t.id} className="p-3 rounded-lg border border-border bg-card">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-medium truncate">{t.title}</div>
+                        <Badge variant="secondary" className="text-[10px] font-normal">
+                          {t.status}
+                        </Badge>
+                      </div>
+                      {t.description ? (
+                        <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </TabsContent>
-            
+
             <TabsContent value="timeline" className="mt-4">
-              <div className="text-sm text-muted-foreground text-center py-6">
-                Recent activity timeline
-              </div>
+              {timeline.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">No recent activity for this agent.</div>
+              ) : (
+                <div className="space-y-2">
+                  {timeline.map((a) => (
+                    <div key={a.hash} className="p-3 rounded-lg border border-border bg-card">
+                      <div className="flex items-start gap-2">
+                        <div className="text-lg leading-none">{iconForActivityType(a.type)}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{a.message}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{formatAt(a.date)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </TabsContent>
-            
+
             <TabsContent value="messages" className="mt-4">
               <div className="text-sm text-muted-foreground text-center py-6">
-                Direct messages with {agent.name}
+                Direct messaging wiring coming soon.
               </div>
             </TabsContent>
           </Tabs>
@@ -195,10 +272,7 @@ export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: Agent
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           SEND MESSAGE TO {agent.name.toUpperCase()}
         </h4>
-        <Input 
-          placeholder={`Message ${agent.name}... (@ to mention)`}
-          className="bg-muted/50"
-        />
+        <Input placeholder={`Message ${agent.name}... (@ to mention)`} className="bg-muted/50" />
       </div>
     </div>
   );

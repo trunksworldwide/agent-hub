@@ -402,7 +402,12 @@ export function DashboardPage() {
       {/* Agent Profile Panel (desktop sidebar) */}
       {selectedAgent && (
         <div className="hidden md:flex">
-          <AgentProfilePanel agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
+          <AgentProfilePanel
+            agent={selectedAgent}
+            tasks={tasks}
+            activity={activity}
+            onClose={() => setSelectedAgent(null)}
+          />
         </div>
       )}
 
@@ -419,6 +424,8 @@ export function DashboardPage() {
               <AgentProfilePanel
                 variant="sheet"
                 agent={selectedAgent}
+                tasks={tasks}
+                activity={activity}
                 onClose={() => setSelectedAgent(null)}
               />
             </SheetContent>
