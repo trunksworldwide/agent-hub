@@ -15,10 +15,15 @@ const PROJECTS_FILE = process.env.CLAWD_PROJECTS_FILE || path.join(process.cwd()
 
 let _supabase = null;
 function getSupabase() {
-  // Best-effort Supabase client for lightweight activity logging.
-  // Uses anon keys by default to avoid needing service role on local dev.
+  // Best-effort Supabase client for lightweight server-side logging.
+  // Prefer a service role key (bypasses RLS) when available; fall back to anon.
   const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY;
+
   if (!url || !key) return null;
   if (_supabase) return _supabase;
   _supabase = createClient(url, key);
@@ -42,6 +47,33 @@ async function logSupabaseActivity({ projectId, type, message, actor }) {
     }
   } catch (e) {
     console.error('Supabase activity insert threw:', e);
+  }
+}
+
+async function upsertSupabaseAgentStatus({ projectId, agentKey, state, note }) {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const nowIso = new Date().toISOString();
+
+    const { error } = await supabase.from('agent_status').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        state: state || 'idle',
+        note: note || null,
+        last_heartbeat_at: nowIso,
+        last_activity_at: nowIso,
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+
+    if (error) {
+      console.error('Supabase agent_status upsert failed:', error);
+    }
+  } catch (e) {
+    console.error('Supabase agent_status upsert threw:', e);
   }
 }
 
@@ -172,6 +204,15 @@ const server = http.createServer(async (req, res) => {
       } catch {
         // ignore
       }
+
+      // Best-effort: keep main agent presence fresh for the selected project.
+      // This makes the Dashboard presence UI feel "alive" even before deeper wiring.
+      await upsertSupabaseAgentStatus({
+        projectId,
+        agentKey: 'agent:main:main',
+        state: typeof activeSessions === 'number' && activeSessions > 0 ? 'working' : 'idle',
+        note: null,
+      });
 
       return sendJson(res, 200, {
         online: true,

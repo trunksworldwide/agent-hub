@@ -1,3 +1,8 @@
+### Server: Supabase service-role support + presence heartbeat
+- `server/index.mjs` now prefers `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SERVICE_KEY`) when present.
+  - This fixes server-side inserts/upserts that were blocked by RLS when only anon keys were available.
+- `/api/status` now best-effort upserts `agent_status` for the main agent (`agent:main:main`) so presence stays fresh.
+
 ### Projects dropdown (workspace selector)
 - Added `projects.json` and a Project selector in the top bar.
 - Control API now supports scoping by project via `x-clawdos-project` header.
