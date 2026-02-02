@@ -1,3 +1,7 @@
+### Dashboard: switch timestamps to 12-hour time
+- Dashboard clock and feed timestamps now use normal 12-hour time (with seconds) instead of 24h.
+- Agent profile panel timestamps match for consistency.
+
 ### Agents sidebar: “New Agent” button (Supabase)
 - Added a lightweight “+” button in the Agents sidebar to create a new agent roster entry (Supabase `agents`) and seed presence (`agent_status`).
 - Uses simple prompts for now (key/name/emoji/role) to avoid heavy UI work while wiring is in progress.
