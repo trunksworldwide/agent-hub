@@ -746,7 +746,7 @@ export async function getProjects(): Promise<Project[]> {
   if (hasSupabase() && supabase) {
     const { data, error } = await supabase
       .from('projects')
-      .select('id,name,workspace_path,created_at')
+      .select('id,name,workspace_path,tag,created_at')
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -755,6 +755,7 @@ export async function getProjects(): Promise<Project[]> {
       id: p.id,
       name: p.name,
       workspace: p.workspace_path || '',
+      tag: p.tag || (p.id === 'front-office' ? 'system' : undefined),
     }));
   }
 

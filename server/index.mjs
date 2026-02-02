@@ -290,7 +290,9 @@ const server = http.createServer(async (req, res) => {
         // Best effort: register in Supabase
         const sb = getSupabaseServerClient();
         if (sb) {
-          await sb.from('projects').upsert({ id, name, workspace_path: newWorkspace }, { onConflict: 'id' });
+          await sb
+            .from('projects')
+            .upsert({ id, name, workspace_path: newWorkspace, tag: tag || null }, { onConflict: 'id' });
         }
 
         return sendJson(res, 200, { ok: true, project: { id, name, workspace: newWorkspace, tag } });
