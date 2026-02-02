@@ -662,6 +662,24 @@ export async function getProjects(): Promise<Project[]> {
   ];
 }
 
+export async function createProject(input: { id: string; name: string; tag?: string }): Promise<{ ok: boolean; project?: Project }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean; project?: Project }>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean; project?: Project }>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+
+  await delay(50);
+  return { ok: true };
+}
+
 export async function getTasks(): Promise<Task[]> {
   // Prefer Supabase tasks if configured.
   if (hasSupabase() && supabase) {

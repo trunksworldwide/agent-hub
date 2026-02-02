@@ -53,7 +53,12 @@
   - log: `~/Library/Logs/clawdos-brain-doc-sync.log`
   - docs: `docs/OPERATIONS.md`
 
+### New project scaffolding (v1)
+- Control API can now create a new workspace on disk under `/Users/trunks/clawd-projects/<projectId>` and register it.
+- Top bar now includes a “+” button to create a new project (id + name).
+
 ## Next planned work
+- New agent button per project (roster + agent_status + later cron heartbeat).
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).
   - Show “Runs” separately (cron wakeups, isolated runs).

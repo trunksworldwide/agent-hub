@@ -149,6 +149,23 @@ export function TopBar() {
               </option>
             ))}
           </select>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            onClick={async () => {
+              const id = (prompt('New project id (slug)') || '').trim();
+              if (!id) return;
+              const name = (prompt('New project name') || id).trim();
+              const { createProject } = await import('@/lib/api');
+              await createProject({ id, name });
+              window.location.reload();
+            }}
+            title="New project"
+          >
+            +
+          </Button>
         </div>
       </div>
 

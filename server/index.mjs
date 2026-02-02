@@ -1,9 +1,10 @@
 import http from 'node:http';
 import { readFile, writeFile, stat, readdir, mkdir } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createClient } from '@supabase/supabase-js';
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -79,13 +80,24 @@ async function upsertSupabaseAgentStatus({ projectId, agentKey, state, note }) {
 
 function loadProjectsSync() {
   try {
-    // Read projects.json from repo root.
     const raw = readFileSync(PROJECTS_FILE, 'utf8');
     const data = JSON.parse(raw);
     return Array.isArray(data.projects) ? data.projects : [];
   } catch {
     return [];
   }
+}
+
+function saveProjectsSync(projects) {
+  const data = { projects };
+  writeFileSync(PROJECTS_FILE, JSON.stringify(data, null, 2) + '\n', 'utf8');
+}
+
+function getSupabaseServerClient() {
+  const url = process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 function getProjectIdFromReq(req) {
@@ -228,6 +240,54 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = loadProjectsSync();
       return sendJson(res, 200, projects);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/projects') {
+      // Create a new project workspace on disk + register in projects.json + Supabase (best effort).
+      try {
+        const body = await readBodyJson(req);
+        const input = body.input || {};
+        const id = String(input.id || '').trim();
+        const name = String(input.name || id).trim();
+        const tag = input.tag ? String(input.tag) : undefined;
+
+        if (!id) return sendJson(res, 400, { ok: false, error: 'missing_project_id' });
+
+        const root = process.env.CLAWD_PROJECTS_ROOT || '/Users/trunks/clawd-projects';
+        const newWorkspace = path.join(root, id);
+
+        // Create folder structure
+        await exec(`mkdir -p ${JSON.stringify(path.join(newWorkspace, 'memory'))}`);
+
+        // Seed files (minimal)
+        const seedFiles = [
+          { fp: path.join(newWorkspace, 'SOUL.md'), content: `# SOUL.md\n\nProject: ${name}\n` },
+          { fp: path.join(newWorkspace, 'AGENTS.md'), content: `# AGENTS.md\n\nProject: ${name}\n` },
+          { fp: path.join(newWorkspace, 'USER.md'), content: `# USER.md\n\nUser: Zack\n` },
+          { fp: path.join(newWorkspace, 'MEMORY.md'), content: `# MEMORY.md\n\n` },
+        ];
+
+        for (const f of seedFiles) {
+          if (!existsSync(f.fp)) writeFileSync(f.fp, f.content, 'utf8');
+        }
+
+        // Update local projects.json
+        const projects = loadProjectsSync();
+        if (!projects.find((p) => p.id === id)) {
+          projects.push({ id, name, workspace: newWorkspace, tag });
+          saveProjectsSync(projects);
+        }
+
+        // Best effort: register in Supabase
+        const sb = getSupabaseServerClient();
+        if (sb) {
+          await sb.from('projects').upsert({ id, name, workspace_path: newWorkspace }, { onConflict: 'id' });
+        }
+
+        return sendJson(res, 200, { ok: true, project: { id, name, workspace: newWorkspace, tag } });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/agents') {
