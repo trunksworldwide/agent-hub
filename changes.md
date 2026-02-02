@@ -48,6 +48,10 @@
   - subscribes to Supabase realtime changes and writes to local files
   - watches local files and upserts back to Supabase
   - git-commits synced file changes (best effort)
+- Installed always-on launchd service:
+  - `~/Library/LaunchAgents/com.trunks.clawdos.brain-doc-sync.plist`
+  - log: `~/Library/Logs/clawdos-brain-doc-sync.log`
+  - docs: `docs/OPERATIONS.md`
 
 ## Next planned work
 - Agents sidebar alignment:
