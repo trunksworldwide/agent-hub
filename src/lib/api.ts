@@ -498,6 +498,18 @@ export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'stat
       .eq('project_id', projectId);
 
     if (error) throw error;
+
+    // Write an activity row (best effort)
+    if (patch.status) {
+      await supabase.from('activities').insert({
+        project_id: projectId,
+        type: 'task_moved',
+        message: `${taskId} -> ${patch.status}`,
+        actor_agent_key: 'agent:main:main',
+        task_id: taskId,
+      });
+    }
+
     return { ok: true };
   }
 
@@ -540,6 +552,15 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
 
     if (error) throw error;
 
+    // Write an activity row (best effort)
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_created',
+      message: data.title,
+      actor_agent_key: 'agent:main:main',
+      task_id: data.id,
+    });
+
     return {
       ok: true,
       task: {
@@ -572,6 +593,26 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
 }
 
 export async function getActivity(): Promise<ActivityItem[]> {
+  // Prefer Supabase activities if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { data, error } = await supabase
+      .from('activities')
+      .select('id,type,message,actor_agent_key,task_id,created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    return (data || []).map((a: any) => ({
+      hash: a.id,
+      author: a.actor_agent_key || '',
+      date: a.created_at,
+      message: `[${a.type}] ${a.message}`,
+    }));
+  }
+
   if (USE_REMOTE) return requestJson<ActivityItem[]>('/api/activity');
   if (!ALLOW_MOCKS) return requestJson<ActivityItem[]>('/api/activity');
 

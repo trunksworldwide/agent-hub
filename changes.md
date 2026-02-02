@@ -84,6 +84,9 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - `getProjects()`, `getAgents()`, and task APIs now prefer Supabase tables when Supabase env vars are present.
 - Mock data now requires explicit `VITE_ALLOW_MOCKS=true` in dev to prevent ghost agents.
 - Added `scripts/supabase-admin.mjs` to seed/repair DB state (projects + agents).
+- Activity feed:
+  - `getActivity()` now prefers Supabase `activities`.
+  - Task create/move now writes activity rows (best effort).
 
 ## Next planned work
 - Agents sidebar alignment:
