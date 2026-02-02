@@ -1,3 +1,8 @@
+### Presence: upsert agent_status for *all* active agents from /api/sessions
+- Control API `GET /api/sessions` now upserts Supabase `agent_status` for every inferred `agent:<name>:<kind>` key (not just `agent:main:main`).
+  - Ensures multi-agent dashboards show accurate online/working + last_activity_at.
+  - Still guarantees a default `agent:main:main` presence row even when no sessions are active.
+
 ### Activity feed: agent key parsing (click-through to profile)
 - Fixed Dashboard Live Feed click-through to agent profiles when `actor_agent_key` uses colon-delimited keys (e.g. `agent:main:main`).
   - Feed now normalizes agent keys to `agent:<name>:<kind>` so `agentByKey` lookups succeed.

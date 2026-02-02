@@ -512,16 +512,30 @@ const server = http.createServer(async (req, res) => {
             byAgent.set(s.agentKey, cur);
           }
 
-          const mainKey = 'agent:main:main';
-          const main = byAgent.get(mainKey);
-          if (main) {
+          const heartbeatIso = new Date().toISOString();
+
+          // Upsert presence for any agent keys we can infer from session keys.
+          // Keeps the dashboard accurate when multiple agents are running.
+          for (const [agentKey, info] of byAgent.entries()) {
             await upsertSupabaseAgentStatus({
               projectId,
-              agentKey: mainKey,
-              state: main.count > 0 ? 'working' : 'idle',
-              note: main.count > 0 ? `${main.count} active session(s)` : null,
-              lastHeartbeatAt: new Date().toISOString(),
-              lastActivityAt: main.maxUpdatedAt ? new Date(main.maxUpdatedAt).toISOString() : null,
+              agentKey,
+              state: info.count > 0 ? 'working' : 'idle',
+              note: info.count > 0 ? `${info.count} active session(s)` : null,
+              lastHeartbeatAt: heartbeatIso,
+              lastActivityAt: info.maxUpdatedAt ? new Date(info.maxUpdatedAt).toISOString() : null,
+            });
+          }
+
+          // Also ensure the main agent has a presence row even if it currently has no active sessions.
+          if (!byAgent.has('agent:main:main')) {
+            await upsertSupabaseAgentStatus({
+              projectId,
+              agentKey: 'agent:main:main',
+              state: 'idle',
+              note: null,
+              lastHeartbeatAt: heartbeatIso,
+              lastActivityAt: null,
             });
           }
         } catch (e) {
