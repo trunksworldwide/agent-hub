@@ -41,3 +41,8 @@
 ### Activity feed (Supabase activities)
 - `getActivity()` now returns structured activity items when Supabase is configured (preserves `type` and `taskId`).
 - Dashboard feed now shows activity-specific icons (task_created/task_moved/build_update) and formats timestamps.
+
+### Mobile polish: AgentProfilePanel
+- Agent profile now opens as a right-side **Sheet** on mobile (instead of trying to render a fixed-width sidebar).
+- Desktop keeps the persistent right sidebar panel.
+- `AgentProfilePanel` supports a `variant` prop (`sidebar` | `sheet`) to control layout/borders.

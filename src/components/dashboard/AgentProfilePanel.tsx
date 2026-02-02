@@ -10,13 +10,14 @@ import type { Agent } from '@/lib/api';
 interface AgentProfilePanelProps {
   agent: Agent;
   onClose: () => void;
+  variant?: 'sidebar' | 'sheet';
 }
 
 // Mock data for the profile - these will be connected to real data later
 const mockAbout = "I am the Primary Agent. Guardian of the workspace. I handle task coordination, communication routing, and system orchestration. My tools: Slack monitoring, email handling, calendar management. My mission: Keep everything running smoothly.";
 const mockSkills = ['coordination', 'communication', 'scheduling', 'monitoring', 'automation', 'reporting'];
 
-export function AgentProfilePanel({ agent, onClose }: AgentProfilePanelProps) {
+export function AgentProfilePanel({ agent, onClose, variant = 'sidebar' }: AgentProfilePanelProps) {
   const statusReason =
     (agent.statusNote && agent.statusNote.trim().length > 0 ? agent.statusNote : null) ||
     'No status note yet.';
@@ -56,7 +57,12 @@ export function AgentProfilePanel({ agent, onClose }: AgentProfilePanelProps) {
   };
 
   return (
-    <div className="w-80 lg:w-96 border-l border-border bg-card flex flex-col h-full">
+    <div
+      className={cn(
+        'bg-card flex flex-col h-full',
+        variant === 'sidebar' ? 'w-80 lg:w-96 border-l border-border' : 'w-full'
+      )}
+    >
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

@@ -399,12 +399,31 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Agent Profile Panel */}
+      {/* Agent Profile Panel (desktop sidebar) */}
       {selectedAgent && (
-        <AgentProfilePanel 
-          agent={selectedAgent} 
-          onClose={() => setSelectedAgent(null)} 
-        />
+        <div className="hidden md:flex">
+          <AgentProfilePanel agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
+        </div>
+      )}
+
+      {/* Agent Profile Panel (mobile sheet) */}
+      {selectedAgent && (
+        <div className="md:hidden">
+          <Sheet
+            open={Boolean(selectedAgent)}
+            onOpenChange={(open) => {
+              if (!open) setSelectedAgent(null);
+            }}
+          >
+            <SheetContent side="right" className="p-0 w-full sm:w-[420px]">
+              <AgentProfilePanel
+                variant="sheet"
+                agent={selectedAgent}
+                onClose={() => setSelectedAgent(null)}
+              />
+            </SheetContent>
+          </Sheet>
+        </div>
       )}
     </div>
   );
