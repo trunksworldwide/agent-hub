@@ -63,3 +63,7 @@
 - **Attention** tab shows real assigned (non-done) tasks for the agent.
 - **Timeline** tab shows recent activity rows authored by the agent (from Supabase `activities` when configured).
 - Replaced mock “about/skills” placeholders with lightweight, real presence fields (state/current task/last heartbeat/activity) and skillCount.
+
+### Fix: Control API can create project memory/ files on first write
+- Control API now `mkdir -p`s the parent directory before writing agent files (`memory/YYYY-MM-DD.md`) and `memory/tasks.json`.
+- This prevents 500s when a new project workspace doesn’t already have a `memory/` folder.

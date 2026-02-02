@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFile, writeFile, stat, readdir } from 'node:fs/promises';
+import { readFile, writeFile, stat, readdir, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
@@ -79,6 +79,14 @@ async function readBodyJson(req) {
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
   return JSON.parse(raw);
+}
+
+async function ensureParentDir(fp) {
+  try {
+    await mkdir(path.dirname(fp), { recursive: true });
+  } catch {
+    // ignore
+  }
 }
 
 async function gitCommitFile(brainRepo, filePath, message) {
@@ -196,6 +204,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBodyJson(req);
       const content = String(body.content ?? '');
 
+      await ensureParentDir(fp);
       await writeFile(fp, content, 'utf8');
 
       const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: update ${type}`);
@@ -232,6 +241,7 @@ const server = http.createServer(async (req, res) => {
         };
 
         const fp = path.join(workspace, 'memory', 'tasks.json');
+        await ensureParentDir(fp);
         const st = await safeStat(fp);
         const current = st ? JSON.parse(await readFile(fp, 'utf8')) : [];
         const next = Array.isArray(current) ? [task, ...current] : [task];
@@ -251,6 +261,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readBodyJson(req);
         const patch = body.patch || {};
         const fp = path.join(workspace, 'memory', 'tasks.json');
+        await ensureParentDir(fp);
         const st = await safeStat(fp);
         const current = st ? JSON.parse(await readFile(fp, 'utf8')) : [];
         const arr = Array.isArray(current) ? current : [];
