@@ -124,9 +124,33 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
               <h1 className="text-xl font-semibold truncate">
                 {agent?.name || selectedAgentId}
               </h1>
-              <p className="text-sm text-muted-foreground truncate">
-                {agent?.role || 'Agent'}
-              </p>
+
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                <span className="truncate">{agent?.role || 'Agent'}</span>
+
+                {agent?.statusState ? (
+                  <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-foreground/80">
+                    {agent.statusState}
+                  </span>
+                ) : null}
+
+                {agent?.lastActive ? (
+                  <span
+                    className="text-xs"
+                    title={
+                      agent.lastHeartbeatAt || agent.lastActivityAt
+                        ? `last seen: ${agent.lastHeartbeatAt || agent.lastActivityAt}`
+                        : undefined
+                    }
+                  >
+                    Seen {agent.lastActive}
+                  </span>
+                ) : null}
+
+                {agent?.statusNote ? (
+                  <span className="truncate text-xs">· {agent.statusNote}</span>
+                ) : null}
+              </div>
             </div>
           </div>
 

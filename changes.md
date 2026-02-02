@@ -197,3 +197,7 @@
 ### Agents sidebar: show real "seen" timestamps (Supabase presence)
 - Agents sidebar now prefers Supabase presence timestamps (`last_heartbeat_at` / `last_activity_at`) to render a reliable “Seen … ago” label.
 - Falls back to the existing `lastActive` string when timestamps aren’t available.
+
+### Agents page: show agent_status presence in agent header
+- Agent detail header now surfaces Supabase-backed presence fields: `state`, “Seen …” relative timestamp, and an optional status note.
+- Includes a tooltip with the raw last heartbeat/activity timestamp when available.
