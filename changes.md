@@ -189,3 +189,7 @@
 
 ### Server: cleanup duplicate Supabase import
 - Removed a duplicate `createClient` import in `server/index.mjs`.
+
+### Activity feed: write activities via Control API
+- Added `POST /api/activity` to best-effort insert a Supabase `activities` row (`type`, `message`, optional `actor`).
+- Enables build updates (and other UI actions) to publish to the live feed without bundling Supabase keys into the browser.

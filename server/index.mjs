@@ -593,6 +593,27 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/activity') {
+      // Lightweight endpoint for writing a Supabase activity row.
+      // Useful for build updates, brain-doc sync, etc.
+      try {
+        const body = await readBodyJson(req);
+        const type = typeof body?.type === 'string' ? body.type.trim() : '';
+        const message = typeof body?.message === 'string' ? body.message.trim() : '';
+        const actor = typeof body?.actor === 'string' ? body.actor.trim() : null;
+
+        if (!type || !message) {
+          return sendJson(res, 400, { ok: false, error: 'Missing required fields: type, message' });
+        }
+
+        const projectId = getProjectIdFromReq(req);
+        await logSupabaseActivity({ projectId, type, message, actor });
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/activity') {
       // Recent git commits from the brain repo as a basic activity feed.
       try {
