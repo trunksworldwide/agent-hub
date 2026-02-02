@@ -54,9 +54,17 @@ interface ClawdOfficeState {
   setIsRefreshing: (value: boolean) => void;
 }
 
+const initialProjectId = (() => {
+  try {
+    return localStorage.getItem('clawdos.project') || 'front-office';
+  } catch {
+    return 'front-office';
+  }
+})();
+
 export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Project selection
-  selectedProjectId: 'front-office',
+  selectedProjectId: initialProjectId,
   setSelectedProjectId: (id) => set({ selectedProjectId: id }),
 
   // View mode

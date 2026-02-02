@@ -93,3 +93,6 @@
 ### Activity UI: display-friendly actor labels (while keeping raw keys)
 - Supabase activities now carry both a raw `author` (e.g. `agent:main:main`) and a display-friendly `authorLabel` (e.g. `main`).
 - Dashboard Live Feed uses the friendly label so the feed reads cleanly, while exact matching still works elsewhere.
+
+### Fix: restore selected project on reload
+- Zustand store now initializes `selectedProjectId` from `localStorage` (`clawdos.project`) so project scoping stays consistent across refreshes.
