@@ -106,3 +106,7 @@
 
 ### Live Feed: manual refresh + "updated" timestamp
 - Dashboard Live Feed header now shows how recently the data was refreshed and provides a one-click refresh button (with spinner).
+
+### Brain-doc sync: log agent file edits to Supabase activity feed
+- Control API now best-effort inserts an `activities` row (`type=brain_doc_updated`) when saving SOUL/USER/MEMORY files.
+- This makes doc edits show up in the Live Feed when Supabase is configured.

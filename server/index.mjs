@@ -5,11 +5,45 @@ import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { createClient } from '@supabase/supabase-js';
+
 const exec = promisify(_exec);
 
 const PORT = Number(process.env.PORT || 3737);
 const DEFAULT_WORKSPACE = process.env.CLAWD_WORKSPACE || '/Users/trunks/clawd';
 const PROJECTS_FILE = process.env.CLAWD_PROJECTS_FILE || path.join(process.cwd(), 'projects.json');
+
+let _supabase = null;
+function getSupabase() {
+  // Best-effort Supabase client for lightweight activity logging.
+  // Uses anon keys by default to avoid needing service role on local dev.
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  if (_supabase) return _supabase;
+  _supabase = createClient(url, key);
+  return _supabase;
+}
+
+async function logSupabaseActivity({ projectId, type, message, actor }) {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const { error } = await supabase.from('activities').insert({
+      project_id: projectId,
+      type,
+      message,
+      actor_agent_key: actor || null,
+    });
+
+    if (error) {
+      console.error('Supabase activity insert failed:', error);
+    }
+  } catch (e) {
+    console.error('Supabase activity insert threw:', e);
+  }
+}
 
 function loadProjectsSync() {
   try {
@@ -208,6 +242,15 @@ const server = http.createServer(async (req, res) => {
       await writeFile(fp, content, 'utf8');
 
       const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: update ${type}`);
+
+      // Best-effort: mirror “brain doc” edits into the Supabase activity feed.
+      // This makes doc changes visible in the ClawdOS Live Feed when Supabase is configured.
+      await logSupabaseActivity({
+        projectId,
+        type: 'brain_doc_updated',
+        message: `Updated ${type}${commit && typeof commit === 'string' ? ` (${commit.slice(0, 7)})` : ''}`,
+        actor: 'agent:ui:clawdos',
+      });
 
       return sendJson(res, 200, { ok: true, commit });
     }
