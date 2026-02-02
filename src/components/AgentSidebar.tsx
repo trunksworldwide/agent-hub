@@ -53,6 +53,24 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     return styles[status];
   };
 
+  function formatSeenLabel(agent: Agent): string {
+    const lastSeenIso = agent.lastHeartbeatAt || agent.lastActivityAt;
+    if (!lastSeenIso) return agent.lastActive || '—';
+
+    const last = new Date(lastSeenIso);
+    if (Number.isNaN(last.getTime())) return agent.lastActive || '—';
+
+    const deltaMs = Math.max(0, currentTime.getTime() - last.getTime());
+    const s = Math.floor(deltaMs / 1000);
+    if (s < 60) return `Seen ${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `Seen ${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `Seen ${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `Seen ${d}d ago`;
+  }
+
   return (
     <aside className={cn("w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin", className)}>
       <div className="p-4">
@@ -139,7 +157,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{agent.role}</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {agent.skillCount} skills • {agent.lastActive || '—'}
+                    {agent.skillCount} skills • {formatSeenLabel(agent)}
                   </p>
                 </div>
               </div>

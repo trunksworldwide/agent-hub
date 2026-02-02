@@ -193,3 +193,7 @@
 ### Activity feed: write activities via Control API
 - Added `POST /api/activity` to best-effort insert a Supabase `activities` row (`type`, `message`, optional `actor`).
 - Enables build updates (and other UI actions) to publish to the live feed without bundling Supabase keys into the browser.
+
+### Agents sidebar: show real "seen" timestamps (Supabase presence)
+- Agents sidebar now prefers Supabase presence timestamps (`last_heartbeat_at` / `last_activity_at`) to render a reliable “Seen … ago” label.
+- Falls back to the existing `lastActive` string when timestamps aren’t available.
