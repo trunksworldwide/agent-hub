@@ -510,6 +510,27 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
         { onConflict: 'project_id,doc_type' }
       );
     if (error) throw error;
+
+    // Best-effort: write a matching activity row so the Live Feed reflects doc edits
+    // even when the dashboard is talking directly to Supabase.
+    try {
+      const labelByType: Record<AgentFile['type'], string> = {
+        soul: 'SOUL.md',
+        agents: 'AGENTS.md',
+        user: 'USER.md',
+        memory_long: 'MEMORY.md',
+        memory_today: 'memory (today)',
+      };
+      await supabase.from('activities').insert({
+        project_id: projectId,
+        type: 'brain_doc_updated',
+        message: `Updated ${labelByType[type] || type}`,
+        actor_agent_key: 'agent:main:main',
+      });
+    } catch {
+      // ignore
+    }
+
     return { ok: true };
   }
 

@@ -1,3 +1,7 @@
+### Activity feed: log brain doc edits in Supabase mode
+- When the dashboard saves SOUL/USER/MEMORY via Supabase `brain_docs`, we now best-effort insert an `activities` row (`type=brain_doc_updated`).
+  - Keeps the Live Feed accurate even when bypassing the Control API.
+
 ### Dashboard: follow active project for realtime + refresh
 - Dashboard now uses the shared store’s `selectedProjectId` for Supabase realtime subscriptions.
   - Fixes a subtle bug where switching projects would keep the dashboard subscribed to the old project until a full reload.
