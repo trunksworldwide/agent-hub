@@ -1,3 +1,9 @@
+### Presence: sync agent_status from live sessions
+- Control API `GET /api/sessions` now derives a base `agentKey` from each session key (e.g. `agent:main:cron:...` → `agent:main:main`) and uses it to best-effort upsert Supabase `agent_status`.
+  - Keeps `last_activity_at` aligned with the most recently updated session.
+  - Sets a lightweight `note` like `N active session(s)` so the profile panel has context.
+- `/api/status` now also sets a similar note when it refreshes main-agent presence.
+
 ### Activity: fix agent key normalization for per-agent timelines
 - Fixed a subtle Supabase activity parsing bug where `actor_agent_key` like `agent:main:main` was being truncated to `main`.
   - `getActivity()` now normalizes agent keys as `agent:<name>:<kind>` and strips only *extra* trailing segments (e.g. `agent:main:main:cron` → `agent:main:main`).

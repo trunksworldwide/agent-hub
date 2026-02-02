@@ -49,12 +49,22 @@ async function logSupabaseActivity({ projectId, type, message, actor }) {
   }
 }
 
-async function upsertSupabaseAgentStatus({ projectId, agentKey, state, note }) {
+async function upsertSupabaseAgentStatus({
+  projectId,
+  agentKey,
+  state,
+  note,
+  lastHeartbeatAt,
+  lastActivityAt,
+  currentTaskId,
+}) {
   try {
     const supabase = getSupabase();
     if (!supabase) return;
 
     const nowIso = new Date().toISOString();
+    const heartbeatIso = lastHeartbeatAt || nowIso;
+    const activityIso = lastActivityAt || nowIso;
 
     const { error } = await supabase.from('agent_status').upsert(
       {
@@ -62,8 +72,9 @@ async function upsertSupabaseAgentStatus({ projectId, agentKey, state, note }) {
         agent_key: agentKey,
         state: state || 'idle',
         note: note || null,
-        last_heartbeat_at: nowIso,
-        last_activity_at: nowIso,
+        current_task_id: currentTaskId || null,
+        last_heartbeat_at: heartbeatIso,
+        last_activity_at: activityIso,
       },
       { onConflict: 'project_id,agent_key' }
     );
@@ -221,7 +232,7 @@ const server = http.createServer(async (req, res) => {
         projectId,
         agentKey: 'agent:main:main',
         state: typeof activeSessions === 'number' && activeSessions > 0 ? 'working' : 'idle',
-        note: null,
+        note: typeof activeSessions === 'number' && activeSessions > 0 ? `${activeSessions} active session(s)` : null,
       });
 
       return sendJson(res, 200, {
@@ -460,16 +471,63 @@ const server = http.createServer(async (req, res) => {
       try {
         const { stdout } = await exec('clawdbot sessions --json --active 10080');
         const data = JSON.parse(stdout || '{"sessions": []}');
-        const sessions = (data.sessions || []).map((s) => ({
-          id: s.sessionId || s.key,
-          key: s.key,
-          kind: s.kind,
-          status: s.abortedLastRun ? 'error' : 'active',
-          startedAt: new Date(Date.now() - (s.ageMs || 0)).toISOString(),
-          updatedAt: new Date(s.updatedAt || Date.now()).toISOString(),
-          model: s.model,
-          totalTokens: s.totalTokens,
-        }));
+
+        const normalizeAgentKey = (raw) => {
+          const key = String(raw || '').trim();
+          const parts = key.split(':');
+          if (parts[0] === 'agent' && parts.length >= 3) {
+            // Treat these as belonging to the base agent identity (agent:<name>:<kind>).
+            return parts.slice(0, 3).join(':');
+          }
+          return '';
+        };
+
+        const sessions = (data.sessions || []).map((s) => {
+          const updatedAtIso = new Date(s.updatedAt || Date.now()).toISOString();
+          return {
+            id: s.sessionId || s.key,
+            key: s.key,
+            agentKey: normalizeAgentKey(s.key),
+            kind: s.kind,
+            status: s.abortedLastRun ? 'error' : 'active',
+            startedAt: new Date(Date.now() - (s.ageMs || 0)).toISOString(),
+            updatedAt: updatedAtIso,
+            model: s.model,
+            totalTokens: s.totalTokens,
+          };
+        });
+
+        // Best-effort: keep agent_status in sync with real session activity.
+        // This powers the Dashboard presence UI (ONLINE/WORKING, last seen).
+        try {
+          const byAgent = new Map();
+          for (const s of sessions) {
+            if (!s.agentKey) continue;
+            const cur = byAgent.get(s.agentKey) || { count: 0, maxUpdatedAt: null };
+            cur.count += 1;
+            const t = Date.parse(s.updatedAt);
+            if (!Number.isNaN(t)) {
+              cur.maxUpdatedAt = cur.maxUpdatedAt === null ? t : Math.max(cur.maxUpdatedAt, t);
+            }
+            byAgent.set(s.agentKey, cur);
+          }
+
+          const mainKey = 'agent:main:main';
+          const main = byAgent.get(mainKey);
+          if (main) {
+            await upsertSupabaseAgentStatus({
+              projectId,
+              agentKey: mainKey,
+              state: main.count > 0 ? 'working' : 'idle',
+              note: main.count > 0 ? `${main.count} active session(s)` : null,
+              lastHeartbeatAt: new Date().toISOString(),
+              lastActivityAt: main.maxUpdatedAt ? new Date(main.maxUpdatedAt).toISOString() : null,
+            });
+          }
+        } catch (e) {
+          console.error('Agent presence sync (from /api/sessions) failed:', e);
+        }
+
         return sendJson(res, 200, sessions);
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
