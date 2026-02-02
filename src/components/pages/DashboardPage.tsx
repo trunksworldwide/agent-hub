@@ -15,6 +15,9 @@ interface FeedItem {
   /** Parsed agent key when the feed item is attributable to an agent. */
   actorAgentKey?: string | null;
 
+  /** Parsed agent key when the feed item targets a specific agent (e.g. a session message). */
+  recipientAgentKey?: string | null;
+
   // Activity types come from Supabase `activities.type` (arbitrary strings).
   // Keep this as `string` so new server-side activity events render without
   // requiring a frontend deploy.
@@ -118,6 +121,31 @@ export function DashboardPage() {
     return null;
   };
 
+  const parseRecipientAgentKey = (message: string | undefined | null): string | null => {
+    const m = (message || '').trim();
+    if (!m) return null;
+
+    // v1 message routing convention: `To <agentKey>: <message>`
+    // Example: `To agent:main:main: hello`
+    const match = m.match(/^To\s+([^:]+(?::[^:]+){0,3})\s*:\s*/i);
+    if (!match) return null;
+
+    const target = (match[1] || '').trim();
+    if (!target) return null;
+
+    // If this is already an agent key, keep the canonical 3-segment key.
+    const parts = target.split(':');
+    if (parts[0] === 'agent' && parts.length >= 3) return parts.slice(0, 3).join(':');
+
+    // Otherwise, try to resolve by agent name.
+    const needle = target.toLowerCase();
+    for (const a of agents) {
+      if ((a.name || '').toLowerCase() == needle) return a.id;
+    }
+
+    return null;
+  };
+
   const agentByKey = useMemo(() => {
     const m = new Map<string, Agent>();
     for (const a of agents) m.set(a.id, a);
@@ -147,15 +175,25 @@ export function DashboardPage() {
     for (const c of activity.slice(0, 20)) {
       const kind = (c.type || 'commit') as FeedItem['type'];
       const actorAgentKey = parseActorAgentKey(c.author);
-      const agent = actorAgentKey ? agentByKey.get(actorAgentKey) : undefined;
+      const recipientAgentKey = kind === 'session' ? parseRecipientAgentKey(c.message) : null;
+
+      const actorAgent = actorAgentKey ? agentByKey.get(actorAgentKey) : undefined;
+      const recipientAgent = recipientAgentKey ? agentByKey.get(recipientAgentKey) : undefined;
+
+      const subtitle = (() => {
+        if (kind === 'session' && recipientAgent) return `dashboard → ${recipientAgent.name}`;
+        if (actorAgent) return actorAgent.name;
+        return (c.authorLabel || c.author) || undefined;
+      })();
 
       items.push({
         id: `${kind}-${c.hash}`,
         type: kind,
         title: c.message,
-        subtitle: agent ? agent.name : (c.authorLabel || c.author) || undefined,
+        subtitle,
         createdAt: c.date,
         actorAgentKey,
+        recipientAgentKey: recipientAgentKey || undefined,
       });
     }
 
@@ -491,7 +529,7 @@ export function DashboardPage() {
                 <div
                   key={item.id}
                   onClick={() => {
-                    const k = item.actorAgentKey;
+                    const k = item.actorAgentKey || item.recipientAgentKey;
                     if (!k) return;
                     const a = agentByKey.get(k);
                     if (!a) return;
@@ -499,12 +537,13 @@ export function DashboardPage() {
                   }}
                   className={cn(
                     "p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors",
-                    item.actorAgentKey && agentByKey.has(item.actorAgentKey) && "cursor-pointer"
+                    (item.actorAgentKey || item.recipientAgentKey) && agentByKey.has(item.actorAgentKey || item.recipientAgentKey || '') && "cursor-pointer"
                   )}
                 >
                   <div className="flex items-start gap-3">
                     {(() => {
-                      const a = item.actorAgentKey ? agentByKey.get(item.actorAgentKey) : null;
+                      const key = item.actorAgentKey || item.recipientAgentKey;
+                      const a = key ? agentByKey.get(key) : null;
                       const label = a?.avatar || null;
                       const color = a?.color || null;
 

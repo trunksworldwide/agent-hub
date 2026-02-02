@@ -305,3 +305,7 @@
 - Added a `projects.tag` column (migration) so the UI can consistently highlight special/system projects like Front Office.
 - Server `/api/projects` creation now upserts `tag` into Supabase (best-effort).
 - Client `getProjects()` now selects + returns `tag` (with a fallback for `front-office`).
+
+### Dashboard feed: session messages target the recipient agent
+- Dashboard live feed now parses `session` activity messages (e.g. `To agent:main:main: ...`) and treats the recipient as the clickable agent.
+- This makes “Send message” entries open the right AgentProfilePanel even though the activity actor is `dashboard`.
