@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Play, Clock, Check, X, ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Play, Clock, Check, X, ChevronDown, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { getCronJobs, toggleCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
@@ -17,15 +17,45 @@ export function CronPage() {
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [runsByJob, setRunsByJob] = useState<Record<string, CronRunEntry[]>>({});
   const [loadingRuns, setLoadingRuns] = useState<Record<string, boolean>>({});
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null);
   const { toast } = useToast();
 
+  const lastRefreshedLabel = useMemo(() => {
+    if (!lastRefreshedAt) return '—';
+    const ms = Date.now() - lastRefreshedAt;
+    if (ms < 3_000) return 'just now';
+    if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s ago`;
+    if (ms < 60 * 60_000) return `${Math.max(1, Math.round(ms / 60_000))}m ago`;
+    return new Date(lastRefreshedAt).toLocaleString();
+  }, [lastRefreshedAt]);
+
+  const loadJobs = async () => {
+    if (loadingJobs) return;
+    setLoadingJobs(true);
+    try {
+      const next = await getCronJobs();
+      setJobs(next);
+      setLastRefreshedAt(Date.now());
+    } catch (err: any) {
+      toast({
+        title: 'Failed to load cron jobs',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingJobs(false);
+    }
+  };
+
   useEffect(() => {
-    getCronJobs().then(setJobs);
+    loadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadRuns = async (jobId: string) => {
+  const loadRuns = async (jobId: string, opts?: { force?: boolean }) => {
     if (loadingRuns[jobId]) return;
-    if (runsByJob[jobId]) return;
+    if (runsByJob[jobId] && !opts?.force) return;
 
     setLoadingRuns((m) => ({ ...m, [jobId]: true }));
     try {
@@ -82,11 +112,26 @@ export function CronPage() {
   return (
     <div className="flex-1 p-6 overflow-auto scrollbar-thin">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
-          <p className="text-muted-foreground">
-            Manage cron jobs and scheduled tasks.
-          </p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
+            <p className="text-muted-foreground">
+              Manage cron jobs and scheduled tasks.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Updated: {lastRefreshedLabel}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadJobs}
+            disabled={loadingJobs}
+            className="gap-2"
+          >
+            <RefreshCw className={cn('w-4 h-4', loadingJobs && 'animate-spin')} />
+            Refresh
+          </Button>
         </div>
 
         <div className="space-y-3">
@@ -137,7 +182,7 @@ export function CronPage() {
                         Run Now
                       </Button>
                       <CollapsibleTrigger asChild>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" aria-label={expandedJob === job.id ? 'Collapse' : 'Expand'}>
                           <ChevronDown className={cn(
                             "w-4 h-4 transition-transform",
                             expandedJob === job.id && "rotate-180"
@@ -157,7 +202,20 @@ export function CronPage() {
                     </div>
 
                     <div className="mt-4">
-                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Recent runs</h4>
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <h4 className="text-sm font-medium text-muted-foreground">Recent runs</h4>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => loadRuns(job.id, { force: true })}
+                          disabled={Boolean(loadingRuns[job.id])}
+                          className="gap-2"
+                        >
+                          <RefreshCw className={cn('w-4 h-4', loadingRuns[job.id] && 'animate-spin')} />
+                          Refresh runs
+                        </Button>
+                      </div>
+
                       {loadingRuns[job.id] && (
                         <div className="text-sm text-muted-foreground">Loading…</div>
                       )}

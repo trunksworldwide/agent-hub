@@ -116,10 +116,6 @@
 - Sidebar sorts agents by status priority (running → online → idle → offline), then name.
 
 ### Agents sidebar: show per-agent color theme
-- Agent roster now carries through the Supabase  field (when present).
-- Sidebar renders a small colored dot on each agent card, making distinct agents easier to scan.
-
-### Agents sidebar: show per-agent color theme
 - Agent roster now carries through the Supabase `agents.color` field (when present).
 - Sidebar renders a small colored dot on each agent card, making distinct agents easier to scan.
 
@@ -130,3 +126,7 @@
 ### Agents sidebar: subtle glow for running agents
 - Sidebar now adds a subtle animated halo/glow around agents whose status resolves to `running`.
 - Respects `prefers-reduced-motion`.
+
+### Cron page: refresh jobs + run history
+- Added a “Refresh” button with last-updated timestamp for the cron jobs list.
+- Added per-job “Refresh runs” to re-fetch run history on demand (useful during debugging).
