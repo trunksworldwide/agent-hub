@@ -28,7 +28,7 @@ export interface Agent {
 }
 
 export interface AgentFile {
-  type: 'soul' | 'user' | 'memory_long' | 'memory_today';
+  type: 'soul' | 'agents' | 'user' | 'memory_long' | 'memory_today';
   content: string;
   lastModified: string;
 }
@@ -449,6 +449,25 @@ export async function getAgents(): Promise<Agent[]> {
 }
 
 export async function getAgentFile(agentId: string, type: AgentFile['type']): Promise<AgentFile> {
+  // Prefer Supabase brain_docs if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { data, error } = await supabase
+      .from('brain_docs')
+      .select('content,updated_at')
+      .eq('project_id', projectId)
+      .eq('doc_type', type)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return {
+      type,
+      content: data?.content || '',
+      lastModified: data?.updated_at || new Date().toISOString(),
+    };
+  }
+
   if (USE_REMOTE) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
   if (!ALLOW_MOCKS) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
 
@@ -456,6 +475,7 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
 
   const contentMap: Record<AgentFile['type'], string> = {
     soul: mockSoulContent,
+    agents: '',
     user: mockUserContent,
     memory_long: mockMemoryLong,
     memory_today: mockMemoryToday,
@@ -463,12 +483,30 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
 
   return {
     type,
-    content: contentMap[type],
+    content: contentMap[type] || '',
     lastModified: new Date().toISOString(),
   };
 }
 
 export async function saveAgentFile(agentId: string, type: AgentFile['type'], content: string): Promise<{ ok: boolean; commit?: string | null | { error: string } }> {
+  // Prefer Supabase brain_docs if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { error } = await supabase
+      .from('brain_docs')
+      .upsert(
+        {
+          project_id: projectId,
+          doc_type: type,
+          content,
+          updated_by: 'dashboard',
+        },
+        { onConflict: 'project_id,doc_type' }
+      );
+    if (error) throw error;
+    return { ok: true };
+  }
+
   if (USE_REMOTE) {
     return requestJson<{ ok: boolean; commit?: string | null | { error: string } }>(`/api/agents/${agentId}/files/${type}`, {
       method: 'POST',

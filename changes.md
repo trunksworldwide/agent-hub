@@ -33,6 +33,15 @@
 - Added `POST /api/cron/:id/toggle` (plus `/enable` and `/disable`) to the Control API.
 - `toggleCronJob()` now hits the Control API so the Cron UI switch actually enables/disables real jobs.
 
+### Bidirectional brain docs (Supabase + Mac mini sync)
+- Added Supabase `brain_docs` table (project_id + doc_type + content + updated_at + updated_by) and dev RLS policies.
+- Frontend SOUL/USER/MEMORY editors now read/write via Supabase `brain_docs` when Supabase is configured.
+- Added `scripts/brain-doc-sync.mjs` (Mac mini) to keep workspace files in lockstep:
+  - seeds missing docs from local files
+  - subscribes to Supabase realtime changes and writes to local files
+  - watches local files and upserts back to Supabase
+  - git-commits synced file changes (best effort)
+
 ## Next planned work
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).
