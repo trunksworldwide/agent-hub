@@ -127,6 +127,9 @@ export function DashboardPage() {
   const feed: FeedItem[] = useMemo(() => {
     const items: FeedItem[] = [];
 
+    const agentByKey = new Map<string, Agent>();
+    for (const a of agents) agentByKey.set(a.id, a);
+
     for (const j of cronJobs.slice(0, 10)) {
       items.push({
         id: `cron-${j.id}`,
@@ -134,19 +137,25 @@ export function DashboardPage() {
         title: `cron: ${j.name}`,
         subtitle: j.schedule,
         // Prefer a real timestamp when available so sorting is stable.
-        createdAt: typeof j.nextRunAtMs === 'number' ? new Date(j.nextRunAtMs).toISOString() : (j.nextRun || new Date().toISOString()),
+        createdAt:
+          typeof j.nextRunAtMs === 'number'
+            ? new Date(j.nextRunAtMs).toISOString()
+            : j.nextRun || new Date().toISOString(),
       });
     }
 
     for (const c of activity.slice(0, 20)) {
       const kind = (c.type || 'commit') as FeedItem['type'];
+      const actorAgentKey = parseActorAgentKey(c.author);
+      const agent = actorAgentKey ? agentByKey.get(actorAgentKey) : undefined;
+
       items.push({
         id: `${kind}-${c.hash}`,
         type: kind,
         title: c.message,
-        subtitle: (c.authorLabel || c.author) || undefined,
+        subtitle: agent ? agent.name : (c.authorLabel || c.author) || undefined,
         createdAt: c.date,
-        actorAgentKey: parseActorAgentKey(c.author),
+        actorAgentKey,
       });
     }
 
@@ -154,7 +163,29 @@ export function DashboardPage() {
       .filter(Boolean)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, 25);
-  }, [cronJobs, activity]);
+  }, [cronJobs, activity, agents]);
+
+  const iconForFeedType = (type: string) => {
+    switch (type) {
+      case 'session':
+        return '💬';
+      case 'cron':
+        return '⏰';
+      case 'cron_run_requested':
+        return '▶️';
+      case 'task_created':
+        return '🆕';
+      case 'task_moved':
+      case 'task_updated':
+        return '🗂️';
+      case 'brain_doc_updated':
+        return '🧠';
+      case 'build_update':
+        return '🔧';
+      default:
+        return '✅';
+    }
+  };
 
   const getStatusBadge = (status: Agent['status']) => {
     const styles = {
@@ -472,28 +503,46 @@ export function DashboardPage() {
                   )}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">
-                      {item.type === 'session'
-                        ? '💬'
-                        : item.type === 'cron'
-                        ? '⏰'
-                        : item.type === 'cron_run_requested'
-                        ? '▶️'
-                        : item.type === 'task_created'
-                        ? '🆕'
-                        : item.type === 'task_moved' || item.type === 'task_updated'
-                        ? '🗂️'
-                        : item.type === 'brain_doc_updated'
-                        ? '🧠'
-                        : item.type === 'build_update'
-                        ? '🔧'
-                        : '✅'}
-                    </span>
+                    {(() => {
+                      const a = item.actorAgentKey ? agentByKey.get(item.actorAgentKey) : null;
+                      const label = a?.avatar || null;
+                      const color = a?.color || null;
+
+                      return (
+                        <span
+                          className={cn(
+                            'w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-xl border border-border',
+                            label ? 'bg-muted/40' : 'bg-transparent'
+                          )}
+                          style={
+                            label && color
+                              ? {
+                                  backgroundColor: `${color}22`,
+                                  borderColor: `${color}55`,
+                                }
+                              : undefined
+                          }
+                          aria-hidden
+                        >
+                          {label ? label : iconForFeedType(item.type)}
+                        </span>
+                      );
+                    })()}
+
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{item.title}</p>
                       {item.subtitle && (
-                        <p className="text-xs text-muted-foreground truncate mt-1">{item.subtitle}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-1">
+                          {item.subtitle}
+                          <span className="mx-1">·</span>
+                          <span className="font-mono">{item.type}</span>
+                        </p>
                       )}
+                      {!item.subtitle ? (
+                        <p className="text-xs text-muted-foreground truncate mt-1">
+                          <span className="font-mono">{item.type}</span>
+                        </p>
+                      ) : null}
                       <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {(() => {

@@ -1,3 +1,7 @@
+### Dashboard Live Feed: show agent avatars + type in subtitle
+- Live Feed items attributed to a known agent now render the agent’s emoji in a tinted tile (uses agent `color` when present).
+- Feed subtitle prefers the agent’s display name (instead of raw `actor_agent_key`) and also shows the activity `type` (monospace) for fast scanning.
+
 ### AgentProfilePanel: show agent theme color in profile header
 - AgentProfilePanel now tints the avatar tile with the agent’s `color` (when present) and shows a small color dot next to the name.
 
