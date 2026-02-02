@@ -88,6 +88,11 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
   - `getActivity()` now prefers Supabase `activities`.
   - Task create/move now writes activity rows (best effort).
 
+### Supabase admin script can now log activities
+- `scripts/supabase-admin.mjs` now accepts `--activity "..."` to insert an `activities` row.
+- Supports `--type` (default `build_update`) and `--actor` (default `agent:main:main`).
+- Intended for quickly recording build updates directly into Supabase while wiring is in progress.
+
 ## Next planned work
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).

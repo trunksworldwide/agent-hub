@@ -11,7 +11,26 @@ if (!url || !anon || !service) {
 }
 
 const sb = createClient(url, service);
-const projectId = process.argv[2] || 'front-office';
+
+function parseArgs(argv) {
+  const out = { positional: [] };
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('--')) {
+      out.positional.push(a);
+      continue;
+    }
+    const key = a.slice(2);
+    const next = argv[i + 1];
+    const hasValue = next && !next.startsWith('--');
+    out[key] = hasValue ? next : true;
+    if (hasValue) i++;
+  }
+  return out;
+}
+
+const args = parseArgs(process.argv);
+const projectId = args.positional[0] || 'front-office';
 
 async function main() {
   console.log('Supabase URL:', url);
@@ -78,7 +97,30 @@ async function main() {
     }
   }
 
-  // 5) Show final agents
+  // 5) Optionally write an activity entry
+  // Usage:
+  //   node scripts/supabase-admin.mjs front-office --activity "message" --type build_update
+  // Defaults: type=build_update actor=agent:main:main
+  if (args.activity) {
+    const type = typeof args.type === 'string' ? args.type : 'build_update';
+    const actor = typeof args.actor === 'string' ? args.actor : 'agent:main:main';
+
+    const { data, error } = await sb
+      .from('activities')
+      .insert({
+        project_id: projectId,
+        type,
+        message: String(args.activity),
+        actor_agent_key: actor,
+      })
+      .select('id,created_at')
+      .single();
+
+    if (error) throw error;
+    console.log('Inserted activity:', data?.id, data?.created_at);
+  }
+
+  // 6) Show final agents
   {
     const { data, error } = await sb
       .from('agents')
