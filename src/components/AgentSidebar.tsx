@@ -1,23 +1,37 @@
 import { useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 export function AgentSidebar({ className, onSelect }: { className?: string; onSelect?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const { selectedAgentId, setSelectedAgentId } = useClawdOffice();
+
+  useEffect(() => {
+    const t = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let alive = true;
 
     const load = async () => {
+      setIsRefreshing(true);
       try {
         const next = await getAgents();
         if (!alive) return;
         setAgents(next);
+        setLastRefreshedAt(new Date());
       } catch (e) {
         // Sidebar should fail soft.
         console.warn('Failed to load agents:', e);
+      } finally {
+        if (alive) setIsRefreshing(false);
       }
     };
 
@@ -42,9 +56,42 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
   return (
     <aside className={cn("w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin", className)}>
       <div className="p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Agents
-        </h2>
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Agents
+          </h2>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              {lastRefreshedAt
+                ? `Updated ${Math.max(0, Math.floor((currentTime.getTime() - lastRefreshedAt.getTime()) / 1000))}s ago`
+                : 'Not yet updated'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => {
+                // Trigger a one-off refresh without waiting for the 30s interval.
+                setIsRefreshing(true);
+                getAgents()
+                  .then((next) => {
+                    setAgents(next);
+                    setLastRefreshedAt(new Date());
+                  })
+                  .catch((e) => {
+                    console.warn('Failed to load agents:', e);
+                  })
+                  .finally(() => setIsRefreshing(false));
+              }}
+              disabled={isRefreshing}
+              title="Refresh"
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing ? 'animate-spin' : '')} />
+            </Button>
+          </div>
+        </div>
+
         <div className="space-y-1">
           {[...agents]
             .sort((a, b) => {

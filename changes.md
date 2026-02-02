@@ -1,3 +1,6 @@
+### Agents sidebar: manual refresh + "updated" timestamp
+- Agents sidebar now shows how recently the roster was refreshed and provides a one-click refresh button (with spinner), matching the Live Feed UX.
+
 ### Dashboard: presence keepalive (agent_status)
 - Dashboard now pings `/api/status` every 60s while open (best effort).
   - This keeps Supabase `agent_status` fresh (server-side upsert happens on `/api/status`) so agents don’t drift offline when the UI is idle.
