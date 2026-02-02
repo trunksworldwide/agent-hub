@@ -395,5 +395,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`ClawdOS Control API listening on http://127.0.0.1:${PORT}`);
-  console.log(`Workspace: ${WORKSPACE}`);
+  console.log(`Default workspace: ${DEFAULT_WORKSPACE}`);
 });

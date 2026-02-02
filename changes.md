@@ -50,3 +50,6 @@
 ### Fix: project scoping header (CORS)
 - Server now allows the browser to send the `x-clawdos-project` header by including it in CORS `access-control-allow-headers`.
 - This unblocks real per-project workspace routing (instead of always defaulting to `front-office`).
+
+### Fix: Control API server startup log
+- Fixed a `ReferenceError` on server startup (`WORKSPACE` was undefined) by logging `DEFAULT_WORKSPACE` instead.
