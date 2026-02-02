@@ -160,3 +160,7 @@
 - Control API now supports `POST /api/cron/:id/edit` (maps to `clawdbot cron edit`) so jobs can be updated from the web UI.
 - Cron page now has an **Edit** dialog for updating a job's name, cron expression, and instructions.
 - Increased cron list/enable/disable/run timeouts in the Control API to avoid gateway timeouts on slower responses.
+
+### Build: vendor chunking (Vite)
+- Added a simple Rollup `manualChunks` strategy so production builds split `node_modules` into vendor chunks.
+- Prevents the main JS bundle from growing into a single monolith (and removes the >500k chunk warning).
