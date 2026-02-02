@@ -99,9 +99,25 @@ export function AgentProfilePanel({
     .filter((t) => t.status !== 'done')
     .slice(0, 8);
 
-  const timeline = activity
-    .filter((a) => a.author && a.author === agent.id)
-    .slice(0, 12);
+  const matchesAgent = (a: ActivityItem, agentId: string) => {
+    if (!a) return false;
+    const raw = (a.author || '').trim();
+    const label = (a.authorLabel || '').trim();
+
+    // Most common: authorLabel already normalized to the agent key.
+    if (label && label === agentId) return true;
+
+    // Some backends may store the agent key directly.
+    if (raw === agentId) return true;
+
+    // Common compound formats: "agent:<agentKey>:<sessionKind>" or similar.
+    const parts = raw.split(':');
+    if (parts.length >= 2 && parts[0] === 'agent' && parts[1] === agentId) return true;
+
+    return false;
+  };
+
+  const timeline = activity.filter((a) => matchesAgent(a, agent.id)).slice(0, 12);
 
   const iconForActivityType = (type: string | undefined) => {
     switch (type) {

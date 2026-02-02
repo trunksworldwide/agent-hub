@@ -139,3 +139,6 @@
 ### Agents page: richer agent header
 - Agent detail header now displays the real agent emoji/avatar, role, status badge, and color dot (when available) instead of a hard-coded 🤖.
 - Fetches agent roster best-effort and fails soft so file editors still work if roster fetch fails.
+
+### AgentProfilePanel: timeline now matches normalized Supabase actor keys
+- Fixed AgentProfilePanel timeline filtering to handle compound actor keys (e.g. `agent:<agentKey>:<sessionKind>`), so per-agent activity shows up reliably.
