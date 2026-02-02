@@ -92,6 +92,7 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - `scripts/supabase-admin.mjs` now accepts `--activity "..."` to insert an `activities` row.
 - Supports `--type` (default `build_update`) and `--actor` (default `agent:main:main`).
 - Intended for quickly recording build updates directly into Supabase while wiring is in progress.
+- Also loads `.env.local` (in addition to `.env`) so service role keys don’t have to live in `.env`.
 
 ## Next planned work
 - Agents sidebar alignment:
