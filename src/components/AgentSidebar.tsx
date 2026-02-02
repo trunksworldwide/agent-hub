@@ -68,6 +68,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
               }}
               className={cn(
                 "agent-card w-full text-left",
+                agent.status === 'running' && "agent-card-running",
                 selectedAgentId === agent.id && "agent-card-active"
               )}
             >

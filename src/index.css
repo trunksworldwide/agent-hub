@@ -137,6 +137,45 @@
   .agent-card-active {
     @apply bg-secondary border-l-2 border-primary;
   }
+
+  /* Subtle "alive" glow for agents that are actively running */
+  .agent-card-running {
+    @apply relative;
+  }
+
+  .agent-card-running::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 0.5rem;
+    pointer-events: none;
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.0);
+    opacity: 0.55;
+    animation: agent-card-glow 2.2s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-card-running::after {
+      animation: none;
+      opacity: 0.25;
+      box-shadow: 0 0 0 1px hsl(var(--primary) / 0.18);
+    }
+  }
+
+  @keyframes agent-card-glow {
+    0% {
+      opacity: 0.25;
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.05);
+    }
+    50% {
+      opacity: 0.55;
+      box-shadow: 0 0 12px 2px hsl(var(--primary) / 0.22);
+    }
+    100% {
+      opacity: 0.25;
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.05);
+    }
+  }
   
   .editor-container {
     @apply bg-[hsl(var(--editor-bg))] rounded-lg border border-border overflow-hidden;

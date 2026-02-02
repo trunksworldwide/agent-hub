@@ -126,3 +126,7 @@
 ### Dashboard: Supabase realtime subscriptions
 - When Supabase is configured, Dashboard now subscribes to realtime changes on `activities`, `agent_status`, and `tasks` for the selected project.
 - Falls back to a slower poll (30s) so it self-heals if a realtime channel drops.
+
+### Agents sidebar: subtle glow for running agents
+- Sidebar now adds a subtle animated halo/glow around agents whose status resolves to `running`.
+- Respects `prefers-reduced-motion`.
