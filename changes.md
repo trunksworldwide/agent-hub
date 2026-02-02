@@ -1,3 +1,8 @@
+### Activity: fix agent key normalization for per-agent timelines
+- Fixed a subtle Supabase activity parsing bug where `actor_agent_key` like `agent:main:main` was being truncated to `main`.
+  - `getActivity()` now normalizes agent keys as `agent:<name>:<kind>` and strips only *extra* trailing segments (e.g. `agent:main:main:cron` → `agent:main:main`).
+  - AgentProfilePanel uses the same normalization so the Timeline tab correctly filters activity for agents.
+
 ### TopBar: notification bell (global activity)
 - Added a notification bell in the top bar that shows the most recent 10 Supabase `activities` across **all projects**.
   - Includes per-project labels, timestamps, and type-based icons.

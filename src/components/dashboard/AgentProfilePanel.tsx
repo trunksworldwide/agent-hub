@@ -99,20 +99,24 @@ export function AgentProfilePanel({
     .filter((t) => t.status !== 'done')
     .slice(0, 8);
 
+  const normalizeAgentKey = (raw: string) => {
+    const parts = raw.split(':');
+    if (parts[0] === 'agent' && parts.length >= 3) {
+      // agent_key convention in this app is `agent:<name>:<kind>`.
+      // Some emitters may append an extra segment (e.g. session kind):
+      //   agent:main:main:cron  -> agent:main:main
+      return parts.slice(0, 3).join(':');
+    }
+    return raw;
+  };
+
   const matchesAgent = (a: ActivityItem, agentId: string) => {
     if (!a) return false;
-    const raw = (a.author || '').trim();
-    const label = (a.authorLabel || '').trim();
+    const raw = normalizeAgentKey((a.author || '').trim());
+    const label = normalizeAgentKey((a.authorLabel || '').trim());
 
-    // Most common: authorLabel already normalized to the agent key.
     if (label && label === agentId) return true;
-
-    // Some backends may store the agent key directly.
-    if (raw === agentId) return true;
-
-    // Common compound formats: "agent:<agentKey>:<sessionKind>" or similar.
-    const parts = raw.split(':');
-    if (parts.length >= 2 && parts[0] === 'agent' && parts[1] === agentId) return true;
+    if (raw && raw === agentId) return true;
 
     return false;
   };

@@ -947,9 +947,18 @@ export async function getActivity(): Promise<ActivityItem[]> {
 
     const toAuthorLabel = (raw: string | null | undefined) => {
       if (!raw) return '';
-      // Common format: agent:<agentKey>:<sessionKind>
+
+      // Normalize to the *agent_key* we use elsewhere (often includes colons).
+      // Examples we want to support:
+      // - agent:main:main
+      // - agent:main:main:cron   (agent_key + session kind)
+      // - ui / dashboard / other strings
       const parts = String(raw).split(':');
-      if (parts.length >= 2 && parts[0] === 'agent') return parts[1];
+      if (parts[0] === 'agent' && parts.length >= 3) {
+        // Treat the agent key as the first 3 segments: agent:<name>:<kind>
+        return parts.slice(0, 3).join(':');
+      }
+
       return String(raw);
     };
 
