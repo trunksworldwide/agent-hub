@@ -130,3 +130,7 @@
 ### Cron page: refresh jobs + run history
 - Added a “Refresh” button with last-updated timestamp for the cron jobs list.
 - Added per-job “Refresh runs” to re-fetch run history on demand (useful during debugging).
+
+### Agents page: richer agent header
+- Agent detail header now displays the real agent emoji/avatar, role, status badge, and color dot (when available) instead of a hard-coded 🤖.
+- Fetches agent roster best-effort and fails soft so file editors still work if roster fetch fails.
