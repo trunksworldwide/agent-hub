@@ -1,3 +1,9 @@
+### Activity UI: icons for new activity types
+- Dashboard Live Feed and AgentProfilePanel now recognize:
+  - `brain_doc_updated` → 🧠
+  - `cron_run_requested` → ▶️
+- Feed item typing is now `string` so new activity event types render without requiring a frontend update.
+
 ### Activity feed: log brain doc edits in Supabase mode
 - When the dashboard saves SOUL/USER/MEMORY via Supabase `brain_docs`, we now best-effort insert an `activities` row (`type=brain_doc_updated`).
   - Keeps the Live Feed accurate even when bypassing the Control API.

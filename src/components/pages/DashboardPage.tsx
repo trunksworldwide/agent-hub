@@ -11,7 +11,12 @@ import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 
 interface FeedItem {
   id: string;
-  type: 'cron' | 'commit' | 'build_update' | 'session' | 'task_created' | 'task_moved' | 'task_updated';
+
+  // Activity types come from Supabase `activities.type` (arbitrary strings).
+  // Keep this as `string` so new server-side activity events render without
+  // requiring a frontend deploy.
+  type: string;
+
   title: string;
   subtitle?: string;
   createdAt: string;
@@ -432,10 +437,14 @@ export function DashboardPage() {
                         ? '💬'
                         : item.type === 'cron'
                         ? '⏰'
+                        : item.type === 'cron_run_requested'
+                        ? '▶️'
                         : item.type === 'task_created'
                         ? '🆕'
                         : item.type === 'task_moved' || item.type === 'task_updated'
                         ? '🗂️'
+                        : item.type === 'brain_doc_updated'
+                        ? '🧠'
                         : item.type === 'build_update'
                         ? '🔧'
                         : '✅'}

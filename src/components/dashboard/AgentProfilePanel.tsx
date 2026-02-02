@@ -126,10 +126,14 @@ export function AgentProfilePanel({
       case 'task_moved':
       case 'task_updated':
         return '🗂️';
+      case 'brain_doc_updated':
+        return '🧠';
       case 'build_update':
         return '🔧';
       case 'cron':
         return '⏰';
+      case 'cron_run_requested':
+        return '▶️';
       case 'session':
         return '💬';
       default:
