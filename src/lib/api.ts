@@ -126,6 +126,14 @@ export interface ActivityItem {
   taskId?: string | null;
 }
 
+
+export interface CreateActivityInput {
+  type: string;
+  message: string;
+  actorAgentKey?: string;
+  taskId?: string | null;
+}
+
 export interface GlobalActivityItem {
   id: string;
   projectId: string;
@@ -929,6 +937,52 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
   }
 
   await delay(80);
+  return { ok: true };
+}
+
+export async function createActivity(input: CreateActivityInput): Promise<{ ok: boolean }> {
+  const type = (input?.type || '').toString().trim();
+  const message = (input?.message || '').toString().trim();
+
+  if (!type || !message) return { ok: false };
+
+  // Prefer Supabase activities if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { error } = await supabase.from('activities').insert({
+      project_id: projectId,
+      type,
+      message,
+      actor_agent_key: input.actorAgentKey || 'dashboard',
+      task_id: input.taskId ?? null,
+    });
+
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean }>('/api/activity', {
+      method: 'POST',
+      body: JSON.stringify({
+        type,
+        message,
+        actor: input.actorAgentKey || 'dashboard',
+      }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean }>('/api/activity', {
+      method: 'POST',
+      body: JSON.stringify({
+        type,
+        message,
+        actor: input.actorAgentKey || 'dashboard',
+      }),
+    });
+  }
+
+  await delay(50);
   return { ok: true };
 }
 

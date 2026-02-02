@@ -276,3 +276,7 @@
 ### Build: avoid Rollup empty chunk warnings (detect-node-es)
 - Updated Vite manualChunks logic to *not* force fully tree-shaken packages (like `detect-node-es`) into their own chunk.
   - Prevents Rollup from emitting “Generated an empty chunk” warnings during production builds.
+
+### AgentProfilePanel: “Send message” logs to activity feed
+- Wired the AgentProfilePanel message box to `createActivity(type=session)` so sending a note shows up in the Live Feed.
+- Uses Supabase directly when configured, and falls back to the Control API endpoint (`POST /api/activity`).

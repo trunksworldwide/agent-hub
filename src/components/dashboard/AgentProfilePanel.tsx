@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { X, AlertTriangle, Clock, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -5,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
+import { createActivity } from '@/lib/api';
 import type { ActivityItem, Agent, Task } from '@/lib/api';
 
 interface AgentProfilePanelProps {
@@ -24,6 +26,25 @@ export function AgentProfilePanel({
   activity = [],
   tasks = [],
 }: AgentProfilePanelProps) {
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  const sendMessage = async () => {
+    const msg = messageDraft.trim();
+    if (!msg || sendingMessage) return;
+    setSendingMessage(true);
+    try {
+      await createActivity({
+        type: 'session',
+        message: `To ${agent.name}: ${msg}`,
+        actorAgentKey: 'dashboard',
+      });
+      setMessageDraft('');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
   const statusReason =
     (agent.statusNote && agent.statusNote.trim().length > 0 ? agent.statusNote : null) ||
     'No status note yet.';
@@ -307,7 +328,35 @@ export function AgentProfilePanel({
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           SEND MESSAGE TO {agent.name.toUpperCase()}
         </h4>
-        <Input placeholder={`Message ${agent.name}... (@ to mention)`} className="bg-muted/50" />
+
+        <div className="flex items-center gap-2">
+          <Input
+            value={messageDraft}
+            onChange={(e) => setMessageDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder={`Message ${agent.name}... (@ to mention)`}
+            className="bg-muted/50"
+            disabled={sendingMessage}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0"
+            onClick={() => void sendMessage()}
+            disabled={sendingMessage || messageDraft.trim().length === 0}
+          >
+            Send
+          </Button>
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          (v1: logs a “session” activity entry — real messaging wiring coming next.)
+        </p>
       </div>
     </div>
   );
