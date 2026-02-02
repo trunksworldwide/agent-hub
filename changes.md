@@ -201,3 +201,7 @@
 ### Agents page: show agent_status presence in agent header
 - Agent detail header now surfaces Supabase-backed presence fields: `state`, “Seen …” relative timestamp, and an optional status note.
 - Includes a tooltip with the raw last heartbeat/activity timestamp when available.
+
+### Activity feed: server now merges Supabase activities + git commits
+- `GET /api/activity` now best-effort fetches recent rows from Supabase `activities` for the selected project and merges them with recent brain-repo git commits.
+- This makes the Dashboard “Live Feed” work even when the browser doesn’t have Supabase keys configured.

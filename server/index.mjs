@@ -615,24 +615,70 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/activity') {
-      // Recent git commits from the brain repo as a basic activity feed.
+      // Activity feed:
+      // - Prefer Supabase `activities` (when configured) so cron runs, build updates, and doc edits show up.
+      // - Always merge in recent git commits as a fallback + extra signal.
       try {
-        const { stdout } = await exec(
-          `cd ${JSON.stringify(brainRepo)} && git log -n 25 --pretty=format:%H%x09%an%x09%ad%x09%s --date=iso-strict`
-        );
-        const commits = (stdout || '')
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => {
-            const [hash, author, date, ...msgParts] = line.split('\t');
-            return {
-              hash,
-              author,
-              date,
-              message: msgParts.join('\t'),
-            };
-          });
-        return sendJson(res, 200, commits);
+        const items = [];
+
+        // 1) Supabase activities (best effort)
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            const { data, error } = await supabase
+              .from('activities')
+              .select('id,type,message,actor_agent_key,task_id,created_at')
+              .eq('project_id', projectId)
+              .order('created_at', { ascending: false })
+              .limit(50);
+
+            if (error) {
+              console.error('Supabase activities fetch failed:', error);
+            } else {
+              for (const row of data || []) {
+                items.push({
+                  hash: `sb:${row.id}`,
+                  author: row.actor_agent_key || '',
+                  authorLabel: row.actor_agent_key || '',
+                  date: row.created_at,
+                  message: row.message,
+                  type: row.type,
+                  taskId: row.task_id,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Supabase activities fetch threw:', e);
+        }
+
+        // 2) Git commits (fallback + extra activity signal)
+        try {
+          const { stdout } = await exec(
+            `cd ${JSON.stringify(brainRepo)} && git log -n 25 --pretty=format:%H%x09%an%x09%ad%x09%s --date=iso-strict`
+          );
+          const commits = (stdout || '')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => {
+              const [hash, author, date, ...msgParts] = line.split('\t');
+              return {
+                hash,
+                author,
+                authorLabel: author,
+                date,
+                message: msgParts.join('\t'),
+                type: 'commit',
+              };
+            });
+          items.push(...commits);
+        } catch {
+          // ignore
+        }
+
+        // Sort newest-first and cap.
+        items.sort((a, b) => (a.date < b.date ? 1 : -1));
+        return sendJson(res, 200, items.slice(0, 50));
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
