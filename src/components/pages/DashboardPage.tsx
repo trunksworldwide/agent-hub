@@ -5,6 +5,7 @@ import { Clock, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 
 interface FeedItem {
   id: string;
@@ -22,7 +23,7 @@ export function DashboardPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const refresh = async () => {
     const [a, t, c, act] = await Promise.all([
       getAgents(),
@@ -121,7 +122,14 @@ export function DashboardPage() {
               {agents.map((agent) => (
                 <div
                   key={agent.id}
-                  className="flex items-center gap-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer p-3"
+                  onClick={() => {
+                    setSelectedAgent(agent);
+                    setMobileSidebarOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer p-3",
+                    selectedAgent?.id === agent.id && "bg-muted"
+                  )}
                 >
                   <span className="text-xl">{agent.avatar}</span>
                   <div className="flex-1 min-w-0">
@@ -167,9 +175,11 @@ export function DashboardPage() {
             {agents.map((agent) => (
               <div
                 key={agent.id}
+                onClick={() => setSelectedAgent(agent)}
                 className={cn(
                   "flex items-center gap-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer",
-                  agentPanelCollapsed ? "p-2 justify-center" : "p-3"
+                  agentPanelCollapsed ? "p-2 justify-center" : "p-3",
+                  selectedAgent?.id === agent.id && "bg-muted"
                 )}
                 title={agentPanelCollapsed ? `${agent.name} - ${agent.status}` : undefined}
               >
@@ -374,6 +384,14 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Agent Profile Panel */}
+      {selectedAgent && (
+        <AgentProfilePanel 
+          agent={selectedAgent} 
+          onClose={() => setSelectedAgent(null)} 
+        />
+      )}
     </div>
   );
 }
