@@ -79,6 +79,11 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - Added basic Create Task and Move Task actions.
 - Sessions are no longer the primary dashboard object (they were confusing in the UI).
 
+### Supabase integration (start)
+- Added `@supabase/supabase-js` and `src/lib/supabase.ts`.
+- `getProjects()`, `getAgents()`, and task APIs now prefer Supabase tables when Supabase env vars are present.
+- Mock data now requires explicit `VITE_ALLOW_MOCKS=true` in dev to prevent ghost agents.
+
 ## Next planned work
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).

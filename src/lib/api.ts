@@ -1,19 +1,10 @@
-// ClawdOS API Layer - Hybrid backend: Supabase for live ops, Control API for brain files
-
-import { supabase } from '@/integrations/supabase/client';
-import {
-  getSupabaseTasks,
-  createSupabaseTask,
-  updateSupabaseTask,
-  getSupabaseProjects,
-  getActivities as getSupabaseActivities,
-  type SupabaseTask,
-  type SupabaseProject,
-  type SupabaseActivity,
-} from '@/lib/supabase-data';
+// ClawdOS API Layer - Mock implementation, easily swappable for real backend
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const IS_DEV = import.meta.env.MODE === 'development';
+const ALLOW_MOCKS_ENV = import.meta.env.VITE_ALLOW_MOCKS === 'true';
+
+import { supabase, hasSupabase } from './supabase';
 
 // Types
 export interface Agent {
@@ -249,10 +240,10 @@ const mockChannels: Channel[] = [
 // Simulated delay for realistic feel (used only in mock mode)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// In dev, allow mock mode when no API is configured.
-// In any non-dev environment (Lovable preview/publish), we REQUIRE a real API.
+// In dev, allow mock mode only when explicitly enabled.
+// Default is: NO MOCKS (to avoid confusing ghost agents in Lovable/remote builds).
 const USE_REMOTE = Boolean(API_BASE_URL);
-const ALLOW_MOCKS = IS_DEV && !USE_REMOTE;
+const ALLOW_MOCKS = IS_DEV && !USE_REMOTE && ALLOW_MOCKS_ENV;
 
 function getProjectId(): string {
   try {
@@ -300,6 +291,29 @@ export async function getStatus(): Promise<SystemStatus> {
 }
 
 export async function getAgents(): Promise<Agent[]> {
+  // Prefer Supabase roster if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+
+    const { data: agents, error } = await supabase
+      .from('agents')
+      .select('agent_key,name,role,emoji,color,created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return (agents || []).map((a: any) => ({
+      id: a.agent_key,
+      name: a.name || a.agent_key,
+      role: a.role || '',
+      status: 'idle',
+      lastActive: '',
+      skillCount: 0,
+      avatar: a.emoji || '🤖',
+    }));
+  }
+
   if (USE_REMOTE) return requestJson<Agent[]>('/api/agents');
   if (!ALLOW_MOCKS) return requestJson<Agent[]>('/api/agents');
 
@@ -413,24 +427,22 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
 }
 
 export async function getProjects(): Promise<Project[]> {
-  // Try Supabase first if user is authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const sbProjects = await getSupabaseProjects();
-      if (sbProjects.length > 0) {
-        return sbProjects.map((p: SupabaseProject) => ({
-          id: p.id,
-          name: p.name,
-          workspace: p.workspace_path || '',
-        }));
-      }
-    }
-  } catch (e) {
-    console.warn('Supabase projects fetch failed, falling back:', e);
+  // Prefer Supabase projects if configured.
+  if (hasSupabase() && supabase) {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id,name,workspace_path,created_at')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      workspace: p.workspace_path || '',
+    }));
   }
 
-  // Fall back to Control API
   if (USE_REMOTE) return requestJson<Project[]>('/api/projects');
   if (!ALLOW_MOCKS) return requestJson<Project[]>('/api/projects');
 
@@ -441,26 +453,28 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function getTasks(): Promise<Task[]> {
-  // Try Supabase first if user is authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const sbTasks = await getSupabaseTasks();
-      return sbTasks.map((t: SupabaseTask) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description || undefined,
-        status: t.status,
-        assigneeAgentKey: t.assignee_agent_key || undefined,
-        createdAt: t.created_at,
-        updatedAt: t.updated_at,
-      }));
-    }
-  } catch (e) {
-    console.warn('Supabase tasks fetch failed, falling back:', e);
+  // Prefer Supabase tasks if configured.
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('id,title,description,status,assignee_agent_key,created_at,updated_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description || '',
+      status: t.status,
+      assigneeAgentKey: t.assignee_agent_key || undefined,
+      createdAt: t.created_at,
+      updatedAt: t.updated_at,
+    }));
   }
 
-  // Fall back to Control API
   if (USE_REMOTE) return requestJson<Task[]>('/api/tasks');
   if (!ALLOW_MOCKS) return requestJson<Task[]>('/api/tasks');
 
@@ -469,24 +483,24 @@ export async function getTasks(): Promise<Task[]> {
 }
 
 export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'status' | 'assigneeAgentKey' | 'title' | 'description'>>): Promise<{ ok: boolean }> {
-  // Try Supabase first if user is authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const sbPatch: Record<string, unknown> = {};
-      if (patch.status) sbPatch.status = patch.status;
-      if (patch.title) sbPatch.title = patch.title;
-      if (patch.description !== undefined) sbPatch.description = patch.description;
-      if (patch.assigneeAgentKey !== undefined) sbPatch.assignee_agent_key = patch.assigneeAgentKey;
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const update: any = {};
+    if (patch.status) update.status = patch.status;
+    if (patch.title !== undefined) update.title = patch.title;
+    if (patch.description !== undefined) update.description = patch.description;
+    if (patch.assigneeAgentKey !== undefined) update.assignee_agent_key = patch.assigneeAgentKey;
 
-      const success = await updateSupabaseTask(taskId, sbPatch);
-      return { ok: success };
-    }
-  } catch (e) {
-    console.warn('Supabase task update failed, falling back:', e);
+    const { error } = await supabase
+      .from('tasks')
+      .update(update)
+      .eq('id', taskId)
+      .eq('project_id', projectId);
+
+    if (error) throw error;
+    return { ok: true };
   }
 
-  // Fall back to Control API
   if (USE_REMOTE) {
     return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, {
       method: 'POST',
@@ -505,37 +519,41 @@ export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'stat
 }
 
 export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task, 'description' | 'assigneeAgentKey' | 'status'>>): Promise<{ ok: boolean; task?: Task }> {
-  // Try Supabase first if user is authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const sbTask = await createSupabaseTask({
-        title: input.title,
-        description: input.description,
-        status: input.status,
-        assignee_agent_key: input.assigneeAgentKey,
-      });
-      if (sbTask) {
-        return {
-          ok: true,
-          task: {
-            id: sbTask.id,
-            title: sbTask.title,
-            description: sbTask.description || undefined,
-            status: sbTask.status,
-            assigneeAgentKey: sbTask.assignee_agent_key || undefined,
-            createdAt: sbTask.created_at,
-            updatedAt: sbTask.updated_at,
-          },
-        };
-      }
-      return { ok: false };
-    }
-  } catch (e) {
-    console.warn('Supabase task create failed, falling back:', e);
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const now = new Date().toISOString();
+    const row: any = {
+      project_id: projectId,
+      title: input.title,
+      description: input.description || '',
+      status: input.status || 'inbox',
+      assignee_agent_key: input.assigneeAgentKey || null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert(row)
+      .select('id,title,description,status,assignee_agent_key,created_at,updated_at')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      ok: true,
+      task: {
+        id: data.id,
+        title: data.title,
+        description: data.description || '',
+        status: data.status,
+        assigneeAgentKey: data.assignee_agent_key || undefined,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      },
+    };
   }
 
-  // Fall back to Control API
   if (USE_REMOTE) {
     return requestJson<{ ok: boolean; task?: Task }>(`/api/tasks`, {
       method: 'POST',
@@ -554,23 +572,6 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
 }
 
 export async function getActivity(): Promise<ActivityItem[]> {
-  // Try Supabase first if user is authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const sbActivities = await getSupabaseActivities();
-      return sbActivities.map((a: SupabaseActivity) => ({
-        hash: a.id,
-        author: a.actor_agent_key || 'system',
-        date: a.created_at,
-        message: a.message,
-      }));
-    }
-  } catch (e) {
-    console.warn('Supabase activity fetch failed, falling back:', e);
-  }
-
-  // Fall back to Control API
   if (USE_REMOTE) return requestJson<ActivityItem[]>('/api/activity');
   if (!ALLOW_MOCKS) return requestJson<ActivityItem[]>('/api/activity');
 
