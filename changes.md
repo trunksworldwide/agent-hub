@@ -101,7 +101,8 @@
 - When a task is moved in Supabase mode, we now look up the task title and write activity messages like `Moved “Title” → in_progress` instead of `taskId -> status`.
 
 ### Tooling: log build updates to Supabase
-- Added `scripts/log-build-update.mjs` to insert a short `activities` row (`type=build_update`) from the CLI (expects Supabase env vars).
+- Added `scripts/log-build-update.mjs` to insert a short `activities` row (`type=build_update`) from the CLI.
+- Now loads `.env.local` as well as `.env` so local Supabase keys work out of the box.
 
 ### Live Feed: manual refresh + "updated" timestamp
 - Dashboard Live Feed header now shows how recently the data was refreshed and provides a one-click refresh button (with spinner).

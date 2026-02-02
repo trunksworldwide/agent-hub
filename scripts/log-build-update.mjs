@@ -11,8 +11,12 @@
  *   (or SUPABASE_URL / SUPABASE_ANON_KEY)
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+
+// Load .env then .env.local (local should override)
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 
 function parseArgs(argv) {
   const out = {};
