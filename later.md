@@ -55,5 +55,36 @@ Future ideas / backlog for ClawdOS.
   - Expose “undo” as a feed action when possible.
   - Some actions are inherently irreversible (external posts, deletes); UI should mark reversible vs irreversible.
 
+## Notifications
+- Notification bell that shows the most recent 10 activities across projects.
+- Clicking an activity opens a detail/log view.
+- Agents completing actions should emit activities that drive the bell.
+
+## Documents
+- Add a new Manage navbar page: Documents.
+- Each project links to a living doc summary (Google Docs or markdown) that tracks changes and status.
+- Add a Google Docs integration skill/workflow for per-project summaries.
+
+## UX
+- Dashboard should use normal time (not 24h).
+- Add a very light textured gradient to the dashboard background.
+
+## Agent creation intelligence
+- When creating a new agent in a project:
+  - ask for role and purpose
+  - generate default soul/user/working context based on project purpose
+  - seed agent_status + initial tasks
+
+## Project creation intelligence
+- New project flow should capture name + purpose/description.
+- Creating a new project auto-creates a PM agent (project manager) that reports to Trunks.
+
+## Task creation flow
+- New task flow should feel like assigning an employee:
+  - choose assignee agent
+  - task prompt/description
+  - one-shot vs scheduled
+  - if scheduled: create cron job tied to the task
+
 Notes
-- Keep v1 minimal and stable; add these once the core wiring (files, sessions, cron, skills, restart/reload) is solid.
+- Keep v1 minimal and stable; add these once the core wiring (files, tasks, activities, projects, and presence) is solid.
