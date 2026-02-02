@@ -1,3 +1,7 @@
+### Agents sidebar: “New Agent” button (Supabase)
+- Added a lightweight “+” button in the Agents sidebar to create a new agent roster entry (Supabase `agents`) and seed presence (`agent_status`).
+- Uses simple prompts for now (key/name/emoji/role) to avoid heavy UI work while wiring is in progress.
+
 ### Activity UI: icons for new activity types
 - Dashboard Live Feed and AgentProfilePanel now recognize:
   - `brain_doc_updated` → 🧠

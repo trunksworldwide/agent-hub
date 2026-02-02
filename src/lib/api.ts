@@ -327,6 +327,71 @@ export async function getStatus(): Promise<SystemStatus> {
   };
 }
 
+export async function createAgent(input: {
+  agentKey: string;
+  name: string;
+  role?: string;
+  emoji?: string;
+  color?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const agentKey = input.agentKey.trim();
+  if (!agentKey) return { ok: false, error: 'missing_agent_key' };
+
+  const name = input.name?.trim() || agentKey;
+  const role = input.role?.trim() || null;
+  const emoji = input.emoji?.trim() || null;
+  const color = input.color?.trim() || null;
+
+  try {
+    // Create/merge agent roster row.
+    const { error: agentErr } = await supabase.from('agents').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        name,
+        role,
+        emoji,
+        color,
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+
+    if (agentErr) throw agentErr;
+
+    // Ensure an agent_status row exists.
+    const nowIso = new Date().toISOString();
+    await supabase.from('agent_status').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        state: 'idle',
+        note: null,
+        last_activity_at: nowIso,
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+
+    // Best-effort: activity feed entry.
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'agent_created',
+      message: `Created agent ${name}`,
+      actor_agent_key: 'ui',
+      task_id: null,
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    console.error('createAgent failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 export async function getAgents(): Promise<Agent[]> {
   // Prefer Supabase roster if configured.
   if (hasSupabase() && supabase) {

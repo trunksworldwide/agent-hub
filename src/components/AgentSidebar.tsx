@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
-import { getAgents, type Agent } from '@/lib/api';
+import { createAgent, getAgents, type Agent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -71,6 +71,19 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     return `Seen ${d}d ago`;
   }
 
+  async function refreshAgents() {
+    setIsRefreshing(true);
+    try {
+      const next = await getAgents();
+      setAgents(next);
+      setLastRefreshedAt(new Date());
+    } catch (e) {
+      console.warn('Failed to load agents:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
   return (
     <aside className={cn("w-64 border-r border-border bg-sidebar h-full overflow-y-auto scrollbar-thin", className)}>
       <div className="p-4">
@@ -89,23 +102,37 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
               variant="ghost"
               size="sm"
               className="h-7 px-2"
-              onClick={() => {
-                // Trigger a one-off refresh without waiting for the 30s interval.
-                setIsRefreshing(true);
-                getAgents()
-                  .then((next) => {
-                    setAgents(next);
-                    setLastRefreshedAt(new Date());
-                  })
-                  .catch((e) => {
-                    console.warn('Failed to load agents:', e);
-                  })
-                  .finally(() => setIsRefreshing(false));
-              }}
+              onClick={refreshAgents}
               disabled={isRefreshing}
               title="Refresh"
             >
               <RefreshCw className={cn('w-4 h-4', isRefreshing ? 'animate-spin' : '')} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={async () => {
+                const agentKey = window.prompt('New agent key (unique id):');
+                if (!agentKey) return;
+
+                const name = window.prompt('Agent display name:', agentKey) || agentKey;
+                const emoji = window.prompt('Emoji/avatar (optional):', '🤖') || undefined;
+                const role = window.prompt('Role/description (optional):', '') || undefined;
+
+                const res = await createAgent({ agentKey, name, emoji, role });
+                if (!res.ok) {
+                  window.alert(`Failed to create agent: ${res.error || 'unknown_error'}`);
+                  return;
+                }
+
+                await refreshAgents();
+              }}
+              disabled={isRefreshing}
+              title="New Agent"
+            >
+              <Plus className="w-4 h-4" />
             </Button>
           </div>
         </div>
