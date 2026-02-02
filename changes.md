@@ -255,3 +255,7 @@
 ### Dashboard feed: click activity to open agent profile
 - Dashboard live feed items now parse the activity `author` field (e.g. `agent:main:main`) and, when an agent match exists, clicking the feed entry opens that agent’s AgentProfilePanel.
 - Makes the feed feel like a real “activity inbox” instead of a dead list.
+
+### Build: avoid Rollup empty chunk warnings (detect-node-es)
+- Updated Vite manualChunks logic to *not* force fully tree-shaken packages (like `detect-node-es`) into their own chunk.
+  - Prevents Rollup from emitting “Generated an empty chunk” warnings during production builds.
