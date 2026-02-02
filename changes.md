@@ -1,3 +1,7 @@
+### Dashboard: follow active project for realtime + refresh
+- Dashboard now uses the shared store’s `selectedProjectId` for Supabase realtime subscriptions.
+  - Fixes a subtle bug where switching projects would keep the dashboard subscribed to the old project until a full reload.
+
 ### Build: remove TopBar dynamic import warning
 - TopBar now imports `createProject()` statically instead of via `await import()`.
   - Fixes Vite warning about `src/lib/api.ts` being both dynamically and statically imported (and keeps chunking predictable).

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createTask, getActivity, getAgents, getCronJobs, getStatus, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
+import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -17,6 +18,8 @@ interface FeedItem {
 }
 
 export function DashboardPage() {
+  const { selectedProjectId } = useClawdOffice();
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
@@ -76,15 +79,7 @@ export function DashboardPage() {
     };
 
     if (hasSupabase()) {
-      const projectId = (() => {
-        try {
-          return localStorage.getItem('clawdos.project') || 'front-office';
-        } catch {
-          return 'front-office';
-        }
-      })();
-
-      unsubscribe = subscribeToProjectRealtime(projectId, scheduleRefresh);
+      unsubscribe = subscribeToProjectRealtime(selectedProjectId || 'front-office', scheduleRefresh);
     }
 
     return () => {
@@ -94,7 +89,7 @@ export function DashboardPage() {
       if (queued) clearTimeout(queued);
       unsubscribe();
     };
-  }, []);
+  }, [selectedProjectId]);
 
   const feed: FeedItem[] = useMemo(() => {
     const items: FeedItem[] = [];
