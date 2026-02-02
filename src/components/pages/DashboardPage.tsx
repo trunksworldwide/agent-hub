@@ -68,7 +68,7 @@ export function DashboardPage() {
         id: `${kind}-${c.hash}`,
         type: kind,
         title: c.message,
-        subtitle: c.author || undefined,
+        subtitle: (c.authorLabel || c.author) || undefined,
         createdAt: c.date,
       });
     }

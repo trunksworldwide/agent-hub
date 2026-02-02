@@ -89,3 +89,7 @@
 ### Presence: auto-create missing agent_status rows
 - When Supabase is configured, `getAgents()` now upserts default `agent_status` rows for any agents missing presence.
 - This keeps the dashboard/profile panel presence fields populated without manual seeding.
+
+### Activity UI: display-friendly actor labels (while keeping raw keys)
+- Supabase activities now carry both a raw `author` (e.g. `agent:main:main`) and a display-friendly `authorLabel` (e.g. `main`).
+- Dashboard Live Feed uses the friendly label so the feed reads cleanly, while exact matching still works elsewhere.

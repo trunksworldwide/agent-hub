@@ -102,7 +102,13 @@ export interface SystemStatus {
 
 export interface ActivityItem {
   hash: string;
+
+  /** Raw actor key (e.g. "agent:main:main"). Useful for exact matching. */
   author: string;
+
+  /** Display-friendly author label (e.g. "main"), derived from `author`. */
+  authorLabel?: string;
+
   date: string;
   message: string;
 
@@ -742,9 +748,18 @@ export async function getActivity(): Promise<ActivityItem[]> {
 
     if (error) throw error;
 
+    const toAuthorLabel = (raw: string | null | undefined) => {
+      if (!raw) return '';
+      // Common format: agent:<agentKey>:<sessionKind>
+      const parts = String(raw).split(':');
+      if (parts.length >= 2 && parts[0] === 'agent') return parts[1];
+      return String(raw);
+    };
+
     return (data || []).map((a: any) => ({
       hash: a.id,
       author: a.actor_agent_key || '',
+      authorLabel: toAuthorLabel(a.actor_agent_key),
       date: a.created_at,
       message: a.message,
       type: a.type,
