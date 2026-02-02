@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createTask, getActivity, getAgents, getCronJobs, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
+import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -50,11 +51,40 @@ export function DashboardPage() {
     refresh();
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    const poll = setInterval(refresh, 5000);
+
+    // Default to polling, but when Supabase is configured we prefer realtime updates
+    // and fall back to a slower poll to self-heal if a subscription drops.
+    const pollMs = hasSupabase() ? 30_000 : 5_000;
+    const poll = setInterval(refresh, pollMs);
+
+    let unsubscribe = () => {};
+    let queued: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (queued) return;
+      queued = setTimeout(() => {
+        queued = null;
+        refresh();
+      }, 250);
+    };
+
+    if (hasSupabase()) {
+      const projectId = (() => {
+        try {
+          return localStorage.getItem('clawdos.project') || 'front-office';
+        } catch {
+          return 'front-office';
+        }
+      })();
+
+      unsubscribe = subscribeToProjectRealtime(projectId, scheduleRefresh);
+    }
 
     return () => {
       clearInterval(timer);
       clearInterval(poll);
+      if (queued) clearTimeout(queued);
+      unsubscribe();
     };
   }, []);
 

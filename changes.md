@@ -122,3 +122,7 @@
 ### Agents sidebar: show per-agent color theme
 - Agent roster now carries through the Supabase `agents.color` field (when present).
 - Sidebar renders a small colored dot on each agent card, making distinct agents easier to scan.
+
+### Dashboard: Supabase realtime subscriptions
+- When Supabase is configured, Dashboard now subscribes to realtime changes on `activities`, `agent_status`, and `tasks` for the selected project.
+- Falls back to a slower poll (30s) so it self-heals if a realtime channel drops.
