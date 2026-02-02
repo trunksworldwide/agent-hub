@@ -205,7 +205,10 @@ export function CronPage() {
                           </code>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Next run: {job.nextRun}
+                          Next run:{' '}
+                          {typeof job.nextRunAtMs === 'number'
+                            ? new Date(job.nextRunAtMs).toLocaleString()
+                            : (job.nextRun || '—')}
                         </p>
                       </div>
                     </div>

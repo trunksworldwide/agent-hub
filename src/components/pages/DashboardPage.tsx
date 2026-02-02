@@ -105,7 +105,8 @@ export function DashboardPage() {
         type: 'cron',
         title: `cron: ${j.name}`,
         subtitle: j.schedule,
-        createdAt: j.nextRun || new Date().toISOString(),
+        // Prefer a real timestamp when available so sorting is stable.
+        createdAt: typeof j.nextRunAtMs === 'number' ? new Date(j.nextRunAtMs).toISOString() : (j.nextRun || new Date().toISOString()),
       });
     }
 

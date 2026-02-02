@@ -429,6 +429,7 @@ const server = http.createServer(async (req, res) => {
           schedule: j.cron || j.schedule || '',
           enabled: j.enabled !== false,
           nextRun: j.nextRun || '',
+          nextRunAtMs: typeof j.nextRunAtMs === 'number' ? j.nextRunAtMs : (typeof j.nextRunAt === 'number' ? j.nextRunAt : null),
           lastRunStatus: null,
           instructions: j.text || j.instructions || '',
         }));

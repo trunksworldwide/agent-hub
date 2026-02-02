@@ -164,3 +164,7 @@
 ### Build: vendor chunking (Vite)
 - Added a simple Rollup `manualChunks` strategy so production builds split `node_modules` into vendor chunks.
 - Prevents the main JS bundle from growing into a single monolith (and removes the >500k chunk warning).
+
+### Cron: stable next-run timestamps (nextRunAtMs)
+- Control API now passes through `nextRunAtMs` (when provided by `clawdbot cron list`).
+- Cron page and Dashboard feed prefer the numeric timestamp for rendering/sorting, and fall back to the old `nextRun` string.

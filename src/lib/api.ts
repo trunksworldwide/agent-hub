@@ -71,7 +71,13 @@ export interface CronJob {
   name: string;
   schedule: string;
   enabled: boolean;
+
+  /** Human-friendly next run label (best effort; source-dependent). */
   nextRun: string;
+
+  /** Epoch millis for next run, when available (preferred for sorting/rendering). */
+  nextRunAtMs?: number | null;
+
   lastRunStatus: 'success' | 'failed' | 'pending' | null;
   instructions: string;
 }
