@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createTask, getActivity, getAgents, getCronJobs, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Clock, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
+import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -24,17 +24,26 @@ export function DashboardPage() {
   const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const refresh = async () => {
-    const [a, t, c, act] = await Promise.all([
-      getAgents(),
-      getTasks(),
-      getCronJobs(),
-      getActivity(),
-    ]);
-    setAgents(a);
-    setTasks(t);
-    setCronJobs(c);
-    setActivity(act);
+    setIsRefreshing(true);
+    try {
+      const [a, t, c, act] = await Promise.all([
+        getAgents(),
+        getTasks(),
+        getCronJobs(),
+        getActivity(),
+      ]);
+      setAgents(a);
+      setTasks(t);
+      setCronJobs(c);
+      setActivity(act);
+      setLastRefreshedAt(new Date());
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -339,18 +348,37 @@ export function DashboardPage() {
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               LIVE FEED
             </h2>
-            
-            {/* Agent Quick Stats */}
-            <div className="hidden md:flex items-center gap-2">
-              {agents.map((agent) => (
-                <span
-                  key={agent.id}
-                  className="text-xs px-2 py-1 rounded bg-muted/50 text-muted-foreground flex items-center gap-1"
-                >
-                  <span>{agent.avatar}</span>
-                  <span className="opacity-60">{agent.skillCount ?? ''}</span>
+
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center gap-2">
+                {agents.map((agent) => (
+                  <span
+                    key={agent.id}
+                    className="text-xs px-2 py-1 rounded bg-muted/50 text-muted-foreground flex items-center gap-1"
+                  >
+                    <span>{agent.avatar}</span>
+                    <span className="opacity-60">{agent.skillCount ?? ''}</span>
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  {lastRefreshedAt
+                    ? `Updated ${Math.max(0, Math.floor((currentTime.getTime() - lastRefreshedAt.getTime()) / 1000))}s ago`
+                    : 'Not yet updated'}
                 </span>
-              ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={refresh}
+                  disabled={isRefreshing}
+                  title="Refresh"
+                >
+                  <RefreshCw className={cn('w-4 h-4', isRefreshing ? 'animate-spin' : '')} />
+                </Button>
+              </div>
             </div>
           </div>
 

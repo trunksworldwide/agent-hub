@@ -102,3 +102,6 @@
 
 ### Tooling: log build updates to Supabase
 - Added `scripts/log-build-update.mjs` to insert a short `activities` row (`type=build_update`) from the CLI (expects Supabase env vars).
+
+### Live Feed: manual refresh + "updated" timestamp
+- Dashboard Live Feed header now shows how recently the data was refreshed and provides a one-click refresh button (with spinner).
