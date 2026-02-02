@@ -17,10 +17,11 @@
   - `getActivity()` now prefers Supabase `activities`.
   - Task create/move now writes activity rows (best effort).
 
-### Supabase admin script can now log activities
-- `scripts/supabase-admin.mjs` now accepts `--activity "..."` to insert an `activities` row.
+### Supabase admin script can now log activities + agent presence
+- `scripts/supabase-admin.mjs` accepts `--activity "..."` to insert an `activities` row.
 - Supports `--type` (default `build_update`) and `--actor` (default `agent:main:main`).
-- Intended for quickly recording build updates directly into Supabase while wiring is in progress.
+- Now also supports `--status` / `--heartbeat` to upsert `agent_status` (presence), with `--state`, `--note`, and `--agent-key`.
+- Intended for quickly recording build updates and keeping agent presence fresh while wiring is in progress.
 - Also loads `.env.local` (in addition to `.env`) so service role keys don’t have to live in `.env`.
 
 ### Cron: enable/disable wired (Control API)

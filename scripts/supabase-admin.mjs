@@ -101,7 +101,38 @@ async function main() {
     }
   }
 
-  // 5) Optionally write an activity entry
+  // 5) Optionally upsert agent_status (presence)
+  // Usage:
+  //   node scripts/supabase-admin.mjs front-office --status --state working --note "shipping"
+  //   node scripts/supabase-admin.mjs front-office --heartbeat --state idle
+  // Defaults: agent_key=agent:main:main state=idle
+  if (args.status || args.heartbeat) {
+    const agentKey = typeof args['agent-key'] === 'string' ? args['agent-key'] : 'agent:main:main';
+    const state = typeof args.state === 'string' ? args.state : 'idle';
+    const note = typeof args.note === 'string' ? args.note : null;
+
+    const nowIso = new Date().toISOString();
+
+    const row = {
+      project_id: projectId,
+      agent_key: agentKey,
+      state,
+      note,
+      last_activity_at: nowIso,
+      ...(args.heartbeat ? { last_heartbeat_at: nowIso } : null),
+    };
+
+    const { data, error } = await sb
+      .from('agent_status')
+      .upsert(row, { onConflict: 'project_id,agent_key' })
+      .select('id,agent_key,state,last_activity_at,last_heartbeat_at')
+      .single();
+
+    if (error) throw error;
+    console.log('Upserted agent_status:', data?.agent_key, data?.state);
+  }
+
+  // 6) Optionally write an activity entry
   // Usage:
   //   node scripts/supabase-admin.mjs front-office --activity "message" --type build_update
   // Defaults: type=build_update actor=agent:main:main
@@ -124,7 +155,7 @@ async function main() {
     console.log('Inserted activity:', data?.id, data?.created_at);
   }
 
-  // 6) Show final agents
+  // 7) Show final agents
   {
     const { data, error } = await sb
       .from('agents')
