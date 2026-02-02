@@ -1,3 +1,6 @@
+### Dashboard: subtle background gradient
+- Added a very light vertical gradient to the Dashboard main scroll area so the page feels less flat (matches the “alive” UI direction without deleting any UI).
+
 ### Presence: sync agent_status from live sessions
 - Control API `GET /api/sessions` now derives a base `agentKey` from each session key (e.g. `agent:main:cron:...` → `agent:main:main`) and uses it to best-effort upsert Supabase `agent_status`.
   - Keeps `last_activity_at` aligned with the most recently updated session.
