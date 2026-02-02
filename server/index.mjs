@@ -376,6 +376,21 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    const cronRunsMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/runs$/);
+    if (cronRunsMatch && req.method === 'GET') {
+      const [, jobId] = cronRunsMatch;
+      try {
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '25')));
+        const { stdout } = await exec(
+          `clawdbot cron runs --id ${JSON.stringify(jobId)} --limit ${JSON.stringify(String(limit))} --timeout 60000`
+        );
+        const data = JSON.parse(stdout || '{"entries": []}');
+        return sendJson(res, 200, data);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     const cronRunMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/run$/);
     if (cronRunMatch && req.method === 'POST') {
       const [, jobId] = cronRunMatch;

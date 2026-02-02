@@ -73,6 +73,17 @@ export interface CronJob {
   instructions: string;
 }
 
+export interface CronRunEntry {
+  ts: number;
+  jobId: string;
+  action: string;
+  status?: string;
+  summary?: string;
+  runAtMs?: number;
+  durationMs?: number;
+  nextRunAtMs?: number;
+}
+
 export interface Channel {
   id: string;
   name: string;
@@ -498,6 +509,14 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
   return { ok: true };
+}
+
+export async function getCronRuns(jobId: string, limit = 25): Promise<{ entries: CronRunEntry[] }> {
+  if (USE_REMOTE) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
+  if (!ALLOW_MOCKS) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
+
+  await delay(150);
+  return { entries: [] };
 }
 
 export async function getProjects(): Promise<Project[]> {

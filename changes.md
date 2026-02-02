@@ -71,3 +71,7 @@
 ### Front Office project highlighting
 - Top bar now shows a **Front Office** badge when the selected project is tagged `system`.
 - Project selector prefixes system projects with a star ("★") so it’s obvious when you’re editing the admin system itself.
+
+### Cron: run history endpoint + UI
+- Control API: added `GET /api/cron/:id/runs?limit=N` (calls `clawdbot cron runs`) so the UI can fetch JSONL-backed run history.
+- Cron page: when you expand a job, it fetches and shows the last few runs (status, duration, summary).

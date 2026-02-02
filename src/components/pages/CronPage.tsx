@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Play, Clock, Check, X, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { getCronJobs, toggleCronJob, runCronJob, type CronJob } from '@/lib/api';
+import { getCronJobs, toggleCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -15,11 +15,32 @@ export function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [runningJob, setRunningJob] = useState<string | null>(null);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  const [runsByJob, setRunsByJob] = useState<Record<string, CronRunEntry[]>>({});
+  const [loadingRuns, setLoadingRuns] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
 
   useEffect(() => {
     getCronJobs().then(setJobs);
   }, []);
+
+  const loadRuns = async (jobId: string) => {
+    if (loadingRuns[jobId]) return;
+    if (runsByJob[jobId]) return;
+
+    setLoadingRuns((m) => ({ ...m, [jobId]: true }));
+    try {
+      const data = await getCronRuns(jobId, 10);
+      setRunsByJob((m) => ({ ...m, [jobId]: data.entries || [] }));
+    } catch (err: any) {
+      toast({
+        title: 'Failed to load run history',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingRuns((m) => ({ ...m, [jobId]: false }));
+    }
+  };
 
   const handleToggle = async (job: CronJob) => {
     await toggleCronJob(job.id, !job.enabled);
@@ -73,7 +94,10 @@ export function CronPage() {
             <Collapsible
               key={job.id}
               open={expandedJob === job.id}
-              onOpenChange={(open) => setExpandedJob(open ? job.id : null)}
+              onOpenChange={(open) => {
+                setExpandedJob(open ? job.id : null);
+                if (open) loadRuns(job.id);
+              }}
             >
               <div className="rounded-lg border border-border bg-card overflow-hidden">
                 <div className="p-4">
@@ -127,8 +151,50 @@ export function CronPage() {
                   <div className="px-4 pb-4 pt-0 border-t border-border mt-2">
                     <div className="mt-4">
                       <h4 className="text-sm font-medium text-muted-foreground mb-2">Instructions</h4>
-                      <div className="p-3 rounded-lg bg-muted/50 font-mono text-sm">
+                      <div className="p-3 rounded-lg bg-muted/50 font-mono text-sm whitespace-pre-wrap">
                         {job.instructions}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Recent runs</h4>
+                      {loadingRuns[job.id] && (
+                        <div className="text-sm text-muted-foreground">Loading…</div>
+                      )}
+
+                      {!loadingRuns[job.id] && (runsByJob[job.id]?.length || 0) === 0 && (
+                        <div className="text-sm text-muted-foreground">No run history yet.</div>
+                      )}
+
+                      <div className="space-y-2">
+                        {(runsByJob[job.id] || []).slice(0, 5).map((r) => {
+                          const when = r.runAtMs ? new Date(r.runAtMs).toLocaleString() : new Date(r.ts).toLocaleString();
+                          const dur = typeof r.durationMs === 'number' ? `${Math.round(r.durationMs / 1000)}s` : '';
+                          const status = r.status || 'unknown';
+
+                          return (
+                            <div key={String(r.ts)} className="rounded-lg border border-border bg-background/50 p-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="text-sm">
+                                  <div className="font-medium">{when}</div>
+                                  <div className="text-xs text-muted-foreground">{r.action}{dur ? ` • ${dur}` : ''}</div>
+                                </div>
+                                <code className={cn(
+                                  "text-xs px-2 py-0.5 rounded font-mono",
+                                  status === 'ok' && "bg-success/15 text-success",
+                                  status !== 'ok' && "bg-destructive/15 text-destructive"
+                                )}>
+                                  {status}
+                                </code>
+                              </div>
+                              {r.summary && (
+                                <div className="mt-2 p-2 rounded bg-muted/40 font-mono text-xs whitespace-pre-wrap">
+                                  {r.summary}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
