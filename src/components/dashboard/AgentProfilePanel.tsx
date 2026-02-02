@@ -176,6 +176,19 @@ export function AgentProfilePanel({
     })
     .slice(0, 10);
 
+  const withAlpha = (color: string, alphaHex: string) => {
+    const c = (color || '').trim();
+    if (/^#([0-9a-fA-F]{6})$/.test(c)) return `${c}${alphaHex}`;
+    if (/^#([0-9a-fA-F]{3})$/.test(c)) {
+      const r = c[1];
+      const g = c[2];
+      const b = c[3];
+      return `#${r}${r}${g}${g}${b}${b}${alphaHex}`;
+    }
+    // Fall back to the raw color; browsers will ignore invalid values.
+    return c;
+  };
+
   const iconForActivityType = (type: string | undefined) => {
     switch (type) {
       case 'task_created':
@@ -220,11 +233,38 @@ export function AgentProfilePanel({
         <div className="p-6 space-y-6">
           {/* Agent Identity */}
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0">
+            <div
+              className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0 relative overflow-hidden"
+              style={
+                agent.color
+                  ? {
+                      backgroundColor: withAlpha(agent.color, '22'),
+                      border: `1px solid ${withAlpha(agent.color, '55')}`,
+                    }
+                  : undefined
+              }
+            >
+              {agent.color ? (
+                <span
+                  className="absolute inset-x-0 top-0 h-1"
+                  style={{ backgroundColor: agent.color }}
+                  aria-hidden
+                />
+              ) : null}
               {agent.avatar}
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-xl font-semibold">{agent.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-semibold truncate">{agent.name}</h3>
+                {agent.color ? (
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: agent.color }}
+                    title={agent.color}
+                    aria-label="Agent theme color"
+                  />
+                ) : null}
+              </div>
               <Badge variant="outline" className="mt-1 text-xs font-medium">
                 {agent.role}
               </Badge>

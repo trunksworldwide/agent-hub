@@ -1,3 +1,6 @@
+### AgentProfilePanel: show agent theme color in profile header
+- AgentProfilePanel now tints the avatar tile with the agent’s `color` (when present) and shows a small color dot next to the name.
+
 ### Agents sidebar: optional drag-to-reorder (custom sort mode)
 - Agents sidebar now supports a per-project **Custom** ordering mode (toggle button).
 - In custom mode, agent cards are draggable and the order persists in `localStorage` (`clawdos.agentOrder.<projectId>`).
