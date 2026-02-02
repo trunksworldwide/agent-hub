@@ -1,3 +1,7 @@
+### Activity feed: display-friendly author labels
+- Supabase-backed activity items now derive `authorLabel` as a human-friendly display name (e.g. `agent:main:main` → `main`).
+- AgentProfilePanel timeline matching still works with both raw keys and legacy/looser author formats.
+
 ### Notifications: click global activity to switch projects
 - Global activity items in the notification bell are now clickable.
 - Clicking an item switches the selected project to that activity’s project and returns you to Dashboard view.

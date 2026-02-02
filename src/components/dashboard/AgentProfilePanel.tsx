@@ -133,11 +133,27 @@ export function AgentProfilePanel({
 
   const matchesAgent = (a: ActivityItem, agentId: string) => {
     if (!a) return false;
-    const raw = normalizeAgentKey((a.author || '').trim());
-    const label = normalizeAgentKey((a.authorLabel || '').trim());
 
-    if (label && label === agentId) return true;
+    const raw = normalizeAgentKey((a.author || '').trim());
+    const label = (a.authorLabel || '').trim();
+
     if (raw && raw === agentId) return true;
+
+    // Support older/looser author formats by matching on the agent "name" segment.
+    // Examples:
+    // - agentId: agent:main:main
+    // - raw:     main
+    // - label:   main
+    const parts = agentId.split(':');
+    const agentName = parts[0] === 'agent' && parts.length >= 2 ? parts[1] : null;
+    if (agentName) {
+      if (label === agentName) return true;
+      if (raw === agentName) return true;
+    }
+
+    // Last resort: if something upstream is still emitting full keys into authorLabel.
+    const normalizedLabel = normalizeAgentKey(label);
+    if (normalizedLabel && normalizedLabel === agentId) return true;
 
     return false;
   };
