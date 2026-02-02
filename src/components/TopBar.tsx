@@ -3,7 +3,7 @@ import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useClawdOffice, type MainTab } from '@/lib/store';
-import { getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
+import { createProject, getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -158,7 +158,6 @@ export function TopBar() {
               const id = (prompt('New project id (slug)') || '').trim();
               if (!id) return;
               const name = (prompt('New project name') || id).trim();
-              const { createProject } = await import('@/lib/api');
               await createProject({ id, name });
               window.location.reload();
             }}

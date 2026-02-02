@@ -1,3 +1,7 @@
+### Build: remove TopBar dynamic import warning
+- TopBar now imports `createProject()` statically instead of via `await import()`.
+  - Fixes Vite warning about `src/lib/api.ts` being both dynamically and statically imported (and keeps chunking predictable).
+
 ### Agents sidebar: manual refresh + "updated" timestamp
 - Agents sidebar now shows how recently the roster was refreshed and provides a one-click refresh button (with spinner), matching the Live Feed UX.
 
