@@ -80,3 +80,8 @@
 ### Agent file editors: show commit hash on save
 - SOUL/USER/MEMORY editors now display the short git commit hash returned by the Control API after a successful save.
 - Also ensures saving state clears reliably via `finally`.
+
+### Presence: dashboard agent status now considers heartbeat timestamps
+- When resolving an agent's dashboard status (online/idle/offline), we now use the most recent of `last_activity_at` and `last_heartbeat_at` from Supabase `agent_status`.
+- This prevents agents from showing as "idle" when they are heartbeating but not emitting activity events.
+- Agent profile panel now shows its "Since …" helper based on the same "last seen" concept (newest activity/heartbeat).

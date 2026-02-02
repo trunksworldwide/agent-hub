@@ -343,6 +343,15 @@ export async function getAgents(): Promise<Agent[]> {
       return now - t;
     };
 
+    const newestIso = (a: string | null | undefined, b: string | null | undefined) => {
+      const at = a ? Date.parse(a) : Number.NaN;
+      const bt = b ? Date.parse(b) : Number.NaN;
+      if (Number.isNaN(at) && Number.isNaN(bt)) return null;
+      if (Number.isNaN(bt)) return a || null;
+      if (Number.isNaN(at)) return b || null;
+      return at >= bt ? (a || null) : (b || null);
+    };
+
     const formatLastActive = (ms: number | null) => {
       if (ms === null) return '';
       if (ms < 30_000) return 'just now';
@@ -353,12 +362,12 @@ export async function getAgents(): Promise<Agent[]> {
 
     const resolveDashboardStatus = (
       state: Agent['statusState'] | undefined,
-      lastActivityAt: string | null | undefined
+      lastSeenAt: string | null | undefined
     ): Agent['status'] => {
       if (state === 'sleeping') return 'offline';
       if (state === 'working') return 'running';
 
-      const age = msSince(lastActivityAt);
+      const age = msSince(lastSeenAt);
       if (age === null) return 'idle';
       if (age <= 5 * 60_000) return 'online';
       if (age >= 60 * 60_000) return 'offline';
@@ -368,14 +377,16 @@ export async function getAgents(): Promise<Agent[]> {
     return (agents || []).map((a: any) => {
       const st = statusByKey.get(a.agent_key);
       const lastActivityAt: string | null | undefined = st?.last_activity_at;
+      const lastHeartbeatAt: string | null | undefined = st?.last_heartbeat_at;
+      const lastSeenAt = newestIso(lastActivityAt, lastHeartbeatAt);
       const state: Agent['statusState'] | undefined = st?.state;
 
       return {
         id: a.agent_key,
         name: a.name || a.agent_key,
         role: a.role || '',
-        status: resolveDashboardStatus(state, lastActivityAt),
-        lastActive: formatLastActive(msSince(lastActivityAt)),
+        status: resolveDashboardStatus(state, lastSeenAt),
+        lastActive: formatLastActive(msSince(lastSeenAt)),
         skillCount: 0,
         avatar: a.emoji || '🤖',
         statusState: state,

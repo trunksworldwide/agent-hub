@@ -38,6 +38,17 @@ export function AgentProfilePanel({
     return `Since about ${Math.round(ms / (24 * 60 * 60_000))} day(s) ago`;
   };
 
+  const newestIso = (a: string | null | undefined, b: string | null | undefined) => {
+    const at = a ? Date.parse(a) : Number.NaN;
+    const bt = b ? Date.parse(b) : Number.NaN;
+    if (Number.isNaN(at) && Number.isNaN(bt)) return null;
+    if (Number.isNaN(bt)) return a || null;
+    if (Number.isNaN(at)) return b || null;
+    return at >= bt ? (a || null) : (b || null);
+  };
+
+  const lastSeenAt = newestIso(agent.lastActivityAt, agent.lastHeartbeatAt);
+
   const formatAt = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -165,10 +176,10 @@ export function AgentProfilePanel({
           <div className="space-y-2">
             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">STATUS REASON:</h4>
             <p className="text-sm text-foreground leading-relaxed">{statusReason}</p>
-            {formatSince(agent.lastActivityAt) ? (
+            {formatSince(lastSeenAt) ? (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                {formatSince(agent.lastActivityAt)}
+                {formatSince(lastSeenAt)}
               </p>
             ) : null}
           </div>
