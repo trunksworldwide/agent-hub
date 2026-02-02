@@ -1,220 +1,94 @@
-# ClawdOS Supabase Database
+# Supabase in ClawdOS
 
-> This document describes the Supabase database schema for ClawdOS Mission Control.
-> Project ID: `bsqeddnaiojvvckpdvcu`
+This doc explains how ClawdOS uses Supabase and how it connects to the Mac mini.
 
-## Architecture Overview
+## The core idea
+ClawdOS has two worlds that must stay consistent:
 
-ClawdOS uses a **hybrid backend**:
-- **Supabase** → Live ops data (tasks, agents, activities, projects)
-- **Control API** → Brain files (SOUL.md, USER.md, MEMORY.md), sessions, cron, restart
+1) Live mission-control data (database)
+- Tasks
+- Agent roster and presence
+- Activity feed
+- (later) notifications, comments, documents
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   ClawdOffice   │     │    Supabase     │     │   Control API   │
-│   (Frontend)    │     │   (Live Ops)    │     │  (Brain Files)  │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         │  Tasks, Agents,       │  SOUL.md, USER.md,    │
-         │  Activities, Status   │  MEMORY.md, Sessions  │
-         └───────────────────────┴───────────────────────┘
-```
+2) The agent “brain files” on the Mac mini
+- SOUL.md, AGENTS.md, USER.md, MEMORY.md
+- These are what Clawdbot actually reads at runtime.
 
----
+Supabase is used for the database world. The Mac mini uses sync processes to keep brain files in lockstep with Supabase.
 
-## Database Schema
+## Tables (current)
 
-### Table: `projects`
+projects
+- One row per project.
+- project_id is the scope key used everywhere.
 
-Primary workspace/project registry.
+agents
+- One row per agent per project.
+- agent_key is the stable identity (session key style): agent:<role>:main
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | text | PRIMARY KEY | Project slug (e.g., 'front-office') |
-| `name` | text | NOT NULL | Display name |
-| `workspace_path` | text | nullable | Local filesystem path (display only) |
-| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
+agent_status
+- Presence and “what I’m doing” per agent.
+- UI derives online/idle/running/offline from this.
 
-**Seeded data:** `front-office` project exists by default.
+tasks
+- Kanban tasks. Each task belongs to a project.
+- assignee_agent_key assigns the task to an agent.
 
----
+activities
+- Append-only feed for the whole project.
+- Used for the live feed and for notifications.
 
-### Table: `agents`
+brain_docs
+- Canonical editable brain docs in the dashboard.
+- doc_type values like soul, agents, user, memory_long.
+- Edits here are synced to the Mac mini files.
 
-Agent roster per project.
+## How the app chooses data sources
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | uuid | PRIMARY KEY, auto-gen | Unique ID |
-| `project_id` | text | FK → projects(id), CASCADE | Parent project |
-| `agent_key` | text | NOT NULL | Agent identifier (e.g., "agent:main:main") |
-| `name` | text | NOT NULL | Display name |
-| `role` | text | nullable | Agent role description |
-| `emoji` | text | nullable | Avatar emoji |
-| `color` | text | nullable | Hex color code |
-| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
+Frontend (Lovable / web UI)
+- Reads and writes mission-control data directly via the Supabase anon key:
+  - agents, agent_status, tasks, activities, brain_docs
+- The UI is always scoped by the selected project.
 
-**Unique constraint:** `(project_id, agent_key)`
+Control API (Mac mini)
+- Still exists for local operations:
+  - cron list/edit/run
+  - gateway restart
+  - reading local skills
+  - reading local sessions
+  - writing local files when needed
+- Control API also best-effort writes some activity events to Supabase so the feed stays truthful.
 
-**Seeded data:** `agent:main:main` (Trunks) exists for front-office.
+## Bidirectional brain-doc sync (Mac mini)
 
----
+Goal
+- If you edit SOUL/AGENTS/USER/MEMORY in the dashboard, Trunks and other agents immediately behave accordingly.
+- If Trunks edits those files locally, the dashboard updates.
 
-### Table: `agent_status`
+How
+- `scripts/brain-doc-sync.mjs` runs 24/7 as a launchd service.
+- Supabase -> files: realtime subscription to brain_docs writes to workspace files.
+- files -> Supabase: periodic polling detects file changes and upserts brain_docs.
 
-Real-time agent state tracking.
+Service
+- launchd: `~/Library/LaunchAgents/com.trunks.clawdos.brain-doc-sync.plist`
+- logs: `~/Library/Logs/clawdos-brain-doc-sync.log`
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | uuid | PRIMARY KEY, auto-gen | Unique ID |
-| `project_id` | text | FK → projects(id), CASCADE | Parent project |
-| `agent_key` | text | NOT NULL | Agent identifier |
-| `state` | text | CHECK: idle, working, blocked, sleeping | Current state |
-| `current_task_id` | uuid | FK → tasks(id), SET NULL | Active task |
-| `last_heartbeat_at` | timestamptz | nullable | Last ping time |
-| `last_activity_at` | timestamptz | DEFAULT now() | Last activity |
-| `note` | text | nullable | Status note |
+## Tasks vs cron (conceptual)
 
-**Unique constraint:** `(project_id, agent_key)`
+Tasks
+- Human work units (like assigning an employee)
+- Stored in Supabase tasks table
+- Have assignee, status, description, etc.
 
----
+Cron
+- Scheduled wakeups or recurring jobs
+- Runs through Clawdbot cron system
+- Should reference tasks by id (or query tasks) and write activities as work progresses
 
-### Table: `tasks`
+Principle
+- Cron triggers work.
+- Tasks are the record of what work exists.
+- Activities are the record of what happened.
 
-Kanban task board items.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | uuid | PRIMARY KEY, auto-gen | Unique ID |
-| `project_id` | text | FK → projects(id), CASCADE | Parent project |
-| `title` | text | NOT NULL | Task title |
-| `description` | text | nullable | Task details |
-| `status` | text | CHECK: inbox, assigned, in_progress, review, done, blocked | Kanban column |
-| `assignee_agent_key` | text | nullable | Assigned agent |
-| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
-| `updated_at` | timestamptz | DEFAULT now(), auto-updated | Last modification |
-
-**Trigger:** `update_tasks_updated_at` auto-updates `updated_at` on modification.
-
----
-
-### Table: `task_comments`
-
-Comments on tasks.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | uuid | PRIMARY KEY, auto-gen | Unique ID |
-| `project_id` | text | FK → projects(id), CASCADE | Parent project |
-| `task_id` | uuid | FK → tasks(id), CASCADE | Parent task |
-| `author_agent_key` | text | nullable | Comment author |
-| `content` | text | NOT NULL | Comment text |
-| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
-
----
-
-### Table: `activities`
-
-Activity feed / audit log.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | uuid | PRIMARY KEY, auto-gen | Unique ID |
-| `project_id` | text | FK → projects(id), CASCADE | Parent project |
-| `type` | text | NOT NULL | Event type (task_created, task_updated, etc.) |
-| `message` | text | NOT NULL | Human-readable message |
-| `actor_agent_key` | text | nullable | Who performed action |
-| `task_id` | uuid | FK → tasks(id), SET NULL | Related task |
-| `created_at` | timestamptz | DEFAULT now() | Event timestamp |
-
----
-
-## Row Level Security (RLS)
-
-All tables have RLS enabled with permissive authenticated-user policies:
-
-| Table | SELECT | INSERT | UPDATE | DELETE |
-|-------|--------|--------|--------|--------|
-| projects | ✅ auth | ✅ auth | ✅ auth | ✅ auth |
-| agents | ✅ auth | ✅ auth | ✅ auth | ✅ auth |
-| agent_status | ✅ auth | ✅ auth | ✅ auth | ❌ |
-| tasks | ✅ auth | ✅ auth | ✅ auth | ✅ auth |
-| task_comments | ✅ auth | ✅ auth | ✅ auth | ✅ auth |
-| activities | ✅ auth | ✅ auth | ❌ | ❌ |
-
-> **Note:** These are dev-friendly policies. For production multi-tenant, scope by org/project membership.
-
----
-
-## Frontend Data Layer
-
-### Files
-
-- `src/integrations/supabase/client.ts` → Supabase client initialization
-- `src/lib/supabase-data.ts` → CRUD functions for all tables
-- `src/lib/api.ts` → Hybrid layer (tries Supabase first, falls back to Control API)
-
-### Key Functions (supabase-data.ts)
-
-```typescript
-// Projects
-getSupabaseProjects(): Promise<SupabaseProject[]>
-
-// Tasks
-getSupabaseTasks(): Promise<SupabaseTask[]>
-createSupabaseTask(input): Promise<SupabaseTask | null>
-updateSupabaseTask(id, patch): Promise<boolean>
-deleteSupabaseTask(id): Promise<boolean>
-
-// Agents
-getSupabaseAgents(): Promise<SupabaseAgent[]>
-
-// Agent Status
-getAgentStatuses(): Promise<SupabaseAgentStatus[]>
-
-// Activities
-getActivities(limit?): Promise<SupabaseActivity[]>
-logActivity(input): Promise<void>
-```
-
-### Project Scoping
-
-All queries filter by `project_id` from `localStorage.getItem('clawdos.project')` (default: `'front-office'`).
-
----
-
-## Database Functions & Triggers
-
-### `update_updated_at_column()`
-
-Trigger function that auto-updates `updated_at` to `now()` on row modification.
-
-**Applied to:** `tasks` table via `update_tasks_updated_at` trigger.
-
----
-
-## Supabase Recent Changes
-
-> Ongoing log of database modifications. Newest first.
-
-### 2026-02-01 — Initial Schema
-
-**Migration:** Created complete schema for ClawdOS Mission Control.
-
-**Tables created:**
-- `projects` — workspace registry
-- `agents` — agent roster per project
-- `agent_status` — real-time agent state
-- `tasks` — Kanban task board
-- `task_comments` — task discussion threads
-- `activities` — activity feed / audit log
-
-**RLS policies:** Enabled on all tables with authenticated-user access.
-
-**Triggers:** Added `update_tasks_updated_at` for auto-updating timestamps.
-
-**Seed data:**
-- Project: `front-office` (Front Office)
-- Agent: `agent:main:main` (Trunks, Primary Agent, ⚡)
-
----
