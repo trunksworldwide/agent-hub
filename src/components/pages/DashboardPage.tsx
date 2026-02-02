@@ -8,7 +8,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 interface FeedItem {
   id: string;
-  type: 'cron' | 'commit';
+  type: 'cron' | 'commit' | 'session' | 'task_created' | 'task_updated';
   title: string;
   subtitle?: string;
   createdAt: string;
