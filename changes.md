@@ -1,3 +1,7 @@
+### Activity feed: agent key parsing (click-through to profile)
+- Fixed Dashboard Live Feed click-through to agent profiles when `actor_agent_key` uses colon-delimited keys (e.g. `agent:main:main`).
+  - Feed now normalizes agent keys to `agent:<name>:<kind>` so `agentByKey` lookups succeed.
+
 ### Dashboard: subtle background gradient
 - Added a very light vertical gradient to the Dashboard main scroll area so the page feels less flat (matches the “alive” UI direction without deleting any UI).
 

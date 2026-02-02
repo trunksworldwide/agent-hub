@@ -101,12 +101,21 @@ export function DashboardPage() {
 
   const parseActorAgentKey = (author: string | undefined | null): string | null => {
     if (!author) return null;
+
     // Known formats:
-    // - agent:<agentKey>:<sessionKind>
-    // - agent:<agentKey>
-    const parts = author.split(':');
+    // - agent:<name>:<kind>
+    // - agent:<name>:<kind>:<sessionKind>
+    // - agent:<agentKey> (legacy)
+    const parts = String(author).split(':');
     if (parts[0] !== 'agent') return null;
-    return parts[1] || null;
+
+    // Prefer the canonical 3-segment key: agent:<name>:<kind>
+    if (parts.length >= 3) return parts.slice(0, 3).join(':');
+
+    // Fall back to a 2-segment key if that's all we have.
+    if (parts.length === 2) return parts.join(':');
+
+    return null;
   };
 
   const agentByKey = useMemo(() => {
