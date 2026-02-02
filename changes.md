@@ -248,3 +248,7 @@
 ### Activity feed: server now merges Supabase activities + git commits
 - `GET /api/activity` now best-effort fetches recent rows from Supabase `activities` for the selected project and merges them with recent brain-repo git commits.
 - This makes the Dashboard “Live Feed” work even when the browser doesn’t have Supabase keys configured.
+
+### Dashboard feed: click activity to open agent profile
+- Dashboard live feed items now parse the activity `author` field (e.g. `agent:main:main`) and, when an agent match exists, clicking the feed entry opens that agent’s AgentProfilePanel.
+- Makes the feed feel like a real “activity inbox” instead of a dead list.

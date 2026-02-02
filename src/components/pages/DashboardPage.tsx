@@ -12,6 +12,9 @@ import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 interface FeedItem {
   id: string;
 
+  /** Parsed agent key when the feed item is attributable to an agent. */
+  actorAgentKey?: string | null;
+
   // Activity types come from Supabase `activities.type` (arbitrary strings).
   // Keep this as `string` so new server-side activity events render without
   // requiring a frontend deploy.
@@ -96,6 +99,22 @@ export function DashboardPage() {
     };
   }, [selectedProjectId]);
 
+  const parseActorAgentKey = (author: string | undefined | null): string | null => {
+    if (!author) return null;
+    // Known formats:
+    // - agent:<agentKey>:<sessionKind>
+    // - agent:<agentKey>
+    const parts = author.split(':');
+    if (parts[0] !== 'agent') return null;
+    return parts[1] || null;
+  };
+
+  const agentByKey = useMemo(() => {
+    const m = new Map<string, Agent>();
+    for (const a of agents) m.set(a.id, a);
+    return m;
+  }, [agents]);
+
   const feed: FeedItem[] = useMemo(() => {
     const items: FeedItem[] = [];
 
@@ -118,6 +137,7 @@ export function DashboardPage() {
         title: c.message,
         subtitle: (c.authorLabel || c.author) || undefined,
         createdAt: c.date,
+        actorAgentKey: parseActorAgentKey(c.author),
       });
     }
 
@@ -430,7 +450,17 @@ export function DashboardPage() {
               feed.map((item) => (
                 <div
                   key={item.id}
-                  className="p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors"
+                  onClick={() => {
+                    const k = item.actorAgentKey;
+                    if (!k) return;
+                    const a = agentByKey.get(k);
+                    if (!a) return;
+                    setSelectedAgent(a);
+                  }}
+                  className={cn(
+                    "p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors",
+                    item.actorAgentKey && agentByKey.has(item.actorAgentKey) && "cursor-pointer"
+                  )}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">
