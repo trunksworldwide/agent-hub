@@ -83,6 +83,7 @@ This file tracks what Trunks changed in the repo while the dashboard isn’t ful
 - Added `@supabase/supabase-js` and `src/lib/supabase.ts`.
 - `getProjects()`, `getAgents()`, and task APIs now prefer Supabase tables when Supabase env vars are present.
 - Mock data now requires explicit `VITE_ALLOW_MOCKS=true` in dev to prevent ghost agents.
+- Added `scripts/supabase-admin.mjs` to seed/repair DB state (projects + agents).
 
 ## Next planned work
 - Agents sidebar alignment:
