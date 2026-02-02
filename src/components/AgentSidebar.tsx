@@ -8,7 +8,25 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
   const { selectedAgentId, setSelectedAgentId } = useClawdOffice();
 
   useEffect(() => {
-    getAgents().then(setAgents);
+    let alive = true;
+
+    const load = async () => {
+      try {
+        const next = await getAgents();
+        if (!alive) return;
+        setAgents(next);
+      } catch (e) {
+        // Sidebar should fail soft.
+        console.warn('Failed to load agents:', e);
+      }
+    };
+
+    load();
+    const t = window.setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
   }, []);
 
   const getStatusBadge = (status: Agent['status']) => {
@@ -28,7 +46,20 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
           Agents
         </h2>
         <div className="space-y-1">
-          {agents.map((agent) => (
+          {[...agents]
+            .sort((a, b) => {
+              const pri: Record<Agent['status'], number> = {
+                running: 0,
+                online: 1,
+                idle: 2,
+                offline: 3,
+              };
+              const pa = pri[a.status] ?? 99;
+              const pb = pri[b.status] ?? 99;
+              if (pa !== pb) return pa - pb;
+              return a.name.localeCompare(b.name);
+            })
+            .map((agent) => (
             <button
               key={agent.id}
               onClick={() => {
@@ -51,7 +82,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{agent.role}</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {agent.skillCount} skills • {agent.lastActive}
+                    {agent.skillCount} skills • {agent.lastActive || '—'}
                   </p>
                 </div>
               </div>

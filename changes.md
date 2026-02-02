@@ -110,3 +110,7 @@
 ### Brain-doc sync: log agent file edits to Supabase activity feed
 - Control API now best-effort inserts an `activities` row (`type=brain_doc_updated`) when saving SOUL/USER/MEMORY files.
 - This makes doc edits show up in the Live Feed when Supabase is configured.
+
+### Agents sidebar: live refresh + status-priority sorting
+- Agents list now auto-refreshes every 30s (fails soft if the request errors).
+- Sidebar sorts agents by status priority (running → online → idle → offline), then name.
