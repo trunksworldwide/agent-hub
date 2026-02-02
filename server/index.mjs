@@ -342,6 +342,29 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    const cronToggleMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/(toggle|enable|disable)$/);
+    if (cronToggleMatch && req.method === 'POST') {
+      const [, jobId, action] = cronToggleMatch;
+      try {
+        if (action === 'enable') {
+          await exec(`clawdbot cron enable ${JSON.stringify(jobId)}`);
+          return sendJson(res, 200, { ok: true, enabled: true });
+        }
+        if (action === 'disable') {
+          await exec(`clawdbot cron disable ${JSON.stringify(jobId)}`);
+          return sendJson(res, 200, { ok: true, enabled: false });
+        }
+
+        // toggle: expects JSON body { enabled: boolean }
+        const body = await readBodyJson(req);
+        const enabled = Boolean(body.enabled);
+        await exec(`clawdbot cron ${enabled ? 'enable' : 'disable'} ${JSON.stringify(jobId)}`);
+        return sendJson(res, 200, { ok: true, enabled });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     const cronRunMatch = url.pathname.match(/^\/api\/cron\/([^/]+)\/run$/);
     if (cronRunMatch && req.method === 'POST') {
       const [, jobId] = cronRunMatch;

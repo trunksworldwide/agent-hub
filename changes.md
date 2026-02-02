@@ -23,12 +23,16 @@
 - Intended for quickly recording build updates directly into Supabase while wiring is in progress.
 - Also loads `.env.local` (in addition to `.env`) so service role keys don’t have to live in `.env`.
 
+### Cron: enable/disable wired (Control API)
+- Added `POST /api/cron/:id/toggle` (plus `/enable` and `/disable`) to the Control API.
+- `toggleCronJob()` now hits the Control API so the Cron UI switch actually enables/disables real jobs.
+
 ## Next planned work
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).
   - Show “Runs” separately (cron wakeups, isolated runs).
 - UI: display commit hash returned on save + add diff/rollback UI.
-- Cron: enable/disable/edit endpoints + wire toggles.
+- Cron: edit endpoints + UI (schedule/instructions) + run history status.
 - Add safer “reload” behaviors (lightweight reload vs full gateway restart) with guardrails.
 - UI polish: animations, empty states, error states, realtime updates.
 - Remote access path (Tailscale/Cloudflare) + authentication.

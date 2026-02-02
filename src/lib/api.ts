@@ -472,11 +472,23 @@ export async function getCronJobs(): Promise<CronJob[]> {
   return mockCronJobs;
 }
 
-export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ ok: boolean }> {
-  // TODO v2: add endpoints for enable/disable/edit.
+export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ ok: boolean; enabled?: boolean }> {
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean; enabled?: boolean }>(`/api/cron/${jobId}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean; enabled?: boolean }>(`/api/cron/${jobId}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   await delay(200);
   console.log(`[API] Setting cron job ${jobId} enabled: ${enabled}`);
-  return { ok: true };
+  return { ok: true, enabled };
 }
 
 export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
