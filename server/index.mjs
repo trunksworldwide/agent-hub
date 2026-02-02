@@ -44,7 +44,8 @@ function sendJson(res, statusCode, obj) {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': ALLOW_ORIGIN,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    // Needed so the browser can send the selected project id.
+    'access-control-allow-headers': 'content-type,x-clawdos-project',
   });
   res.end(body);
 }
@@ -108,7 +109,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204, {
         'access-control-allow-origin': ALLOW_ORIGIN,
         'access-control-allow-methods': 'GET,POST,OPTIONS',
-        'access-control-allow-headers': 'content-type',
+        // Needed so the browser can send the selected project id.
+        'access-control-allow-headers': 'content-type,x-clawdos-project',
       });
       return res.end();
     }

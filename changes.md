@@ -46,3 +46,7 @@
 - Agent profile now opens as a right-side **Sheet** on mobile (instead of trying to render a fixed-width sidebar).
 - Desktop keeps the persistent right sidebar panel.
 - `AgentProfilePanel` supports a `variant` prop (`sidebar` | `sheet`) to control layout/borders.
+
+### Fix: project scoping header (CORS)
+- Server now allows the browser to send the `x-clawdos-project` header by including it in CORS `access-control-allow-headers`.
+- This unblocks real per-project workspace routing (instead of always defaulting to `front-office`).
