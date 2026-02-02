@@ -24,11 +24,14 @@ export function UserEditor() {
     if (!selectedAgentId || !fileState) return;
     setFileSaving(fileKey, true);
     try {
-      await saveAgentFile(selectedAgentId, 'user', fileState.content);
+      const result = await saveAgentFile(selectedAgentId, 'user', fileState.content);
       markFileSaved(fileKey);
+
+      const commit = typeof result.commit === 'string' ? result.commit.slice(0, 8) : null;
+
       toast({
         title: 'Saved',
-        description: 'USER.md saved and committed to git.',
+        description: commit ? `USER.md saved. Commit: ${commit}` : 'USER.md saved and committed to git.',
       });
     } catch (error) {
       toast({
@@ -36,6 +39,8 @@ export function UserEditor() {
         description: 'Failed to save file.',
         variant: 'destructive',
       });
+    } finally {
+      setFileSaving(fileKey, false);
     }
   };
 

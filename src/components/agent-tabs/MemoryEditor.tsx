@@ -40,11 +40,15 @@ export function MemoryEditor() {
     if (!selectedAgentId || !currentState) return;
     setFileSaving(currentKey, true);
     try {
-      await saveAgentFile(selectedAgentId, fileType, currentState.content);
+      const result = await saveAgentFile(selectedAgentId, fileType, currentState.content);
       markFileSaved(currentKey);
+
+      const commit = typeof result.commit === 'string' ? result.commit.slice(0, 8) : null;
+      const label = activeMemoryTab === 'long' ? 'MEMORY.md' : "Today's memory";
+
       toast({
         title: 'Saved',
-        description: `${activeMemoryTab === 'long' ? 'MEMORY.md' : 'Today\'s memory'} saved.`,
+        description: commit ? `${label} saved. Commit: ${commit}` : `${label} saved.`,
       });
     } catch (error) {
       toast({
@@ -52,6 +56,8 @@ export function MemoryEditor() {
         description: 'Failed to save file.',
         variant: 'destructive',
       });
+    } finally {
+      setFileSaving(currentKey, false);
     }
   };
 

@@ -75,3 +75,7 @@
 ### Cron: run history endpoint + UI
 - Control API: added `GET /api/cron/:id/runs?limit=N` (calls `clawdbot cron runs`) so the UI can fetch JSONL-backed run history.
 - Cron page: when you expand a job, it fetches and shows the last few runs (status, duration, summary).
+
+### Agent file editors: show commit hash on save
+- SOUL/USER/MEMORY editors now display the short git commit hash returned by the Control API after a successful save.
+- Also ensures saving state clears reliably via `finally`.

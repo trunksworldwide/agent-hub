@@ -25,11 +25,14 @@ export function SoulEditor() {
     if (!selectedAgentId || !fileState) return;
     setFileSaving(fileKey, true);
     try {
-      await saveAgentFile(selectedAgentId, 'soul', fileState.content);
+      const result = await saveAgentFile(selectedAgentId, 'soul', fileState.content);
       markFileSaved(fileKey);
+
+      const commit = typeof result.commit === 'string' ? result.commit.slice(0, 8) : null;
+
       toast({
         title: 'Saved',
-        description: 'SOUL.md saved and committed to git.',
+        description: commit ? `SOUL.md saved. Commit: ${commit}` : 'SOUL.md saved and committed to git.',
       });
     } catch (error) {
       toast({
@@ -37,6 +40,8 @@ export function SoulEditor() {
         description: 'Failed to save file.',
         variant: 'destructive',
       });
+    } finally {
+      setFileSaving(fileKey, false);
     }
   };
 
