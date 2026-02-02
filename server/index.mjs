@@ -614,6 +614,54 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/activity/global') {
+      // Global activity bell: cross-project activities (Supabase only).
+      // Requires service role key because RLS typically prevents anon cross-project reads.
+      try {
+        const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit') || '10')));
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 200, []);
+
+        const [{ data: acts, error: actErr }, { data: projs, error: projErr }] = await Promise.all([
+          sb
+            .from('activities')
+            .select('id,project_id,type,message,actor_agent_key,task_id,created_at')
+            .order('created_at', { ascending: false })
+            .limit(limit),
+          sb
+            .from('projects')
+            .select('id,name')
+            .order('created_at', { ascending: true }),
+        ]);
+
+        if (actErr) {
+          console.error('Supabase global activities fetch failed:', actErr);
+          return sendJson(res, 200, []);
+        }
+
+        if (projErr) {
+          console.error('Supabase projects fetch failed:', projErr);
+        }
+
+        const nameById = new Map((projs || []).map((p) => [p.id, p.name]));
+
+        const items = (acts || []).map((row) => ({
+          id: row.id,
+          projectId: row.project_id,
+          projectName: nameById.get(row.project_id) || row.project_id,
+          type: row.type,
+          message: row.message,
+          actor: row.actor_agent_key || '',
+          taskId: row.task_id,
+          createdAt: row.created_at,
+        }));
+
+        return sendJson(res, 200, items);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/activity') {
       // Activity feed:
       // - Prefer Supabase `activities` (when configured) so cron runs, build updates, and doc edits show up.

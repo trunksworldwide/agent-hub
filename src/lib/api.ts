@@ -126,6 +126,17 @@ export interface ActivityItem {
   taskId?: string | null;
 }
 
+export interface GlobalActivityItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  type: string;
+  message: string;
+  actor: string;
+  taskId?: string | null;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -957,6 +968,17 @@ export async function getActivity(): Promise<ActivityItem[]> {
   if (!ALLOW_MOCKS) return requestJson<ActivityItem[]>('/api/activity');
 
   await delay(100);
+  return [];
+}
+
+export async function getGlobalActivity(limit = 10): Promise<GlobalActivityItem[]> {
+  // Global activity requires server-side Supabase keys, so always go through the Control API.
+  // (If VITE_API_BASE_URL is missing, this will throw and the UI will fail soft.)
+  const qs = `?limit=${encodeURIComponent(String(limit))}`;
+  if (USE_REMOTE) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
+  if (!ALLOW_MOCKS) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
+
+  await delay(60);
   return [];
 }
 

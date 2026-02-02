@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2 } from 'lucide-react';
+import { RefreshCw, RotateCcw, Bot, LayoutGrid, Settings2, Bell, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useClawdOffice, type MainTab } from '@/lib/store';
-import { createProject, getProjects, getStatus, restartSystem, type Project } from '@/lib/api';
+import { createProject, getGlobalActivity, getProjects, getStatus, restartSystem, type GlobalActivityItem, type Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -43,6 +44,9 @@ export function TopBar() {
   } = useClawdOffice();
 
   const [projects, setProjects] = useState<Project[]>([]);
+
+  const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
+  const [globalActivityUpdatedAt, setGlobalActivityUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => setProjects([]));
@@ -86,6 +90,53 @@ export function TopBar() {
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const refreshGlobalActivity = async () => {
+    try {
+      const items = await getGlobalActivity(10);
+      setGlobalActivity(items);
+      setGlobalActivityUpdatedAt(new Date());
+    } catch {
+      // fail soft
+      setGlobalActivity([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshGlobalActivity();
+    const interval = setInterval(refreshGlobalActivity, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const lastSeenKey = 'clawdos.globalActivity.lastSeenAt';
+  const lastSeenAtIso = (() => {
+    try {
+      return localStorage.getItem(lastSeenKey) || '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const unreadCount = (() => {
+    const last = Date.parse(lastSeenAtIso);
+    if (Number.isNaN(last)) return globalActivity.length;
+    return globalActivity.filter((a) => {
+      const t = Date.parse(a.createdAt);
+      return !Number.isNaN(t) && t > last;
+    }).length;
+  })();
+
+  const formatWhen = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('en-US', {
+      hour12: true,
+      hour: 'numeric',
+      minute: '2-digit',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   return (
     <div className="sticky top-0 z-50">
@@ -131,6 +182,78 @@ export function TopBar() {
         </div>
         
         <div className="flex items-center gap-3">
+          <Popover
+            onOpenChange={(open) => {
+              if (!open) return;
+              try {
+                const newest = globalActivity[0]?.createdAt || new Date().toISOString();
+                localStorage.setItem(lastSeenKey, newest);
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 relative"
+                title={globalActivityUpdatedAt ? `Notifications (updated ${globalActivityUpdatedAt.toLocaleTimeString()})` : 'Notifications'}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-[18px] text-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-96 p-0">
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="text-sm font-medium">Recent activity</div>
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={refreshGlobalActivity}>
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="max-h-[420px] overflow-y-auto">
+                {globalActivity.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">No recent activity.</div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {globalActivity.map((a) => (
+                      <div key={a.id} className="p-4 hover:bg-muted/40">
+                        <div className="flex items-start gap-3">
+                          <span className="text-lg">
+                            {a.type === 'brain_doc_updated'
+                              ? '🧠'
+                              : a.type === 'cron_run_requested'
+                              ? '▶️'
+                              : a.type === 'task_created'
+                              ? '🆕'
+                              : a.type === 'task_moved' || a.type === 'task_updated'
+                              ? '🗂️'
+                              : a.type === 'build_update'
+                              ? '🔧'
+                              : '✅'}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs text-muted-foreground truncate">{a.projectName}</div>
+                            <div className="text-sm font-medium truncate">{a.message}</div>
+                            <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatWhen(a.createdAt)}</span>
+                              {a.actor ? <span className="truncate">· {a.actor}</span> : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <span className="text-sm text-muted-foreground">Project</span>
           {selectedProject?.tag === 'system' && (
             <Badge variant="secondary" className="border border-border/60">

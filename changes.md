@@ -1,3 +1,9 @@
+### TopBar: notification bell (global activity)
+- Added a notification bell in the top bar that shows the most recent 10 Supabase `activities` across **all projects**.
+  - Includes per-project labels, timestamps, and type-based icons.
+  - Tracks a simple unread count using localStorage (marks all seen when you open the popover).
+- Control API: added `GET /api/activity/global?limit=N` (service-role Supabase) to power the bell.
+
 ### Dashboard: switch timestamps to 12-hour time
 - Dashboard clock and feed timestamps now use normal 12-hour time (with seconds) instead of 24h.
 - Agent profile panel timestamps match for consistency.
