@@ -653,29 +653,29 @@ export function AgentProfilePanel({
 
           {/* Tabs */}
           <Tabs defaultValue="attention" className="w-full">
-            <TabsList className="w-full bg-muted/50">
-              <TabsTrigger value="attention" className="flex-1 gap-1.5 text-xs">
+            <TabsList className="w-full bg-muted/50 overflow-x-auto flex-nowrap justify-start sm:justify-between">
+              <TabsTrigger value="attention" className="flex-none sm:flex-1 gap-1.5 text-xs whitespace-nowrap">
                 <AlertTriangle className="w-3 h-3" />
                 Attention
                 <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                   {attentionTasks.length}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger value="timeline" className="flex-1 gap-1.5 text-xs">
+              <TabsTrigger value="timeline" className="flex-none sm:flex-1 gap-1.5 text-xs whitespace-nowrap">
                 <Clock className="w-3 h-3" />
                 Timeline
                 <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                   {timelineAll.length}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger value="schedule" className="flex-1 gap-1.5 text-xs">
+              <TabsTrigger value="schedule" className="flex-none sm:flex-1 gap-1.5 text-xs whitespace-nowrap">
                 <Clock className="w-3 h-3" />
                 Schedule
                 <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                   {scheduledJobs.length}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger value="messages" className="flex-1 gap-1.5 text-xs">
+              <TabsTrigger value="messages" className="flex-none sm:flex-1 gap-1.5 text-xs whitespace-nowrap">
                 <MessageSquare className="w-3 h-3" />
                 Messages
                 <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">

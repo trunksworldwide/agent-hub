@@ -1,3 +1,7 @@
+### AgentProfilePanel: mobile-friendly tab strip (horizontal scroll)
+- AgentProfilePanel tabs now scroll horizontally on small screens (no more squished/overflowed tab labels).
+- Desktop behavior unchanged (tabs still distribute evenly).
+
 ### Manage TopBar: mobile-friendly tab strip (horizontal scroll)
 - Manage-mode navigation tabs now scroll horizontally on small screens (no more overflow/clipping).
 - Reduced nav tab padding on mobile for a denser, more usable header.
