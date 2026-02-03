@@ -3,7 +3,7 @@ import type { Agent, SystemStatus, AgentFile } from './api';
 import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId } from './project';
 
 export type ViewMode = 'dashboard' | 'manage';
-export type MainTab = 'agents' | 'skills' | 'channels' | 'cron' | 'config';
+export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
 export type AgentTab = 'soul' | 'user' | 'memory' | 'tools' | 'skills' | 'sessions';
 
 interface FileState {

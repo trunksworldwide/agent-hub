@@ -1,5 +1,6 @@
 import { TopBar } from '@/components/TopBar';
 import { AgentsPage } from '@/components/pages/AgentsPage';
+import { ActivityPage } from '@/components/pages/ActivityPage';
 import { SkillsPage } from '@/components/pages/SkillsPage';
 import { ChannelsPage } from '@/components/pages/ChannelsPage';
 import { CronPage } from '@/components/pages/CronPage';
@@ -14,6 +15,8 @@ const Index = () => {
     switch (activeMainTab) {
       case 'agents':
         return <AgentsPage />;
+      case 'activity':
+        return <ActivityPage />;
       case 'skills':
         return <SkillsPage />;
       case 'channels':

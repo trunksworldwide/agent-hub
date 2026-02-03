@@ -22,6 +22,7 @@ import {
 
 const navTabs: { id: MainTab; label: string; icon: string }[] = [
   { id: 'agents', label: 'Agents', icon: '🤖' },
+  { id: 'activity', label: 'Activity', icon: '📰' },
   { id: 'skills', label: 'Skills', icon: '🛠️' },
   { id: 'channels', label: 'Channels', icon: '📡' },
   { id: 'cron', label: 'Cron', icon: '⏰' },

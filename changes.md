@@ -1,3 +1,7 @@
+### Manage → Activity: new full-page project activity feed
+- Added a dedicated **Activity** tab in the Manage navbar.
+- Shows the full project-scoped activity feed (Supabase `activities` + git commits fallback) with type filter + search + load more.
+
 ### Dashboard Live Feed: filter/search against full fetched feed (not just visible 25)
 - Live Feed filters/search now operate across the full fetched activity range (up to ~200 items), instead of only the first 25.
 - The UI still renders a compact 25-item window for performance.
