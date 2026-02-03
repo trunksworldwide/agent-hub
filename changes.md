@@ -1,3 +1,7 @@
+### Dashboard Live Feed: keep cron “upcoming” links from floating above real activity
+- Cron jobs in the Live Feed are now anchored to epoch time so upcoming schedules (future timestamps) don’t sort above real recent activity.
+- Still shows the next run time in the subtitle ("Next: …") and remains clickable for quick navigation to Cron manager.
+
 ### Dashboard Live Feed: feed item details dialog
 - Added an inline **Details** (ⓘ) button on each Live Feed card to open a dialog with raw fields.
 - Includes quick actions (Open agent/Open Cron manager when applicable) + a **Copy JSON** button for debugging.

@@ -219,7 +219,21 @@ export function DashboardPage() {
     const agentByKey = new Map<string, Agent>();
     for (const a of agents) agentByKey.set(a.id, a);
 
+    // NOTE: Cron jobs represent *upcoming* work. Their `nextRunAt` timestamps are often in the future,
+    // which can incorrectly float them above real recent activity when we sort the feed.
+    // We still include a few as quick links, but anchor them to the epoch so they stay at the bottom.
     for (const j of cronJobs.slice(0, 10)) {
+      const nextRunLabel =
+        typeof j.nextRunAtMs === 'number' && Number.isFinite(j.nextRunAtMs)
+          ? new Date(j.nextRunAtMs).toLocaleString('en-US', {
+              hour12: true,
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })
+          : j.nextRun || '—';
+
       items.push({
         id: `cron-${j.id}`,
         kind: 'cron',
@@ -227,12 +241,8 @@ export function DashboardPage() {
         cronSchedule: j.schedule,
         type: 'cron',
         title: `cron: ${j.name}`,
-        subtitle: j.schedule,
-        // Prefer a real timestamp when available so sorting is stable.
-        createdAt:
-          typeof j.nextRunAtMs === 'number'
-            ? new Date(j.nextRunAtMs).toISOString()
-            : j.nextRun || new Date().toISOString(),
+        subtitle: `Next: ${nextRunLabel}`,
+        createdAt: new Date(0).toISOString(),
       });
     }
 
