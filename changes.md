@@ -1,3 +1,7 @@
+### Presence: main agent status uses per-agent session count (more accurate)
+- `/api/status` no longer marks `agent:main:main` as WORKING just because *any* agent has active sessions.
+- We now count sessions whose key normalizes to `agent:main:main` and use that for the main presence row.
+
 ### Supabase projects typing: include `tag` in SupabaseProject
 - Updated `src/lib/supabase-data.ts` to include the `projects.tag` field in the SupabaseProject interface.
 - Keeps TypeScript types aligned with the `projects` table now that system/highlight tags are supported.

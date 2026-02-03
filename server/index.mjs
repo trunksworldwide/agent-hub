@@ -290,10 +290,19 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/status') {
       let activeSessions = null;
+      let mainSessions = null;
+
       try {
         const { stdout } = await exec('clawdbot sessions --json --active 10080');
-        const data = JSON.parse(stdout || '{"count":0}');
-        activeSessions = data.count ?? null;
+        const data = JSON.parse(stdout || '{"count":0,"sessions":[]}');
+
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        activeSessions = typeof data.count === 'number' ? data.count : sessions.length;
+
+        // Tighten up "main" presence: previous versions marked main as working when *any* agent had
+        // active sessions. Instead, compute the count attributable to agent:main:main.
+        const mainKey = 'agent:main:main';
+        mainSessions = sessions.filter((s) => normalizeAgentKey(s?.key) === mainKey).length;
       } catch {
         // ignore
       }
@@ -303,16 +312,19 @@ const server = http.createServer(async (req, res) => {
       await syncAgentPresenceFromSessions({ projectId, throttleMs: 30_000 });
 
       // Always upsert main agent in case Supabase is empty or the sync is throttled.
+      // Use per-agent session count when available.
+      const mainActiveCount = typeof mainSessions === 'number' ? mainSessions : activeSessions;
       await upsertSupabaseAgentStatus({
         projectId,
         agentKey: 'agent:main:main',
-        state: typeof activeSessions === 'number' && activeSessions > 0 ? 'working' : 'idle',
-        note: typeof activeSessions === 'number' && activeSessions > 0 ? `${activeSessions} active session(s)` : null,
+        state: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? 'working' : 'idle',
+        note: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? `${mainActiveCount} active session(s)` : null,
       });
 
       return sendJson(res, 200, {
         online: true,
         activeSessions,
+        mainSessions,
         lastUpdated: new Date().toISOString(),
         port: PORT,
         environment: 'local',
