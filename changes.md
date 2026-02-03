@@ -1,3 +1,7 @@
+### Dashboard Live Feed: filter by activity type
+- Added a compact **All types / build_update / session / …** filter dropdown in the Live Feed header.
+- Makes it easier to scan the firehose while keeping the existing feed + cron quick-links intact.
+
 ### Notifications: ensure clicked project exists in selector (fails soft)
 - When clicking an item in the global activity bell, we now best-effort add the referenced project into the local projects list if it isn't already present.
 - Prevents the project dropdown from briefly showing an unknown/blank value when the bell references a project the UI hasn’t loaded yet (or if project fetch failed).

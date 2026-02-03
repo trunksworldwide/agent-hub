@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
@@ -55,6 +56,8 @@ export function DashboardPage() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedFeedDetails, setSelectedFeedDetails] = useState<FeedItem | null>(null);
+
+  const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -281,6 +284,37 @@ export function DashboardPage() {
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, 25);
   }, [cronJobs, activity, agents]);
+
+  const availableFeedTypes = useMemo(() => {
+    const types = new Set<string>();
+    for (const item of feed) types.add(item.type);
+
+    const preferred = [
+      'all',
+      'build_update',
+      'session',
+      'task_created',
+      'task_moved',
+      'task_updated',
+      'brain_doc_updated',
+      'agent_updated',
+      'agent_created',
+      'project_created',
+      'cron_run_requested',
+      'cron',
+    ];
+
+    const present = Array.from(types.values());
+    const ordered = preferred.filter((t) => t === 'all' || types.has(t));
+    const extras = present.filter((t) => !preferred.includes(t)).sort();
+
+    return [...ordered, ...extras];
+  }, [feed]);
+
+  const filteredFeed = useMemo(() => {
+    if (feedTypeFilter === 'all') return feed;
+    return feed.filter((item) => item.type === feedTypeFilter);
+  }, [feed, feedTypeFilter]);
 
   const iconForFeedType = (type: string) => {
     switch (type) {
@@ -685,6 +719,19 @@ export function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                <Select value={feedTypeFilter} onValueChange={setFeedTypeFilter}>
+                  <SelectTrigger className="h-7 w-[150px] text-xs" aria-label="Filter feed type">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFeedTypes.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t === 'all' ? 'All types' : t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 <span className="text-[11px] text-muted-foreground">
                   {lastRefreshedAt
                     ? `Updated ${Math.max(0, Math.floor((currentTime.getTime() - lastRefreshedAt.getTime()) / 1000))}s ago`
@@ -706,10 +753,12 @@ export function DashboardPage() {
 
           {/* Feed Items - Vertical Stack */}
           <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto scrollbar-always">
-            {feed.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No activity yet.</div>
+            {filteredFeed.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                {feed.length === 0 ? 'No activity yet.' : 'No matching activity.'}
+              </div>
             ) : (
-              feed.map((item) => (
+              filteredFeed.map((item) => (
                 <div
                   key={item.id}
                   onClick={() => {
