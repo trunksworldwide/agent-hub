@@ -1,3 +1,7 @@
+### Dashboard Live Feed: session items open the recipient agent
+- Live Feed session entries now prefer the **recipient** agent (when present) for avatar tinting + click-through.
+  - Example: a feed item showing `dashboard → Research` now opens **Research** instead of the sender.
+
 ### Datetime formatting: standardize on 12h “normal time” across UI
 - Added `src/lib/datetime.ts` helpers (`formatDateTime`, `formatTime`) for consistent month/day + 12h timestamps.
 - Cron page now uses the shared formatter for next-run + run history + “Updated” label.

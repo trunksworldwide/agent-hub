@@ -682,20 +682,36 @@ export function DashboardPage() {
                       return;
                     }
 
-                    const k = item.actorAgentKey || item.recipientAgentKey;
-                    if (!k) return;
-                    const a = agentByKey.get(k);
+                    // Session events often target a recipient agent (e.g. "dashboard → agent").
+                    // Prefer opening the recipient when available so the click feels intuitive.
+                    const primaryKey =
+                      item.type === 'session' && item.recipientAgentKey
+                        ? item.recipientAgentKey
+                        : item.actorAgentKey || item.recipientAgentKey;
+
+                    if (!primaryKey) return;
+                    const a = agentByKey.get(primaryKey);
                     if (!a) return;
                     setSelectedAgent(a);
                   }}
                   className={cn(
                     "p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors",
-                    (item.actorAgentKey || item.recipientAgentKey) && agentByKey.has(item.actorAgentKey || item.recipientAgentKey || '') && "cursor-pointer"
+                    (() => {
+                      const primaryKey =
+                        item.type === 'session' && item.recipientAgentKey
+                          ? item.recipientAgentKey
+                          : item.actorAgentKey || item.recipientAgentKey;
+                      return primaryKey && agentByKey.has(primaryKey) ? 'cursor-pointer' : null;
+                    })()
                   )}
                 >
                   <div className="flex items-start gap-3">
                     {(() => {
-                      const key = item.actorAgentKey || item.recipientAgentKey;
+                      const key =
+                        item.type === 'session' && item.recipientAgentKey
+                          ? item.recipientAgentKey
+                          : item.actorAgentKey || item.recipientAgentKey;
+
                       const a = key ? agentByKey.get(key) : null;
                       const label = a?.avatar || null;
                       const color = a?.color || null;
