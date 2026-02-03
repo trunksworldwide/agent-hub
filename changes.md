@@ -1,3 +1,7 @@
+### Notifications: ensure clicked project exists in selector (fails soft)
+- When clicking an item in the global activity bell, we now best-effort add the referenced project into the local projects list if it isn't already present.
+- Prevents the project dropdown from briefly showing an unknown/blank value when the bell references a project the UI hasn’t loaded yet (or if project fetch failed).
+
 ### Dashboard Live Feed: Details dialog can open sender vs recipient agents
 - Feed item Details dialog now offers clearer navigation:
   - For `session` items: **Open recipient** and (when different) **Open sender**.

@@ -269,6 +269,19 @@ export function TopBar() {
                         className="w-full text-left p-4 hover:bg-muted/40 transition-colors"
                         onClick={() => {
                           // Always switch to the activity's project first.
+                          // If the projects list is stale (or load failed), ensure the clicked project exists
+                          // so the selector doesn't end up with an unknown value.
+                          setProjects((prev) => {
+                            if (prev.some((p) => p.id === a.projectId)) return prev;
+                            return [
+                              ...prev,
+                              {
+                                id: a.projectId,
+                                name: a.projectName || a.projectId,
+                                workspace: '',
+                              },
+                            ];
+                          });
                           setSelectedProjectId(a.projectId);
 
                           // Deep-link: cron activities should take you straight to Manage → Cron.
