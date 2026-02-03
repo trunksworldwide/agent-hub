@@ -1,3 +1,7 @@
+### TopBar: pulse the “Connected” status dot (alive UI polish)
+- Online/connected status dot now has a subtle pulse so the header feels less static.
+- Respects `prefers-reduced-motion` (animation disabled).
+
 ### AgentProfilePanel: quick-jump to brain doc editors (SOUL/USER/MEMORY)
 - Added a small **Brain docs** section in the AgentProfilePanel with one-click buttons to open the selected agent directly in **Manage → Agents** on the right editor tab.
 - Makes it much faster to go from “who is this agent?” → editing their brain docs without hunting through navigation.

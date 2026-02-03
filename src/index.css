@@ -118,6 +118,31 @@
   .status-dot-online {
     @apply bg-[hsl(var(--success))];
     box-shadow: 0 0 8px hsl(var(--glow-success) / 0.6);
+    animation: status-dot-pulse 2.6s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot-online {
+      animation: none;
+    }
+  }
+
+  @keyframes status-dot-pulse {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 6px hsl(var(--glow-success) / 0.45);
+      opacity: 0.9;
+    }
+    55% {
+      transform: scale(1.15);
+      box-shadow: 0 0 12px hsl(var(--glow-success) / 0.8);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 6px hsl(var(--glow-success) / 0.45);
+      opacity: 0.9;
+    }
   }
   
   .status-dot-offline {
