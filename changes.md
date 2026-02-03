@@ -150,6 +150,7 @@
 
 ## Next planned work
 - New agent button per project (roster + agent_status + later cron heartbeat).
+- Add a watchdog automation to prevent long idle gaps (alert if no commits in 60m).
 - Agents sidebar alignment:
   - Treat agents as session keys (per the Mission Control article).
   - Show “Runs” separately (cron wakeups, isolated runs).
