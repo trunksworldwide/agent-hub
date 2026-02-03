@@ -1,3 +1,7 @@
+### Dashboard Live Feed: click cron entries to open Cron page
+- Clicking a Live Feed item for `cron` (or `cron_run_requested`) now switches to **Manage → Cron**.
+  - Makes the feed actionable instead of a dead list.
+
 ### Tooling: log-build-update prefers service role key
 - `scripts/log-build-update.mjs` now prefers `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_KEY` when present.
   - Makes build-update activity logging reliable even when RLS blocks anon inserts.

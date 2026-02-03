@@ -11,6 +11,7 @@ import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 
 interface FeedItem {
   id: string;
+  cronJobId?: string;
 
   /** Parsed agent key when the feed item is attributable to an agent. */
   actorAgentKey?: string | null;
@@ -29,7 +30,7 @@ interface FeedItem {
 }
 
 export function DashboardPage() {
-  const { selectedProjectId } = useClawdOffice();
+  const { selectedProjectId, setViewMode, setActiveMainTab } = useClawdOffice();
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -161,6 +162,7 @@ export function DashboardPage() {
     for (const j of cronJobs.slice(0, 10)) {
       items.push({
         id: `cron-${j.id}`,
+        cronJobId: j.id,
         type: 'cron',
         title: `cron: ${j.name}`,
         subtitle: j.schedule,
@@ -550,6 +552,13 @@ export function DashboardPage() {
                 <div
                   key={item.id}
                   onClick={() => {
+                    // If this is a cron entry, bounce to the Manage → Cron page.
+                    if (item.type === 'cron' || item.type === 'cron_run_requested') {
+                      setViewMode('manage');
+                      setActiveMainTab('cron');
+                      return;
+                    }
+
                     const k = item.actorAgentKey || item.recipientAgentKey;
                     if (!k) return;
                     const a = agentByKey.get(k);
