@@ -70,16 +70,33 @@ export function TopBar() {
       const newStatus = await getStatus();
       setStatus(newStatus);
       setLastRefresh(new Date());
+    } catch (e) {
+      // Fail soft: in Supabase-only builds we may not have a Control API.
+      setStatus({
+        online: false,
+        activeSessions: null,
+        lastUpdated: new Date().toISOString(),
+        port: 0,
+        environment: 'unknown',
+      });
+      setLastRefresh(new Date());
+      console.warn('Failed to fetch status:', e);
     } finally {
       setIsRefreshing(false);
     }
   };
 
+  const canRestart = Boolean(import.meta.env.VITE_API_BASE_URL);
+
   const handleRestart = async () => {
+    if (!canRestart) return;
+
     setIsRestarting(true);
     try {
       await restartSystem();
       await fetchStatus();
+    } catch (e) {
+      console.warn('Restart failed:', e);
     } finally {
       setIsRestarting(false);
     }
@@ -325,7 +342,7 @@ export function TopBar() {
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Bot className="w-4 h-4" />
-                {status.activeSessions} active
+                {status.activeSessions ?? '—'} active
               </span>
             </div>
           )}
@@ -346,7 +363,8 @@ export function TopBar() {
                 variant="outline"
                 size="sm"
                 className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={isRestarting}
+                disabled={isRestarting || !canRestart}
+                title={!canRestart ? 'Restart requires VITE_API_BASE_URL (Control API) configured.' : 'Restart runtime'}
               >
                 <RotateCcw className={cn("w-4 h-4", isRestarting && "animate-spin")} />
                 Restart
@@ -362,7 +380,11 @@ export function TopBar() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRestart} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                <AlertDialogAction
+                  onClick={handleRestart}
+                  disabled={!canRestart}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
                   Restart
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -379,7 +401,7 @@ export function TopBar() {
             {status && (
               <span className="flex items-center gap-1 text-sm text-muted-foreground">
                 <Bot className="w-4 h-4" />
-                {status.activeSessions} active
+                {status.activeSessions ?? '—'} active
               </span>
             )}
             <Button

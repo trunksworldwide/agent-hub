@@ -333,6 +333,32 @@ async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
 
 // API Functions
 export async function getStatus(): Promise<SystemStatus> {
+  // If Supabase is configured but we don't have a Control API base URL,
+  // treat Supabase connectivity as "online" so the UI can still run.
+  if (hasSupabase() && supabase && !API_BASE_URL) {
+    try {
+      // Lightweight health check.
+      const { error } = await supabase.from('projects').select('id').limit(1);
+      if (error) throw error;
+
+      return {
+        online: true,
+        activeSessions: null,
+        lastUpdated: new Date().toISOString(),
+        port: 0,
+        environment: 'supabase',
+      };
+    } catch {
+      return {
+        online: false,
+        activeSessions: null,
+        lastUpdated: new Date().toISOString(),
+        port: 0,
+        environment: 'supabase',
+      };
+    }
+  }
+
   if (USE_REMOTE) return requestJson<SystemStatus>('/api/status');
   if (!ALLOW_MOCKS) return requestJson<SystemStatus>('/api/status');
 

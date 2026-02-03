@@ -1,3 +1,9 @@
+### Supabase-only builds: status fetch fails soft + restart disabled without Control API
+- `getStatus()` now returns a **Supabase connectivity** status when Supabase is configured but `VITE_API_BASE_URL` is missing.
+  - Prevents the UI from crashing in Supabase-first deployments.
+- TopBar now **catches status errors** and renders `activeSessions` as `—` when unknown.
+- Restart is automatically **disabled** when `VITE_API_BASE_URL` isn’t configured (with a helpful tooltip).
+
 ### AgentProfilePanel: Schedule tab shows cron jobs (with instructions)
 - AgentProfilePanel now includes a **Schedule** tab that lists cron jobs that appear to belong to the agent.
 - Shows schedule, enabled/disabled, next run, and lets you expand to view the job’s full instructions.
