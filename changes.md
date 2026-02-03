@@ -1,3 +1,7 @@
+### Agents sidebar: reduce re-render churn for “Seen … ago” labels (mobile polish)
+- Sidebar no longer re-renders every second just to update “Seen … ago”.
+- Timestamp tick is now every ~10s, and very recent activity shows as “Seen just now” / “Seen <1m ago”.
+
 ### Dashboard Live Feed: don’t truncate activity list at 20 items
 - The feed renderer no longer hard-caps Supabase activity items to 20; it now renders the full fetched list (respecting the configured fetch limit / “Load more”).
 

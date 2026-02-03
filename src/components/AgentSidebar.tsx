@@ -58,8 +58,9 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
   });
 
   // Keep time ticking so "Seen … ago" labels update.
+  // Mobile polish: avoid re-rendering the whole sidebar every second.
   useEffect(() => {
-    const t = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    const t = window.setInterval(() => setCurrentTime(new Date()), 10_000);
     return () => window.clearInterval(t);
   }, []);
 
@@ -150,7 +151,8 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
 
     const deltaMs = Math.max(0, currentTime.getTime() - last.getTime());
     const s = Math.floor(deltaMs / 1000);
-    if (s < 60) return `Seen ${s}s ago`;
+    if (s < 45) return 'Seen just now';
+    if (s < 60) return 'Seen <1m ago';
     const m = Math.floor(s / 60);
     if (m < 60) return `Seen ${m}m ago`;
     const h = Math.floor(m / 60);
