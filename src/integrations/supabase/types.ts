@@ -148,6 +148,47 @@ export type Database = {
           },
         ]
       }
+      brain_docs: {
+        Row: {
+          agent_key: string
+          content: string
+          created_at: string
+          doc_type: string
+          id: string
+          project_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          agent_key: string
+          content?: string
+          created_at?: string
+          doc_type: string
+          id?: string
+          project_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          agent_key?: string
+          content?: string
+          created_at?: string
+          doc_type?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brain_docs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           created_at: string

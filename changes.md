@@ -1,3 +1,8 @@
+### Supabase: add per-agent brain_docs (SOUL/USER/MEMORY) + realtime subscription
+- Added a `brain_docs` table migration with RLS + updated_at trigger (`supabase/migrations/20260203000001_add_brain_docs.sql`).
+- Fixed Supabase-mode agent file reads/writes to scope by `agent_key` (was incorrectly shared across all agents in a project).
+- Live project realtime subscription now listens to `brain_docs` changes so doc edits refresh immediately.
+
 ### Projects: centralize selected project persistence
 - Added `src/lib/project.ts` with safe `getSelectedProjectId()` / `setSelectedProjectId()` helpers.
 - Switched API layer, Zustand store init, TopBar persistence, and `supabase-data.ts` to use the shared helper.

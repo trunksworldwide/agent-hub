@@ -36,6 +36,11 @@ export function subscribeToProjectRealtime(projectId: string, onChange: () => vo
       { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` },
       () => onChange()
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'brain_docs', filter: `project_id=eq.${projectId}` },
+      () => onChange()
+    )
     .subscribe();
 
   return () => {

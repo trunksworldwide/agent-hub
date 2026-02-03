@@ -569,6 +569,7 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
       .from('brain_docs')
       .select('content,updated_at')
       .eq('project_id', projectId)
+      .eq('agent_key', agentId)
       .eq('doc_type', type)
       .maybeSingle();
 
@@ -610,11 +611,12 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
       .upsert(
         {
           project_id: projectId,
+          agent_key: agentId,
           doc_type: type,
           content,
           updated_by: 'dashboard',
         },
-        { onConflict: 'project_id,doc_type' }
+        { onConflict: 'project_id,agent_key,doc_type' }
       );
     if (error) throw error;
 
@@ -632,7 +634,7 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
         project_id: projectId,
         type: 'brain_doc_updated',
         message: `Updated ${labelByType[type] || type}`,
-        actor_agent_key: 'agent:main:main',
+        actor_agent_key: agentId,
       });
     } catch {
       // ignore
