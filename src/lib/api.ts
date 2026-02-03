@@ -7,6 +7,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const IS_DEV = import.meta.env.MODE === 'development';
 const ALLOW_MOCKS_ENV = import.meta.env.VITE_ALLOW_MOCKS === 'true';
 
+// When emitting activities from the UI, prefer a stable agent key for the dashboard
+// if one is configured (so filters/presence behave like normal agents).
+const DASHBOARD_ACTOR_KEY =
+  String(import.meta.env.VITE_DASHBOARD_PRESENCE_AGENT_KEY || '').trim() || 'dashboard';
+
 // Types
 export interface Agent {
   id: string;
@@ -1146,7 +1151,7 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
   // Prefer Supabase activities if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
-    const actorKey = (input.actorAgentKey || 'dashboard').toString().trim() || 'dashboard';
+    const actorKey = (input.actorAgentKey || DASHBOARD_ACTOR_KEY).toString().trim() || 'dashboard';
 
     const { error } = await supabase.from('activities').insert({
       project_id: projectId,
@@ -1195,7 +1200,7 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
       body: JSON.stringify({
         type,
         message,
-        actor: input.actorAgentKey || 'dashboard',
+        actor: input.actorAgentKey || DASHBOARD_ACTOR_KEY,
       }),
     });
   }
@@ -1205,7 +1210,7 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
       body: JSON.stringify({
         type,
         message,
-        actor: input.actorAgentKey || 'dashboard',
+        actor: input.actorAgentKey || DASHBOARD_ACTOR_KEY,
       }),
     });
   }

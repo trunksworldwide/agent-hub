@@ -89,7 +89,6 @@ export function AgentProfilePanel({
         // v1 routing: encode the recipient agent key in the message so we can render a per-agent inbox
         // before we have a dedicated messages table.
         message: `To ${agent.id}: ${msg}`,
-        actorAgentKey: 'dashboard',
       });
 
       setMessageDraft('');

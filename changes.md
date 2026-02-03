@@ -1,3 +1,7 @@
+### Activity: dashboard actor key honors VITE_DASHBOARD_PRESENCE_AGENT_KEY
+- `createActivity()` now defaults the actor to `VITE_DASHBOARD_PRESENCE_AGENT_KEY` when set (otherwise `dashboard`).
+- AgentProfilePanel “Send message” now relies on this default so session notes attribute cleanly to the dashboard agent.
+
 ### Manage → Activity: click an activity author to jump to the agent editor
 - In the full-page **Manage → Activity** feed, the author label is now clickable when it refers to an `agent:*` key.
 - Clicking it jumps you to **Manage → Agents** with that agent selected (handy for presence debugging / brain docs edits).
