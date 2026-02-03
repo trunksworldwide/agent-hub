@@ -64,14 +64,17 @@ export function DashboardPage() {
   }, [selectedProjectId]);
 
   const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
+  const [feedAgentFilter, setFeedAgentFilter] = useState<string>('all');
 
-  // Persist the feed type filter per project so the dashboard feels "sticky".
-  // (Useful when you mostly want build_update/session/etc while you iterate.)
+  // Persist feed filters per project so the dashboard feels "sticky".
   useEffect(() => {
     const projectId = selectedProjectId || 'front-office';
     try {
-      const raw = window.localStorage.getItem(`clawdos.feedType.${projectId}`);
-      if (raw && typeof raw === 'string') setFeedTypeFilter(raw);
+      const rawType = window.localStorage.getItem(`clawdos.feedType.${projectId}`);
+      if (rawType && typeof rawType === 'string') setFeedTypeFilter(rawType);
+
+      const rawAgent = window.localStorage.getItem(`clawdos.feedAgent.${projectId}`);
+      if (rawAgent && typeof rawAgent === 'string') setFeedAgentFilter(rawAgent);
     } catch {
       // localStorage may be unavailable; fail soft.
     }
@@ -82,10 +85,11 @@ export function DashboardPage() {
     const projectId = selectedProjectId || 'front-office';
     try {
       window.localStorage.setItem(`clawdos.feedType.${projectId}`, feedTypeFilter);
+      window.localStorage.setItem(`clawdos.feedAgent.${projectId}`, feedAgentFilter);
     } catch {
       // Ignore.
     }
-  }, [selectedProjectId, feedTypeFilter]);
+  }, [selectedProjectId, feedTypeFilter, feedAgentFilter]);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -350,10 +354,40 @@ export function DashboardPage() {
     return [...ordered, ...extras];
   }, [feed]);
 
+  const availableFeedAgents = useMemo(() => {
+    const options = agents
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map((a) => ({ key: a.id, label: a.name || a.id, avatar: a.avatar }));
+
+    return [{ key: 'all', label: 'All agents', avatar: '👥' }, ...options];
+  }, [agents]);
+
   const filteredFeed = useMemo(() => {
-    if (feedTypeFilter === 'all') return feed;
-    return feed.filter((item) => item.type === feedTypeFilter);
-  }, [feed, feedTypeFilter]);
+    const byType = feedTypeFilter === 'all' ? feed : feed.filter((item) => item.type === feedTypeFilter);
+
+    if (feedAgentFilter === 'all') return byType;
+
+    const agentKey = feedAgentFilter;
+    const agent = agentByKey.get(agentKey);
+
+    return byType.filter((item) => {
+      if (item.kind === 'activity') {
+        return item.actorAgentKey === agentKey || item.recipientAgentKey === agentKey;
+      }
+
+      if (item.kind === 'cron') {
+        const job = cronJobs.find((j) => j.id === item.cronJobId);
+        if (!job) return false;
+        const hay = `${job.name || ''}\n${job.instructions || ''}`.toLowerCase();
+        const keyNeedle = String(agentKey).toLowerCase();
+        const nameNeedle = (agent?.name || '').toLowerCase();
+        return hay.includes(keyNeedle) || (nameNeedle ? hay.includes(nameNeedle) : false);
+      }
+
+      return true;
+    });
+  }, [feed, feedTypeFilter, feedAgentFilter, cronJobs, agentByKey]);
 
   const iconForFeedType = (type: string) => {
     switch (type) {
@@ -779,6 +813,19 @@ export function DashboardPage() {
                     {availableFeedTypes.map((t) => (
                       <SelectItem key={t} value={t}>
                         {t === 'all' ? 'All types' : t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={feedAgentFilter} onValueChange={setFeedAgentFilter}>
+                  <SelectTrigger className="h-7 w-[170px] text-xs" aria-label="Filter feed agent">
+                    <SelectValue placeholder="All agents" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFeedAgents.map((a) => (
+                      <SelectItem key={a.key} value={a.key}>
+                        {a.key === 'all' ? a.label : `${a.avatar || ''} ${a.label}`.trim()}
                       </SelectItem>
                     ))}
                   </SelectContent>

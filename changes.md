@@ -1,3 +1,8 @@
+### Dashboard Live Feed: filter by agent (persisted)
+- Added an **All agents / <agent>** dropdown next to the type filter in the Live Feed.
+- Filter persists per project via `localStorage` (`clawdos.feedAgent.<projectId>`).
+- Activity rows match on **actor** or **recipient**; cron rows match by scanning job name/instructions for the agent key/name.
+
 ### Presence: prevent “stuck WORKING” status when an agent hasn’t been seen recently
 - Dashboard presence now degrades a `working` agent to **OFFLINE** if we haven’t seen heartbeat/activity in ~30 minutes.
 - Prevents permanently-running “ghost” agents when a session crashes or presence updates stop flowing.
