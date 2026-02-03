@@ -1,3 +1,7 @@
+### Dashboard: clear selected agent when switching projects
+- Prevents the AgentProfilePanel from showing stale data from the previously selected project.
+- Keeps roster/tasks/activity context correctly project-scoped (mobile sheet closes too).
+
 ### Dashboard Live Feed: filter by activity type
 - Added a compact **All types / build_update / session / …** filter dropdown in the Live Feed header.
 - Makes it easier to scan the firehose while keeping the existing feed + cron quick-links intact.

@@ -57,6 +57,12 @@ export function DashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedFeedDetails, setSelectedFeedDetails] = useState<FeedItem | null>(null);
 
+  // Project scoping: avoid showing an agent panel from the previous project after switching.
+  // (Agent keys can overlap, but the roster + tasks + activity context should always be project-scoped.)
+  useEffect(() => {
+    setSelectedAgent(null);
+  }, [selectedProjectId]);
+
   const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
 
   const [loadError, setLoadError] = useState<string | null>(null);
