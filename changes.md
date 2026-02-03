@@ -1,3 +1,7 @@
+### Dashboard: tint agent avatars in sidebar using theme color
+- When an agent has a `color` (from Supabase `agents.color`), their avatar tile in the sidebar now gets a subtle tint + top stripe.
+- Applies to both **desktop** (collapsed + expanded) and **mobile** agent lists.
+
 ### Dashboard: show agent “last active” in sidebar (desktop + mobile)
 - Added a subtle `Last active …` line under each agent (when available) so presence is readable at a glance.
 - Collapsed sidebar tooltips now include last active info.

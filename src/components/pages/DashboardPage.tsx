@@ -276,6 +276,19 @@ export function DashboardPage() {
     return `${days}d ago`;
   };
 
+  const withAlpha = (color: string, alphaHex: string) => {
+    const c = (color || '').trim();
+    if (/^#([0-9a-fA-F]{6})$/.test(c)) return `${c}${alphaHex}`;
+    if (/^#([0-9a-fA-F]{3})$/.test(c)) {
+      const r = c[1];
+      const g = c[2];
+      const b = c[3];
+      return `#${r}${r}${g}${g}${b}${b}${alphaHex}`;
+    }
+    // Fall back to the raw color; browsers will ignore invalid values.
+    return c;
+  };
+
   const activeAgentsCount = agents.filter(a => a.status === 'online' || a.status === 'running').length;
   const totalTasks = tasks.length;
 
@@ -302,7 +315,26 @@ export function DashboardPage() {
                     selectedAgent?.id === agent.id && "bg-muted"
                   )}
                 >
-                  <span className="text-xl">{agent.avatar}</span>
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-xl shrink-0 relative overflow-hidden"
+                    style={
+                      agent.color
+                        ? {
+                            backgroundColor: withAlpha(agent.color, '22'),
+                            border: `1px solid ${withAlpha(agent.color, '55')}`,
+                          }
+                        : undefined
+                    }
+                  >
+                    {agent.color ? (
+                      <span
+                        className="absolute inset-x-0 top-0 h-1"
+                        style={{ backgroundColor: agent.color }}
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span>{agent.avatar}</span>
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm truncate">{agent.name}</span>
@@ -363,7 +395,29 @@ export function DashboardPage() {
                     : undefined
                 }
               >
-                <span className={cn("text-xl", agentPanelCollapsed && "text-lg")}>{agent.avatar}</span>
+                <div
+                  className={cn(
+                    'rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden',
+                    agentPanelCollapsed ? 'w-8 h-8 text-lg' : 'w-9 h-9 text-xl'
+                  )}
+                  style={
+                    agent.color
+                      ? {
+                          backgroundColor: withAlpha(agent.color, '22'),
+                          border: `1px solid ${withAlpha(agent.color, '55')}`,
+                        }
+                      : undefined
+                  }
+                >
+                  {agent.color ? (
+                    <span
+                      className="absolute inset-x-0 top-0 h-1"
+                      style={{ backgroundColor: agent.color }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  <span>{agent.avatar}</span>
+                </div>
                 {!agentPanelCollapsed && (
                   <>
                     <div className="flex-1 min-w-0">
