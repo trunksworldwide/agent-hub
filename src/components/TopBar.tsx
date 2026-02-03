@@ -258,6 +258,10 @@ export function TopBar() {
                               ? '🗂️'
                               : a.type === 'build_update'
                               ? '🔧'
+                              : a.type === 'agent_created'
+                              ? '🤖'
+                              : a.type === 'project_created'
+                              ? '📁'
                               : '✅'}
                           </span>
                           <div className="min-w-0 flex-1">

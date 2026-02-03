@@ -236,6 +236,10 @@ export function AgentProfilePanel({
         return '🧠';
       case 'build_update':
         return '🔧';
+      case 'agent_created':
+        return '🤖';
+      case 'project_created':
+        return '📁';
       case 'cron':
         return '⏰';
       case 'cron_run_requested':

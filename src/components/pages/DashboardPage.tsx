@@ -273,6 +273,10 @@ export function DashboardPage() {
         return '🧠';
       case 'build_update':
         return '🔧';
+      case 'agent_created':
+        return '🤖';
+      case 'project_created':
+        return '📁';
       default:
         return '✅';
     }
