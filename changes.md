@@ -620,3 +620,7 @@
 - Added a small **Edit presence** box to the AgentProfilePanel.
 - Lets you set `agent_status.state` (idle/working/blocked/sleeping) and a short note.
 - Persists via a new `updateAgentStatus()` API helper and emits an `agent_status_updated` activity entry.
+
+### Dashboard: cron feed deep-links now focus the job
+- Clicking a cron (or cron_run_requested) item in the Dashboard “Live Feed” now opens **Manage → Cron** and auto-focuses the referenced job id when available.
+- The feed details modal’s “Open Cron manager” button now does the same.

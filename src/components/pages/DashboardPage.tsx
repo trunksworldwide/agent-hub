@@ -44,7 +44,7 @@ interface FeedItem {
 }
 
 export function DashboardPage() {
-  const { selectedProjectId, setViewMode, setActiveMainTab } = useClawdOffice();
+  const { selectedProjectId, setViewMode, setActiveMainTab, setFocusCronJobId } = useClawdOffice();
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -261,6 +261,21 @@ export function DashboardPage() {
     return null;
   };
 
+  const parseCronJobIdFromMessage = (message: string | undefined | null): string | null => {
+    const m = (message || '').trim();
+    if (!m) return null;
+
+    // Server-side convention (Control API):
+    // - "Requested cron run: <jobId>"
+    const match = m.match(/Requested cron run:\s*(.+)$/i);
+    if (match?.[1]) return match[1].trim();
+
+    // Fallback: accept raw ids as messages.
+    if (/^[a-zA-Z0-9._:-]{6,}$/.test(m)) return m;
+
+    return null;
+  };
+
   const agentByKey = useMemo(() => {
     const m = new Map<string, Agent>();
     for (const a of agents) m.set(a.id, a);
@@ -321,6 +336,7 @@ export function DashboardPage() {
         title: c.message,
         subtitle,
         createdAt: c.date,
+        cronJobId: kind === 'cron_run_requested' ? parseCronJobIdFromMessage(c.message) || undefined : undefined,
         actorAgentKey,
         recipientAgentKey: recipientAgentKey || undefined,
         rawAuthor: c.author || null,
@@ -875,6 +891,7 @@ export function DashboardPage() {
                   onClick={() => {
                     // If this is a cron entry, bounce to the Manage → Cron page.
                     if (item.type === 'cron' || item.type === 'cron_run_requested') {
+                      if (item.cronJobId) setFocusCronJobId(item.cronJobId);
                       setViewMode('manage');
                       setActiveMainTab('cron');
                       return;
@@ -1052,6 +1069,7 @@ export function DashboardPage() {
                         variant="secondary"
                         onClick={() => {
                           setSelectedFeedDetails(null);
+                          if (selectedFeedDetails.cronJobId) setFocusCronJobId(selectedFeedDetails.cronJobId);
                           setViewMode('manage');
                           setActiveMainTab('cron');
                         }}
