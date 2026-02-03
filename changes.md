@@ -1,3 +1,7 @@
+### AgentProfilePanel: Messages tab renders clean "inbox" messages
+- Session activity messages like `To agent:main:main: ...` now render as a clean message body (without the routing prefix).
+- Shows a lightweight **From <author>** line so per-agent inboxes are easier to scan.
+
 ### AgentProfilePanel: edit agent emoji + theme color
 - Agent profile header now includes inline **Emoji** + **Color** inputs with a **Save** button.
 - Persists updates to Supabase `agents` (upsert) and emits an `agent_updated` activity.

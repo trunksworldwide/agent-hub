@@ -221,18 +221,32 @@ export function AgentProfilePanel({
 
   const timeline = activity.filter((a) => matchesAgent(a, agent.id)).slice(0, 12);
 
+  const extractDirectedMessage = (rawMessage: string) => {
+    const m = (rawMessage || '').trim();
+    if (!m) return null;
+
+    const needles = [`To ${agent.id}:`, `To ${agent.name}:`];
+    for (const needle of needles) {
+      const idx = m.indexOf(needle);
+      if (idx >= 0) {
+        const body = m.slice(idx + needle.length).trim();
+        return {
+          needle,
+          body: body.length > 0 ? body : '—',
+        };
+      }
+    }
+
+    return null;
+  };
+
   const messages = activity
     .filter((a) => a.type === 'session')
-    .filter((a) => {
-      const m = (a.message || '').trim();
-      // Support both legacy (name-based) and new (agent key-based) formats.
-      return (
-        m.startsWith(`To ${agent.id}:`) ||
-        m.startsWith(`To ${agent.name}:`) ||
-        m.includes(`To ${agent.id}:`) ||
-        m.includes(`To ${agent.name}:`)
-      );
+    .map((a) => {
+      const directed = extractDirectedMessage(a.message || '');
+      return directed ? { activity: a, directed } : null;
     })
+    .filter((x): x is { activity: ActivityItem; directed: { needle: string; body: string } } => Boolean(x))
     .slice(0, 10);
 
   const agentMatchNeedle = (s: string) => s.toLowerCase();
@@ -616,10 +630,16 @@ export function AgentProfilePanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {messages.map((a) => (
+                  {messages.map(({ activity: a, directed }) => (
                     <div key={a.hash} className="p-3 rounded-lg border border-border bg-card">
-                      <div className="text-sm whitespace-pre-wrap break-words">{a.message}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{formatAt(a.date)}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        From{' '}
+                        <span className="font-mono">
+                          {(a.authorLabel || a.author || 'unknown').toString().trim()}
+                        </span>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-words mt-1">{directed.body}</div>
+                      <div className="text-xs text-muted-foreground mt-2">{formatAt(a.date)}</div>
                     </div>
                   ))}
                 </div>
