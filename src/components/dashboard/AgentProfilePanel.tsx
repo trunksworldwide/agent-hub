@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { createActivity, updateAgentRoster } from '@/lib/api';
+import { Textarea } from '@/components/ui/textarea';
+import { createActivity, updateAgentRoster, updateAgentStatus } from '@/lib/api';
 import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useClawdOffice } from '@/lib/store';
@@ -49,6 +50,11 @@ export function AgentProfilePanel({
   const [emojiDraft, setEmojiDraft] = useState<string>((agent.avatar || '').trim());
   const [colorDraft, setColorDraft] = useState<string>((agent.color || '').trim());
   const [savingAppearance, setSavingAppearance] = useState(false);
+
+  // Presence editing (Supabase agent_status)
+  const [statusStateDraft, setStatusStateDraft] = useState<Agent['statusState'] | ''>((agent.statusState || '').trim());
+  const [statusNoteDraft, setStatusNoteDraft] = useState<string>((agent.statusNote || '').trim());
+  const [savingStatus, setSavingStatus] = useState(false);
 
   const openAgentEditor = (tab: AgentTab) => {
     setSelectedAgentId(agent.id);
@@ -136,8 +142,43 @@ export function AgentProfilePanel({
     }
   };
 
+  const saveStatus = async () => {
+    if (savingStatus) return;
+
+    const nextState = (statusStateDraft || '').trim() || null;
+    const nextNote = (statusNoteDraft || '').trim() || null;
+
+    const unchanged = (agent.statusState || '').trim() === (nextState || '') && (agent.statusNote || '').trim() === (nextNote || '');
+    if (unchanged) return;
+
+    setSavingStatus(true);
+    try {
+      const res = await updateAgentStatus({
+        agentKey: agent.id,
+        state: (nextState as any) || null,
+        note: nextNote,
+      });
+
+      if (!res.ok) {
+        toast({
+          title: 'Failed to update status',
+          description: res.error || 'unknown_error',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: 'Status updated',
+        description: 'Saved presence state + note. (Sidebar will refresh shortly.)',
+      });
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   const statusReason =
-    (agent.statusNote && agent.statusNote.trim().length > 0 ? agent.statusNote : null) ||
+    ((statusNoteDraft || '').trim().length > 0 ? statusNoteDraft : null) ||
     'No status note yet.';
 
   const formatSince = (iso: string | null | undefined) => {
@@ -471,6 +512,54 @@ export function AgentProfilePanel({
                 {formatSince(lastSeenAt)}
               </p>
             ) : null}
+
+            {/* Presence editor (agent_status) */}
+            <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Edit presence</div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 px-2 text-[11px]"
+                  disabled={savingStatus}
+                  onClick={() => void saveStatus()}
+                >
+                  {savingStatus ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-[110px,1fr] items-center gap-2">
+                <div className="text-xs text-muted-foreground">State</div>
+                <select
+                  className="h-8 rounded-md bg-background border border-input px-2 text-xs"
+                  value={statusStateDraft}
+                  onChange={(e) => setStatusStateDraft(e.target.value as any)}
+                  aria-label="Presence state"
+                >
+                  <option value="">(auto)</option>
+                  <option value="idle">idle</option>
+                  <option value="working">working</option>
+                  <option value="blocked">blocked</option>
+                  <option value="sleeping">sleeping</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-[110px,1fr] items-start gap-2">
+                <div className="text-xs text-muted-foreground pt-2">Note</div>
+                <Textarea
+                  value={statusNoteDraft}
+                  onChange={(e) => setStatusNoteDraft(e.target.value)}
+                  placeholder="Short status note…"
+                  className="min-h-[72px] text-xs"
+                  aria-label="Presence note"
+                />
+              </div>
+
+              <div className="text-[11px] text-muted-foreground">
+                Saved to <span className="font-mono">agent_status</span> (Supabase). Leave state as “(auto)” to let activity/heartbeat drive the badge.
+              </div>
+            </div>
           </div>
 
           {/* Presence */}

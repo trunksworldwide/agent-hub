@@ -481,6 +481,72 @@ export async function updateAgentRoster(input: {
   }
 }
 
+export async function updateAgentStatus(input: {
+  agentKey: string;
+  state?: 'idle' | 'working' | 'blocked' | 'sleeping' | null;
+  note?: string | null;
+  currentTaskId?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const agentKey = (input.agentKey || '').toString().trim();
+  if (!agentKey) return { ok: false, error: 'missing_agent_key' };
+
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const nowIso = new Date().toISOString();
+
+    const patch: any = {
+      project_id: projectId,
+      agent_key: agentKey,
+      // `agent_status.last_activity_at` is NOT NULL; include a safe value.
+      // (Editing status is a form of activity, so bumping is acceptable.)
+      last_activity_at: nowIso,
+    };
+
+    if (input.state !== undefined) patch.state = input.state || 'idle';
+    if (input.note !== undefined) patch.note = (input.note || '').trim() || null;
+    if (input.currentTaskId !== undefined) patch.current_task_id = input.currentTaskId || null;
+
+    try {
+      const { error } = await supabase.from('agent_status').upsert(patch, { onConflict: 'project_id,agent_key' });
+      if (error) throw error;
+
+      // Best-effort: activity entry so the feed shows manual status adjustments.
+      try {
+        await supabase.from('activities').insert({
+          project_id: projectId,
+          type: 'agent_status_updated',
+          message: `Updated status for ${agentKey}`,
+          actor_agent_key: 'ui',
+          task_id: null,
+        });
+      } catch {
+        // ignore
+      }
+
+      return { ok: true };
+    } catch (e: any) {
+      console.error('updateAgentStatus failed:', e);
+      return { ok: false, error: String(e?.message || e) };
+    }
+  }
+
+  if (USE_REMOTE) {
+    return requestJson<{ ok: boolean; error?: string }>(`/api/agents/${encodeURIComponent(agentKey)}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+  if (!ALLOW_MOCKS) {
+    return requestJson<{ ok: boolean; error?: string }>(`/api/agents/${encodeURIComponent(agentKey)}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+
+  await delay(80);
+  return { ok: true };
+}
+
 export async function getAgents(): Promise<Agent[]> {
   // Prefer Supabase roster if configured.
   if (hasSupabase() && supabase) {

@@ -582,3 +582,8 @@
 ### TopBar: close notifications popover after navigation
 - Made the notifications (global activity) Popover controlled so clicking an activity now closes it after switching projects / deep-linking.
 - Keeps the UI feeling snappy on mobile and avoids the popover lingering over the dashboard.
+
+### AgentProfilePanel: edit agent presence (agent_status state + note)
+- Added a small **Edit presence** box to the AgentProfilePanel.
+- Lets you set `agent_status.state` (idle/working/blocked/sleeping) and a short note.
+- Persists via a new `updateAgentStatus()` API helper and emits an `agent_status_updated` activity entry.
