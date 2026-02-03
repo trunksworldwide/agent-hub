@@ -511,3 +511,8 @@
 
 ### Dev tooling: log-activity loads .env.local automatically
 - `scripts/log-activity.mjs` now reads `.env.local`/`.env` via dotenv so cron/dev runs can emit Supabase activities without manual env exports.
+
+### UI: better load error visibility + correct default agent selection
+- Agent sidebar now shows an inline error banner when agent roster fetch fails.
+- Dashboard refresh failures now render an actionable error panel (with retry) instead of failing silently.
+- Default `selectedAgentId` now uses the canonical Supabase agent key (`agent:main:main`) so the right agent opens on first load.

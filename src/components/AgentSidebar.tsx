@@ -317,6 +317,11 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
           </div>
         </div>
 
+        {error && (
+          <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive break-words">
+            Agents failed to load. {error}
+          </div>
+        )}
         <div className="space-y-1">
           {displayedAgents.map((agent) => (
             <button
