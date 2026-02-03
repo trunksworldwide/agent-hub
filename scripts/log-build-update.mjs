@@ -9,6 +9,9 @@
  * Env:
  *   VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
  *   (or SUPABASE_URL / SUPABASE_ANON_KEY)
+ *
+ *   If present, we prefer a service role key for reliability with RLS:
+ *   SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
  */
 
 import dotenv from 'dotenv';
@@ -46,14 +49,21 @@ if (!message) {
 }
 
 const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const serviceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.VITE_SUPABASE_SERVICE_KEY;
 
-if (!url || !anon) {
-  console.error('Missing Supabase env (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY). Skipping.');
+const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const supabaseKey = serviceKey || anon;
+
+if (!url || !supabaseKey) {
+  console.error('Missing Supabase env (VITE_SUPABASE_URL + key). Skipping.');
   process.exit(0);
 }
 
-const supabase = createClient(url, anon);
+const supabase = createClient(url, supabaseKey);
 
 const { error } = await supabase.from('activities').insert({
   project_id: projectId,

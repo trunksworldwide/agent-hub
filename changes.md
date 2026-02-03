@@ -1,3 +1,8 @@
+### Tooling: log-build-update prefers service role key
+- `scripts/log-build-update.mjs` now prefers `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_KEY` when present.
+  - Makes build-update activity logging reliable even when RLS blocks anon inserts.
+  - Still falls back to anon keys when service keys aren’t available.
+
 ### Dashboard Live Feed: relative timestamps + hover absolute
 - Live Feed now shows a relative timestamp (e.g. "5m ago") for faster scanning.
 - Hovering the time reveals the full absolute timestamp for precision.
