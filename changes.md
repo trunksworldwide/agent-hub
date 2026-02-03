@@ -433,3 +433,7 @@
 ### Presence: bump agent_status on Supabase activity inserts
 - When createActivity() writes to Supabase and the actor is a real agent key (starts with `agent:`), we now best-effort upsert `agent_status.last_activity_at`.
 - This keeps dashboard presence accurate in Supabase-only builds where presence updates aren’t coming from the Control API.
+
+### Presence: dashboard keepalive no longer requires Supabase Auth session
+- Dashboard UI keepalive now attempts Supabase `agents` / `agent_status` upserts even when there is no active Supabase Auth session.
+- This improves presence reliability for Supabase setups that allow anon presence writes (or use RLS policies keyed off the anon/service key).

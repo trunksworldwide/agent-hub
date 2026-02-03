@@ -84,45 +84,41 @@ export function DashboardPage() {
       const projectId = selectedProjectId || 'front-office';
       const nowIso = new Date().toISOString();
 
-      supabase.auth
-        .getSession()
-        .then(({ data }) => {
-          if (!data?.session) return;
+      // We *prefer* authenticated writes (if the app uses Supabase Auth), but don't require
+      // an active session: many Supabase setups allow anon writes for presence rows.
+      // Either way, this is best-effort and should fail soft.
+      const createAgent =
+        String(import.meta.env.VITE_DASHBOARD_PRESENCE_CREATE_AGENT || '').toLowerCase() === 'true';
 
-          const createAgent =
-            String(import.meta.env.VITE_DASHBOARD_PRESENCE_CREATE_AGENT || '').toLowerCase() === 'true';
+      if (createAgent) {
+        supabase
+          .from('agents')
+          .upsert(
+            {
+              project_id: projectId,
+              agent_key: heartbeatAgentKey,
+              name: 'Dashboard',
+              role: 'UI',
+              emoji: '🖥️',
+            },
+            { onConflict: 'project_id,agent_key' }
+          )
+          .catch(() => {});
+      }
 
-          if (createAgent) {
-            supabase
-              .from('agents')
-              .upsert(
-                {
-                  project_id: projectId,
-                  agent_key: heartbeatAgentKey,
-                  name: 'Dashboard',
-                  role: 'UI',
-                  emoji: '🖥️',
-                },
-                { onConflict: 'project_id,agent_key' }
-              )
-              .catch(() => {});
-          }
-
-          supabase
-            .from('agent_status')
-            .upsert(
-              {
-                project_id: projectId,
-                agent_key: heartbeatAgentKey,
-                state: 'idle',
-                last_heartbeat_at: nowIso,
-                last_activity_at: nowIso,
-                note: 'Dashboard open (UI keepalive)',
-              },
-              { onConflict: 'project_id,agent_key' }
-            )
-            .catch(() => {});
-        })
+      supabase
+        .from('agent_status')
+        .upsert(
+          {
+            project_id: projectId,
+            agent_key: heartbeatAgentKey,
+            state: 'idle',
+            last_heartbeat_at: nowIso,
+            last_activity_at: nowIso,
+            note: 'Dashboard open (UI keepalive)',
+          },
+          { onConflict: 'project_id,agent_key' }
+        )
         .catch(() => {});
     }, 60_000);
 
