@@ -1,3 +1,8 @@
+### Projects: centralize selected project persistence
+- Added `src/lib/project.ts` with safe `getSelectedProjectId()` / `setSelectedProjectId()` helpers.
+- Switched API layer, Zustand store init, TopBar persistence, and `supabase-data.ts` to use the shared helper.
+  - Prevents subtle SSR/localStorage edge cases and keeps `x-clawdos-project` scoping consistent.
+
 ### Supabase-only builds: create projects via Supabase (no Control API required)
 - `createProject()` now supports Supabase mode by upserting the `projects` row directly (workspace_path can be set later).
 - TopBar “New project” now alerts on failure instead of silently reloading.

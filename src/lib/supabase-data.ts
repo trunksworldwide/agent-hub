@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getSelectedProjectId } from './project';
 
 // ===========================================
 // Types
@@ -59,7 +60,7 @@ export interface SupabaseActivity {
 // ===========================================
 
 export function getProjectId(): string {
-  return localStorage.getItem('clawdos.project') || 'front-office';
+  return getSelectedProjectId();
 }
 
 // ===========================================

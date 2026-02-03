@@ -1,10 +1,11 @@
 // ClawdOS API Layer - Mock implementation, easily swappable for real backend
 
+import { supabase, hasSupabase } from './supabase';
+import { getSelectedProjectId } from './project';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const IS_DEV = import.meta.env.MODE === 'development';
 const ALLOW_MOCKS_ENV = import.meta.env.VITE_ALLOW_MOCKS === 'true';
-
-import { supabase, hasSupabase } from './supabase';
 
 // Types
 export interface Agent {
@@ -302,11 +303,7 @@ const USE_REMOTE = Boolean(API_BASE_URL);
 const ALLOW_MOCKS = IS_DEV && !USE_REMOTE && ALLOW_MOCKS_ENV;
 
 function getProjectId(): string {
-  try {
-    return localStorage.getItem('clawdos.project') || 'front-office';
-  } catch {
-    return 'front-office';
-  }
+  return getSelectedProjectId();
 }
 
 async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {

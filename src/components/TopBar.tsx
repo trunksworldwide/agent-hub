@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useClawdOffice, type MainTab } from '@/lib/store';
 import { createProject, getGlobalActivity, getProjects, getStatus, restartSystem, type GlobalActivityItem, type Project } from '@/lib/api';
+import { setSelectedProjectId as persistSelectedProjectId } from '@/lib/project';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -53,11 +54,7 @@ export function TopBar() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('clawdos.project', selectedProjectId);
-    } catch {
-      // ignore
-    }
+    persistSelectedProjectId(selectedProjectId);
   }, [selectedProjectId]);
 
   const selectedProject = useMemo(() => {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
+import { getSelectedProjectId } from './project';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'skills' | 'channels' | 'cron' | 'config';
@@ -54,13 +55,7 @@ interface ClawdOfficeState {
   setIsRefreshing: (value: boolean) => void;
 }
 
-const initialProjectId = (() => {
-  try {
-    return localStorage.getItem('clawdos.project') || 'front-office';
-  } catch {
-    return 'front-office';
-  }
-})();
+const initialProjectId = getSelectedProjectId();
 
 export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Project selection
