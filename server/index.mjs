@@ -87,6 +87,78 @@ async function upsertSupabaseAgentStatus({
   }
 }
 
+let lastPresenceSyncMs = 0;
+
+function normalizeAgentKey(raw) {
+  const key = String(raw || '').trim();
+  const parts = key.split(':');
+  if (parts[0] === 'agent' && parts.length >= 3) {
+    // Treat these as belonging to the base agent identity (agent:<name>:<kind>).
+    return parts.slice(0, 3).join(':');
+  }
+  return '';
+}
+
+async function syncAgentPresenceFromSessions({ projectId, throttleMs = 30_000 }) {
+  const now = Date.now();
+  if (now - lastPresenceSyncMs < throttleMs) return;
+  lastPresenceSyncMs = now;
+
+  try {
+    const { stdout } = await exec('clawdbot sessions --json --active 10080');
+    const data = JSON.parse(stdout || '{"sessions": []}');
+
+    const sessions = (data.sessions || []).map((s) => {
+      const updatedAtIso = new Date(s.updatedAt || Date.now()).toISOString();
+      return {
+        key: s.key,
+        agentKey: normalizeAgentKey(s.key),
+        updatedAt: updatedAtIso,
+      };
+    });
+
+    const byAgent = new Map();
+    for (const s of sessions) {
+      if (!s.agentKey) continue;
+      const cur = byAgent.get(s.agentKey) || { count: 0, maxUpdatedAt: null };
+      cur.count += 1;
+      const t = Date.parse(s.updatedAt);
+      if (!Number.isNaN(t)) {
+        cur.maxUpdatedAt = cur.maxUpdatedAt === null ? t : Math.max(cur.maxUpdatedAt, t);
+      }
+      byAgent.set(s.agentKey, cur);
+    }
+
+    const heartbeatIso = new Date().toISOString();
+
+    for (const [agentKey, info] of byAgent.entries()) {
+      await upsertSupabaseAgentStatus({
+        projectId,
+        agentKey,
+        state: info.count > 0 ? 'working' : 'idle',
+        note: info.count > 0 ? `${info.count} active session(s)` : null,
+        lastHeartbeatAt: heartbeatIso,
+        lastActivityAt: info.maxUpdatedAt ? new Date(info.maxUpdatedAt).toISOString() : null,
+      });
+    }
+
+    // Ensure main agent has a presence row even when idle.
+    if (!byAgent.has('agent:main:main')) {
+      await upsertSupabaseAgentStatus({
+        projectId,
+        agentKey: 'agent:main:main',
+        state: 'idle',
+        note: null,
+        lastHeartbeatAt: heartbeatIso,
+        lastActivityAt: null,
+      });
+    }
+  } catch (e) {
+    // Fail soft; status endpoint should still return.
+    console.error('Agent presence sync (from /api/status) failed:', e);
+  }
+}
+
 function loadProjectsSync() {
   try {
     const raw = readFileSync(PROJECTS_FILE, 'utf8');
@@ -226,8 +298,11 @@ const server = http.createServer(async (req, res) => {
         // ignore
       }
 
-      // Best-effort: keep main agent presence fresh for the selected project.
-      // This makes the Dashboard presence UI feel "alive" even before deeper wiring.
+      // Best-effort: keep agent presence fresh for the selected project.
+      // `/api/status` is polled frequently by the UI, so throttle Supabase writes.
+      await syncAgentPresenceFromSessions({ projectId, throttleMs: 30_000 });
+
+      // Always upsert main agent in case Supabase is empty or the sync is throttled.
       await upsertSupabaseAgentStatus({
         projectId,
         agentKey: 'agent:main:main',

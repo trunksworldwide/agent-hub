@@ -479,3 +479,7 @@
 
 ### UI: subtle glow for working agents
 - Agents marked as WORKING now get a gentle pulse/glow around their avatar in sidebars to make active work feel more alive without reworking layout.
+
+### Presence: sync agent_status from /api/status (throttled)
+- Added a throttled presence sync in the Control API `/api/status` handler that reads active Clawdbot sessions and upserts `agent_status` for any agent keys it can infer.
+- Keeps the Dashboard presence (ONLINE/WORKING + last seen) accurate even if the user never opens the Sessions tab.
