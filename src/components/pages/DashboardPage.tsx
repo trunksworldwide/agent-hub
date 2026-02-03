@@ -124,7 +124,7 @@ export function DashboardPage() {
             },
             { onConflict: 'project_id,agent_key' }
           )
-          .catch(() => {});
+          .then(() => {});
       }
 
       supabase
@@ -140,7 +140,7 @@ export function DashboardPage() {
           },
           { onConflict: 'project_id,agent_key' }
         )
-        .catch(() => {});
+        .then(() => {});
     }, 60_000);
 
     // Default to polling, but when Supabase is configured we prefer realtime updates
