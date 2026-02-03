@@ -253,6 +253,27 @@ export function DashboardPage() {
     }).toUpperCase();
   };
 
+  const formatRelativeTime = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+
+    const deltaMs = currentTime.getTime() - d.getTime();
+    if (deltaMs < 0) return 'just now';
+
+    const s = Math.floor(deltaMs / 1000);
+    if (s < 10) return 'just now';
+    if (s < 60) return `${s}s ago`;
+
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+
+    const days = Math.floor(h / 24);
+    return `${days}d ago`;
+  };
+
   const activeAgentsCount = agents.filter(a => a.status === 'online' || a.status === 'running').length;
   const totalTasks = tasks.length;
 
@@ -586,7 +607,15 @@ export function DashboardPage() {
                         <Clock className="w-3 h-3" />
                         {(() => {
                           const d = new Date(item.createdAt);
-                          return Number.isNaN(d.getTime()) ? item.createdAt : `${formatDate(d)} ${formatTime(d)}`;
+                          const absolute = Number.isNaN(d.getTime())
+                            ? item.createdAt
+                            : `${formatDate(d)} ${formatTime(d)}`;
+
+                          return (
+                            <span title={absolute} className="cursor-help">
+                              {formatRelativeTime(item.createdAt)}
+                            </span>
+                          );
                         })()}
                       </p>
                     </div>

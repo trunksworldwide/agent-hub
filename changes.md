@@ -1,3 +1,7 @@
+### Dashboard Live Feed: relative timestamps + hover absolute
+- Live Feed now shows a relative timestamp (e.g. "5m ago") for faster scanning.
+- Hovering the time reveals the full absolute timestamp for precision.
+
 ### AgentProfilePanel: resolve current task title from tasks
 - Presence section now shows the **task title** (when available in the dashboard task list) alongside the raw `current_task_id`.
 - Falls back to displaying the raw task id when we don't have the task locally yet.
