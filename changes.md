@@ -1,3 +1,7 @@
+### TopBar: Load more for global activity notifications
+- Global activity bell now supports **Load more** (increments fetch limit in steps of 10, clamped to 200).
+- The popover keeps auto-refreshing at the currently selected limit.
+
 ### Dashboard Live Feed: Load more button + configurable activity fetch limit
 - `getActivity(limit)` now accepts a limit (clamped 1–200) instead of hardcoding 50.
 - Dashboard Live Feed shows a **Load more** button when the feed hits the current limit, so you can pull older history without a reload.

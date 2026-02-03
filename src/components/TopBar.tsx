@@ -50,6 +50,7 @@ export function TopBar() {
 
   const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
   const [globalActivityUpdatedAt, setGlobalActivityUpdatedAt] = useState<Date | null>(null);
+  const [globalActivityLimit, setGlobalActivityLimit] = useState<number>(10);
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => setProjects([]));
@@ -125,9 +126,10 @@ export function TopBar() {
     return () => clearInterval(interval);
   }, []);
 
-  const refreshGlobalActivity = async () => {
+  const refreshGlobalActivity = async (limit = globalActivityLimit) => {
     try {
-      const items = await getGlobalActivity(10);
+      const clamped = Math.max(1, Math.min(200, limit));
+      const items = await getGlobalActivity(clamped);
       setGlobalActivity(items);
       setGlobalActivityUpdatedAt(new Date());
     } catch {
@@ -138,9 +140,9 @@ export function TopBar() {
 
   useEffect(() => {
     refreshGlobalActivity();
-    const interval = setInterval(refreshGlobalActivity, 30_000);
+    const interval = setInterval(() => refreshGlobalActivity(), 30_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [globalActivityLimit]);
 
   const lastSeenKey = 'clawdos.globalActivity.lastSeenAt';
   const [lastSeenAtIso, setLastSeenAtIso] = useState<string>(() => {
@@ -316,6 +318,23 @@ export function TopBar() {
                   </div>
                 )}
               </div>
+              {globalActivity.length >= globalActivityLimit && (
+                <div className="px-3 py-2 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-full justify-center"
+                    onClick={async () => {
+                      const next = Math.max(1, Math.min(200, globalActivityLimit + 10));
+                      setGlobalActivityLimit(next);
+                      await refreshGlobalActivity(next);
+                    }}
+                    title={`Load more (currently showing ${globalActivityLimit})`}
+                  >
+                    Load more
+                  </Button>
+                </div>
+              )}
             </PopoverContent>
           </Popover>
 
