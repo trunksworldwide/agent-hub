@@ -1016,15 +1016,39 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
   // Prefer Supabase activities if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
+    const actorKey = (input.actorAgentKey || 'dashboard').toString().trim() || 'dashboard';
+
     const { error } = await supabase.from('activities').insert({
       project_id: projectId,
       type,
       message,
-      actor_agent_key: input.actorAgentKey || 'dashboard',
+      actor_agent_key: actorKey,
       task_id: input.taskId ?? null,
     });
 
     if (error) throw error;
+
+    // Best-effort presence bump: if the activity is attributable to a real agent,
+    // keep their `agent_status.last_activity_at` fresh so the dashboard presence
+    // reflects emitted activity even in Supabase-only deployments.
+    if (actorKey.startsWith('agent:')) {
+      try {
+        const nowIso = new Date().toISOString();
+        await supabase
+          .from('agent_status')
+          .upsert(
+            {
+              project_id: projectId,
+              agent_key: actorKey,
+              last_activity_at: nowIso,
+            },
+            { onConflict: 'project_id,agent_key' }
+          );
+      } catch {
+        // fail soft
+      }
+    }
+
     return { ok: true };
   }
 

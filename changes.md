@@ -405,3 +405,7 @@
   - `agent_created` → 🤖
   - `project_created` → 📁
 - Applied across Dashboard Live Feed, AgentProfilePanel timelines, and TopBar notifications.
+
+### Presence: bump agent_status on Supabase activity inserts
+- When createActivity() writes to Supabase and the actor is a real agent key (starts with `agent:`), we now best-effort upsert `agent_status.last_activity_at`.
+- This keeps dashboard presence accurate in Supabase-only builds where presence updates aren’t coming from the Control API.
