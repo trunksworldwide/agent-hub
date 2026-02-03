@@ -51,6 +51,7 @@ export function TopBar() {
   const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
   const [globalActivityUpdatedAt, setGlobalActivityUpdatedAt] = useState<Date | null>(null);
   const [globalActivityLimit, setGlobalActivityLimit] = useState<number>(10);
+  const [globalActivityOpen, setGlobalActivityOpen] = useState(false);
 
   const globalActivityTypeKey = 'clawdos.globalActivity.type';
   const [globalActivityType, setGlobalActivityType] = useState<string>(() => {
@@ -254,7 +255,9 @@ export function TopBar() {
         
         <div className="flex items-center gap-3">
           <Popover
+            open={globalActivityOpen}
             onOpenChange={(open) => {
+              setGlobalActivityOpen(open);
               if (!open) return;
               try {
                 const newest = globalActivity[0]?.createdAt || new Date().toISOString();
@@ -335,11 +338,13 @@ export function TopBar() {
                             if (jobId) setFocusCronJobId(jobId);
                             setViewMode('manage');
                             setActiveMainTab('cron');
+                            setGlobalActivityOpen(false);
                             return;
                           }
 
                           // Default: bounce back to Dashboard for everything else.
                           setViewMode('dashboard');
+                          setGlobalActivityOpen(false);
                         }}
                         title={`Switch to ${a.projectName}`}
                       >

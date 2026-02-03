@@ -565,3 +565,7 @@
 ### Brain-doc sync: scope to global docs (agent_key is null)
 - `scripts/brain-doc-sync.mjs` now reads/writes only the “global” project brain docs (`agent_key IS NULL`) so it won’t collide with per-agent docs.
 - Upserts now use the full conflict key (`project_id, agent_key, doc_type`) to match the Supabase schema.
+
+### TopBar: close notifications popover after navigation
+- Made the notifications (global activity) Popover controlled so clicking an activity now closes it after switching projects / deep-linking.
+- Keeps the UI feeling snappy on mobile and avoids the popover lingering over the dashboard.
