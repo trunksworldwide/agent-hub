@@ -1,3 +1,7 @@
+### AgentProfilePanel: open scheduled job in Cron manager
+- Schedule tab now includes an **Open** button per matched cron job.
+- Clicking it switches to **Manage → Cron**, auto-expands that job, and scrolls it into view.
+
 ### Dashboard: tint agent avatars in sidebar using theme color
 - When an agent has a `color` (from Supabase `agents.color`), their avatar tile in the sidebar now gets a subtle tint + top stripe.
 - Applies to both **desktop** (collapsed + expanded) and **mobile** agent lists.

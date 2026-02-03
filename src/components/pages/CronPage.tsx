@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { getCronJobs, toggleCronJob, editCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useClawdOffice } from '@/lib/store';
 import {
   Collapsible,
   CollapsibleContent,
@@ -15,6 +16,8 @@ import {
 } from '@/components/ui/collapsible';
 
 export function CronPage() {
+  const { focusCronJobId, setFocusCronJobId } = useClawdOffice();
+
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [runningJob, setRunningJob] = useState<string | null>(null);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
@@ -81,6 +84,24 @@ export function CronPage() {
       setLoadingRuns((m) => ({ ...m, [jobId]: false }));
     }
   };
+
+  useEffect(() => {
+    if (!focusCronJobId) return;
+    if (!jobs.some((j) => j.id === focusCronJobId)) return;
+
+    setExpandedJob(focusCronJobId);
+    loadRuns(focusCronJobId);
+
+    // Best-effort scroll to the job card.
+    setTimeout(() => {
+      const el = document.getElementById(`cron-job-${focusCronJobId}`);
+      el?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }, 0);
+
+    // Clear after we act, so returning to Cron doesn't keep snapping open.
+    setFocusCronJobId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusCronJobId, jobs]);
 
   const handleToggle = async (job: CronJob) => {
     await toggleCronJob(job.id, !job.enabled);
@@ -189,7 +210,7 @@ export function CronPage() {
                 if (open) loadRuns(job.id);
               }}
             >
-              <div className="rounded-lg border border-border bg-card overflow-hidden">
+              <div id={`cron-job-${job.id}`} className="rounded-lg border border-border bg-card overflow-hidden">
                 <div className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">

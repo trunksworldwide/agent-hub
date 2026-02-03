@@ -22,24 +22,28 @@ interface ClawdOfficeState {
   // View mode (Dashboard vs Manage)
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  
+
   // Navigation
   activeMainTab: MainTab;
   setActiveMainTab: (tab: MainTab) => void;
-  
+
+  // Optional deep-linking within Manage pages (lightweight).
+  focusCronJobId: string | null;
+  setFocusCronJobId: (id: string | null) => void;
+
   // Agent selection
   selectedAgentId: string | null;
   setSelectedAgentId: (id: string | null) => void;
-  
+
   activeAgentTab: AgentTab;
   setActiveAgentTab: (tab: AgentTab) => void;
-  
+
   // System status
   status: SystemStatus | null;
   setStatus: (status: SystemStatus) => void;
   lastRefresh: Date | null;
   setLastRefresh: (date: Date) => void;
-  
+
   // File editing state
   files: Record<string, FileState>;
   setFileContent: (key: string, content: string) => void;
@@ -47,7 +51,7 @@ interface ClawdOfficeState {
   setFileSaving: (key: string, isSaving: boolean) => void;
   markFileSaved: (key: string) => void;
   resetFile: (key: string) => void;
-  
+
   // UI state
   isRestarting: boolean;
   setIsRestarting: (value: boolean) => void;
@@ -69,7 +73,11 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Navigation
   activeMainTab: 'agents',
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
-  
+
+  // Optional deep-linking within Manage pages
+  focusCronJobId: null,
+  setFocusCronJobId: (id) => set({ focusCronJobId: id }),
+
   // Agent selection
   selectedAgentId: 'trunks',
   setSelectedAgentId: (id) => set({ selectedAgentId: id }),

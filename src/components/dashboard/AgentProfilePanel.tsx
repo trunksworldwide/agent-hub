@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { createActivity } from '@/lib/api';
 import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
+import { useClawdOffice } from '@/lib/store';
 
 interface AgentProfilePanelProps {
   agent: Agent;
@@ -28,6 +29,8 @@ export function AgentProfilePanel({
   tasks = [],
   cronJobs = [],
 }: AgentProfilePanelProps) {
+  const { setViewMode, setActiveMainTab, setFocusCronJobId } = useClawdOffice();
+
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
@@ -465,20 +468,38 @@ export function AgentProfilePanel({
                             <Badge variant={j.enabled ? 'secondary' : 'outline'} className="text-[10px]">
                               {j.enabled ? 'enabled' : 'disabled'}
                             </Badge>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-[11px]"
-                              onClick={() =>
-                                setExpandedScheduleIds((s) => ({
-                                  ...s,
-                                  [j.id]: !Boolean(s[j.id]),
-                                }))
-                              }
-                            >
-                              {expanded ? 'Hide' : 'Show'}
-                            </Button>
+
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() =>
+                                  setExpandedScheduleIds((s) => ({
+                                    ...s,
+                                    [j.id]: !Boolean(s[j.id]),
+                                  }))
+                                }
+                              >
+                                {expanded ? 'Hide' : 'Show'}
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() => {
+                                  setFocusCronJobId(j.id);
+                                  setViewMode('manage');
+                                  setActiveMainTab('cron');
+                                  onClose();
+                                }}
+                              >
+                                Open
+                              </Button>
+                            </div>
                           </div>
                         </div>
 
