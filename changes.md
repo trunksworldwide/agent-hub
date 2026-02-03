@@ -1,3 +1,7 @@
+### AgentProfilePanel: edit agent emoji + theme color
+- Agent profile header now includes inline **Emoji** + **Color** inputs with a **Save** button.
+- Persists updates to Supabase `agents` (upsert) and emits an `agent_updated` activity.
+
 ### Dashboard: subtle textured background gradient (mobile polish)
 - Adds a lightweight, image-free “mission control” texture behind the Dashboard main column.
 - Implemented as layered CSS gradients (`.dashboard-texture`) so it stays fast + theme-aware.

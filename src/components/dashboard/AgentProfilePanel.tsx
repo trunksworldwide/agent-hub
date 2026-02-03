@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { createActivity } from '@/lib/api';
+import { createActivity, updateAgentRoster } from '@/lib/api';
 import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { useClawdOffice } from '@/lib/store';
 
 interface AgentProfilePanelProps {
@@ -31,11 +32,17 @@ export function AgentProfilePanel({
   cronJobs = [],
 }: AgentProfilePanelProps) {
   const { setViewMode, setActiveMainTab, setFocusCronJobId } = useClawdOffice();
+  const { toast } = useToast();
 
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState(false);
+
+  // Appearance editing (Supabase roster)
+  const [emojiDraft, setEmojiDraft] = useState<string>((agent.avatar || '').trim());
+  const [colorDraft, setColorDraft] = useState<string>((agent.color || '').trim());
+  const [savingAppearance, setSavingAppearance] = useState(false);
 
   const copyAgentKey = async () => {
     try {
@@ -62,6 +69,41 @@ export function AgentProfilePanel({
       setMessageDraft('');
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const saveAppearance = async () => {
+    if (savingAppearance) return;
+
+    const nextEmoji = (emojiDraft || '').trim() || null;
+    const nextColor = (colorDraft || '').trim() || null;
+
+    const unchanged = (agent.avatar || '').trim() === (nextEmoji || '') && (agent.color || '').trim() === (nextColor || '');
+    if (unchanged) return;
+
+    setSavingAppearance(true);
+    try {
+      const res = await updateAgentRoster({
+        agentKey: agent.id,
+        emoji: nextEmoji,
+        color: nextColor,
+      });
+
+      if (!res.ok) {
+        toast({
+          title: 'Failed to update agent',
+          description: res.error || 'unknown_error',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: 'Updated',
+        description: 'Saved agent appearance (emoji + color).',
+      });
+    } finally {
+      setSavingAppearance(false);
     }
   };
 
@@ -252,6 +294,9 @@ export function AgentProfilePanel({
     }
   };
 
+  const displayEmoji = (emojiDraft || '').trim() || agent.avatar;
+  const displayColor = (colorDraft || '').trim() || null;
+
   return (
     <div
       className={cn(
@@ -277,31 +322,31 @@ export function AgentProfilePanel({
             <div
               className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0 relative overflow-hidden"
               style={
-                agent.color
+                displayColor
                   ? {
-                      backgroundColor: withAlpha(agent.color, '22'),
-                      border: `1px solid ${withAlpha(agent.color, '55')}`,
+                      backgroundColor: withAlpha(displayColor, '22'),
+                      border: `1px solid ${withAlpha(displayColor, '55')}`,
                     }
                   : undefined
               }
             >
-              {agent.color ? (
+              {displayColor ? (
                 <span
                   className="absolute inset-x-0 top-0 h-1"
-                  style={{ backgroundColor: agent.color }}
+                  style={{ backgroundColor: displayColor }}
                   aria-hidden
                 />
               ) : null}
-              {agent.avatar}
+              {displayEmoji}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-semibold truncate">{agent.name}</h3>
-                {agent.color ? (
+                {displayColor ? (
                   <span
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: agent.color }}
-                    title={agent.color}
+                    style={{ backgroundColor: displayColor }}
+                    title={displayColor}
                     aria-label="Agent theme color"
                   />
                 ) : null}
@@ -323,6 +368,33 @@ export function AgentProfilePanel({
                 >
                   <Copy className="w-3 h-3 mr-1" />
                   {copiedKey ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-[1fr,1fr,auto] gap-2 items-center">
+                <Input
+                  value={emojiDraft}
+                  onChange={(e) => setEmojiDraft(e.target.value)}
+                  placeholder="Emoji"
+                  className="h-8 text-xs"
+                  aria-label="Agent emoji"
+                />
+                <Input
+                  value={colorDraft}
+                  onChange={(e) => setColorDraft(e.target.value)}
+                  placeholder="#7c3aed"
+                  className="h-8 text-xs font-mono"
+                  aria-label="Agent color"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8"
+                  variant="secondary"
+                  disabled={savingAppearance}
+                  onClick={() => void saveAppearance()}
+                >
+                  {savingAppearance ? 'Saving…' : 'Save'}
                 </Button>
               </div>
             </div>

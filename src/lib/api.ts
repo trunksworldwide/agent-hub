@@ -434,6 +434,53 @@ export async function createAgent(input: {
   }
 }
 
+export async function updateAgentRoster(input: {
+  agentKey: string;
+  name?: string;
+  role?: string;
+  emoji?: string | null;
+  color?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const agentKey = input.agentKey.trim();
+  if (!agentKey) return { ok: false, error: 'missing_agent_key' };
+
+  const patch: any = {
+    project_id: projectId,
+    agent_key: agentKey,
+  };
+
+  if (input.name !== undefined) patch.name = input.name.trim() || agentKey;
+  if (input.role !== undefined) patch.role = input.role.trim() || null;
+  if (input.emoji !== undefined) patch.emoji = input.emoji ? input.emoji.trim() || null : null;
+  if (input.color !== undefined) patch.color = input.color ? input.color.trim() || null : null;
+
+  try {
+    const { error: agentErr } = await supabase.from('agents').upsert(patch, {
+      onConflict: 'project_id,agent_key',
+    });
+    if (agentErr) throw agentErr;
+
+    // Best-effort: activity entry.
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'agent_updated',
+      message: `Updated agent ${agentKey}`,
+      actor_agent_key: 'ui',
+      task_id: null,
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    console.error('updateAgentRoster failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 export async function getAgents(): Promise<Agent[]> {
   // Prefer Supabase roster if configured.
   if (hasSupabase() && supabase) {
