@@ -99,6 +99,12 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
         setError(null);
         setLastRefreshedAt(new Date());
 
+        // Project scoping: if the previously-selected agent doesn't exist in the
+        // newly-selected project, pick the first agent (or clear selection).
+        if (selectedAgentId && !next.some((a) => a.id === selectedAgentId)) {
+          setSelectedAgentId(next[0]?.id || null);
+        }
+
         // Best-effort keep custom order in sync as agents appear/disappear.
         setCustomOrder((prev) => {
           const ids = next.map((a) => a.id);
@@ -133,7 +139,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
       alive = false;
       window.clearInterval(t);
     };
-  }, [selectedProjectId]);
+  }, [selectedProjectId, selectedAgentId, setSelectedAgentId]);
 
   const getStatusBadge = (status: Agent['status']) => {
     const styles = {

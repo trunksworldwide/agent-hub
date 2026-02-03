@@ -1,3 +1,7 @@
+### Manage → Agents: project-scoped selection (no stale agent keys)
+- When switching projects, if the previously selected agent doesn’t exist in the new project, the sidebar auto-selects the first available agent (or clears selection).
+- AgentDetail now reloads on project change and shows a soft “Agent not found in this project” state instead of rendering a broken header.
+
 ### AgentProfilePanel: better “Send message” UX (toast + safer Enter)
 - Sending a message now shows a success toast and surfaces errors via a destructive toast.
 - Enter-to-send now avoids firing while IME composition is active (prevents accidental sends while typing in Japanese/Chinese/etc).

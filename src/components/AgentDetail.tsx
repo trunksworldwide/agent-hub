@@ -21,7 +21,7 @@ const agentTabs: { id: AgentTab; label: string; icon: string }[] = [
 ];
 
 export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
-  const { selectedAgentId, activeAgentTab, setActiveAgentTab, files } = useClawdOffice();
+  const { selectedAgentId, activeAgentTab, setActiveAgentTab, files, selectedProjectId } = useClawdOffice();
   const [agent, setAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -49,12 +49,30 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
     return () => {
       alive = false;
     };
-  }, [selectedAgentId]);
+  }, [selectedAgentId, selectedProjectId]);
 
   if (!selectedAgentId) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
         Select an agent to view details
+      </div>
+    );
+  }
+
+  // Project scoping: if an agent key is selected but doesn't exist in this project,
+  // show a soft error instead of rendering a broken header.
+  if (!agent) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="text-sm font-medium">Agent not found in this project.</div>
+          <div className="mt-2 text-xs text-muted-foreground break-all">
+            Selected: <span className="font-mono">{selectedAgentId}</span>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Pick another agent from the sidebar.
+          </div>
+        </div>
       </div>
     );
   }
