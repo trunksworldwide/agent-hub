@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Save, RotateCcw, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice } from '@/lib/store';
@@ -9,15 +9,26 @@ import { useToast } from '@/hooks/use-toast';
 export function SoulEditor() {
   const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const fileKey = `${selectedAgentId}-soul`;
   const fileState = files[fileKey];
 
+  const load = async () => {
+    if (!selectedAgentId) return;
+    setLoadError(null);
+    try {
+      const data = await getAgentFile(selectedAgentId, 'soul');
+      setFileOriginal(fileKey, data.content);
+    } catch (e: any) {
+      console.error('Failed to load SOUL.md', e);
+      setLoadError(String(e?.message || e));
+    }
+  };
+
   useEffect(() => {
     if (selectedAgentId && !fileState) {
-      getAgentFile(selectedAgentId, 'soul').then((data) => {
-        setFileOriginal(fileKey, data.content);
-      });
+      load();
     }
   }, [selectedAgentId, fileKey, fileState]);
 
@@ -64,8 +75,18 @@ export function SoulEditor() {
 
   if (!fileState) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Loading...
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 px-6 text-center">
+        {loadError ? (
+          <>
+            <div className="text-destructive">Failed to load SOUL.md</div>
+            <div className="text-xs text-muted-foreground break-all">{loadError}</div>
+            <Button variant="outline" size="sm" onClick={load}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <div>Loading…</div>
+        )}
       </div>
     );
   }

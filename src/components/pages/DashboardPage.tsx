@@ -59,8 +59,11 @@ export function DashboardPage() {
 
   const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const refresh = async () => {
     setIsRefreshing(true);
+    setLoadError(null);
     try {
       const [a, t, c, act] = await Promise.all([
         getAgents(),
@@ -73,6 +76,9 @@ export function DashboardPage() {
       setCronJobs(c);
       setActivity(act);
       setLastRefreshedAt(new Date());
+    } catch (e: any) {
+      console.error('Dashboard refresh failed', e);
+      setLoadError(String(e?.message || e));
     } finally {
       setIsRefreshing(false);
     }
@@ -576,6 +582,19 @@ export function DashboardPage() {
 
       {/* Main Content - Scrollable */}
       <div className="flex-1 flex flex-col overflow-y-auto dashboard-texture">
+        {loadError && (
+          <div className="m-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Data load failed. This usually means Supabase env vars or RLS policies aren’t applied in this environment.
+            <div className="mt-2 text-xs break-all opacity-90">{loadError}</div>
+            <div className="mt-3">
+              <Button variant="outline" size="sm" onClick={refresh} className="gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Dashboard Header */}
         <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-4 md:px-6 shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-3 md:gap-8 min-w-0">

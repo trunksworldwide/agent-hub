@@ -82,7 +82,8 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   setFocusCronJobId: (id) => set({ focusCronJobId: id }),
 
   // Agent selection
-  selectedAgentId: 'trunks',
+  // Default to the canonical main session-key style id used in Supabase.
+  selectedAgentId: 'agent:main:main',
   setSelectedAgentId: (id) => set({ selectedAgentId: id }),
   
   activeAgentTab: 'soul',
