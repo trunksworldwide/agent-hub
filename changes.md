@@ -501,3 +501,10 @@
 ### Presence: bump agent_status when logging activities via scripts
 - Updated `scripts/log-activity.mjs` and `scripts/log-build-update.mjs` to best-effort upsert `agent_status.last_activity_at` for agent actors.
 - This keeps presence accurate when activities are emitted outside the UI (cron/CI/dev scripts).
+
+### Realtime: subscribe to Supabase `agents` roster updates
+- Supabase realtime subscription now includes the `agents` table (scoped to the current project).
+- This makes emoji/color/name/role edits show up without a manual refresh.
+
+### Dev tooling: add `npm run log:activity`
+- Added a tiny helper script + npm script for emitting a Supabase `activities` row from the CLI.

@@ -33,6 +33,11 @@ export function subscribeToProjectRealtime(projectId: string, onChange: () => vo
     )
     .on(
       'postgres_changes',
+      { event: '*', schema: 'public', table: 'agents', filter: `project_id=eq.${projectId}` },
+      () => onChange()
+    )
+    .on(
+      'postgres_changes',
       { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` },
       () => onChange()
     )

@@ -1,21 +1,31 @@
 import { createClient } from '@supabase/supabase-js';
 
-const [,, typeArg, ...rest] = process.argv;
-const type = typeArg || 'build_update';
-const message = rest.join(' ').trim() || 'Build update';
+function env(name) {
+  const v = process.env[name];
+  return typeof v === 'string' ? v.trim() : '';
+}
 
-const projectId = process.env.CLAWDOS_PROJECT_ID || process.env.CLAWD_PROJECT_ID || 'front-office';
-const actor = process.env.CLAWDOS_ACTOR || 'agent:main:main';
-
-const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const url = env('SUPABASE_URL') || env('VITE_SUPABASE_URL');
 const key =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_ANON_KEY;
+  env('SUPABASE_SERVICE_ROLE_KEY') ||
+  env('SUPABASE_SERVICE_KEY') ||
+  env('SUPABASE_ANON_KEY') ||
+  env('VITE_SUPABASE_ANON_KEY');
 
-if (!url || !key) {
-  console.log('[log-activity] Supabase env not set; skipping');
+const projectId = env('PROJECT_ID') || env('VITE_PROJECT_ID') || 'front-office';
+const type = env('ACTIVITY_TYPE') || 'build_update';
+const message = env('ACTIVITY_MESSAGE');
+const actor = env('ACTIVITY_ACTOR') || null;
+
+if (!url || !key || !message) {
+  // Best-effort helper: if not configured, fail soft (so CI/builds don't break).
+  const missing = [
+    !url ? 'SUPABASE_URL' : null,
+    !key ? 'SUPABASE_SERVICE_ROLE_KEY (or anon key)' : null,
+    !message ? 'ACTIVITY_MESSAGE' : null,
+  ].filter(Boolean);
+
+  console.warn(`[log-activity] skipped (missing: ${missing.join(', ')})`);
   process.exit(0);
 }
 
@@ -26,6 +36,7 @@ const { error } = await supabase.from('activities').insert({
   type,
   message,
   actor_agent_key: actor,
+  task_id: null,
 });
 
 if (error) {
@@ -33,7 +44,7 @@ if (error) {
   process.exit(1);
 }
 
-// Best-effort presence bump so the dashboard presence stays fresh even when
+// Best-effort presence bump so dashboard presence stays fresh even when
 // activities are emitted via scripts (cron, CI, etc.).
 const normalizeAgentKey = (raw) => {
   const parts = String(raw || '').split(':');
