@@ -1,3 +1,7 @@
+### Dashboard agent list: show presence status note (agent_status.note)
+- Agents sidebar + mobile drawer now surface the current `agent_status.note` as a short secondary line.
+- Collapsed sidebar tooltips include the note as well.
+
 ### AgentProfilePanel: mobile-friendly tab strip (horizontal scroll)
 - AgentProfilePanel tabs now scroll horizontally on small screens (no more squished/overflowed tab labels).
 - Desktop behavior unchanged (tabs still distribute evenly).

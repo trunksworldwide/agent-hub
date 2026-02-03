@@ -562,6 +562,14 @@ export function DashboardPage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
+                    {agent.statusNote ? (
+                      <p
+                        className="text-[10px] text-muted-foreground/80 truncate mt-0.5"
+                        title={agent.statusNote || undefined}
+                      >
+                        {agent.statusNote}
+                      </p>
+                    ) : null}
                     {agent.lastActive ? (
                       <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">
                         Last active {agent.lastActive}
@@ -610,7 +618,7 @@ export function DashboardPage() {
                 )}
                 title={
                   agentPanelCollapsed
-                    ? `${agent.name} - ${agent.status}${agent.lastActive ? ` (${agent.lastActive})` : ''}`
+                    ? `${agent.name} - ${agent.status}${agent.lastActive ? ` (${agent.lastActive})` : ''}${agent.statusNote ? ` — ${agent.statusNote}` : ''}`
                     : undefined
                 }
               >
@@ -654,6 +662,14 @@ export function DashboardPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
+                      {agent.statusNote ? (
+                        <p
+                          className="text-[10px] text-muted-foreground/80 truncate mt-0.5"
+                          title={agent.statusNote || undefined}
+                        >
+                          {agent.statusNote}
+                        </p>
+                      ) : null}
                       {agent.lastActive ? (
                         <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">
                           {agent.lastActive}
