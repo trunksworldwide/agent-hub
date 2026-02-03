@@ -1,3 +1,7 @@
+### AgentProfilePanel: run cron jobs directly from the Schedule tab
+- AgentProfilePanel Schedule tab now includes a **Run** button per matched cron job.
+- Uses the existing Control API `runCronJob()` wiring and shows a toast on success/failure.
+
 ### AgentProfilePanel: patch presence edits immediately (status + note)
 - When you edit an agent’s `agent_status` from the AgentProfilePanel, the Dashboard roster + open panel now update immediately (no “wait for refresh” confusion).
 - Includes a lightweight derived `status` so the header pill reflects the change right away.

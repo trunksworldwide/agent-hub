@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { createActivity, updateAgentRoster, updateAgentStatus } from '@/lib/api';
+import { createActivity, runCronJob, updateAgentRoster, updateAgentStatus } from '@/lib/api';
 import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useClawdOffice } from '@/lib/store';
@@ -47,6 +47,7 @@ export function AgentProfilePanel({
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
+  const [runningScheduleIds, setRunningScheduleIds] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState(false);
 
   // Activity/message rendering: default to a small window, with an optional “show more”.
@@ -78,6 +79,29 @@ export function AgentProfilePanel({
       window.setTimeout(() => setCopiedKey(false), 1500);
     } catch {
       // Ignore; clipboard may be unavailable.
+    }
+  };
+
+  const runJobNow = async (job: CronJob) => {
+    if (!job?.id) return;
+    if (runningScheduleIds[job.id]) return;
+
+    setRunningScheduleIds((m) => ({ ...m, [job.id]: true }));
+    try {
+      await runCronJob(job.id);
+      toast({
+        title: 'Job started',
+        description: `${job.name || job.id} is now running.`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Failed to run job',
+        description: msg || 'unknown_error',
+        variant: 'destructive',
+      });
+    } finally {
+      setRunningScheduleIds((m) => ({ ...m, [job.id]: false }));
     }
   };
 
@@ -765,6 +789,17 @@ export function AgentProfilePanel({
                                 }
                               >
                                 {expanded ? 'Hide' : 'Show'}
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px]"
+                                disabled={Boolean(runningScheduleIds[j.id])}
+                                onClick={() => void runJobNow(j)}
+                              >
+                                {runningScheduleIds[j.id] ? 'Running…' : 'Run'}
                               </Button>
 
                               <Button
