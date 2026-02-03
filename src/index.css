@@ -97,6 +97,16 @@
 }
 
 @layer components {
+  .dashboard-texture {
+    /* Subtle “alive” mission-control texture without any image assets. */
+    background-image:
+      radial-gradient(900px circle at 18% -10%, hsl(var(--primary) / 0.10), transparent 55%),
+      radial-gradient(750px circle at 82% 0%, hsl(var(--success) / 0.06), transparent 50%),
+      linear-gradient(to bottom, hsl(var(--background)), hsl(var(--background)), hsl(var(--muted) / 0.20));
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+
   .status-indicator {
     @apply relative flex items-center gap-2;
   }

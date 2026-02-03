@@ -1,3 +1,7 @@
+### Dashboard: subtle textured background gradient (mobile polish)
+- Adds a lightweight, image-free “mission control” texture behind the Dashboard main column.
+- Implemented as layered CSS gradients (`.dashboard-texture`) so it stays fast + theme-aware.
+
 ### Agents sidebar: reduce re-render churn for “Seen … ago” labels (mobile polish)
 - Sidebar no longer re-renders every second just to update “Seen … ago”.
 - Timestamp tick is now every ~10s, and very recent activity shows as “Seen just now” / “Seen <1m ago”.
