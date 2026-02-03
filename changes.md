@@ -1,3 +1,7 @@
+### AgentProfilePanel: patch presence edits immediately (status + note)
+- When you edit an agent’s `agent_status` from the AgentProfilePanel, the Dashboard roster + open panel now update immediately (no “wait for refresh” confusion).
+- Includes a lightweight derived `status` so the header pill reflects the change right away.
+
 ### Activity: dashboard actor key honors VITE_DASHBOARD_PRESENCE_AGENT_KEY
 - `createActivity()` now defaults the actor to `VITE_DASHBOARD_PRESENCE_AGENT_KEY` when set (otherwise `dashboard`).
 - AgentProfilePanel “Send message” now relies on this default so session notes attribute cleanly to the dashboard agent.

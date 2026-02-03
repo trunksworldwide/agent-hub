@@ -26,7 +26,10 @@ interface AgentProfilePanelProps {
 
   // Optional: if the parent holds the roster in state, let it patch the agent
   // immediately after saving appearance (emoji/color) so the UI updates without a full refresh.
-  onAgentPatched?: (agentKey: string, patch: Partial<Pick<Agent, 'avatar' | 'color'>>) => void;
+  onAgentPatched?: (
+    agentKey: string,
+    patch: Partial<Pick<Agent, 'avatar' | 'color' | 'status' | 'statusState' | 'statusNote' | 'currentTaskId'>>
+  ) => void;
 }
 
 export function AgentProfilePanel({
@@ -171,9 +174,22 @@ export function AgentProfilePanel({
         return;
       }
 
+      const derivedStatus: Agent['status'] =
+        nextState === 'working'
+          ? 'running'
+          : nextState === 'blocked' || nextState === 'sleeping'
+            ? 'idle'
+            : 'online';
+
+      onAgentPatched?.(agent.id, {
+        status: derivedStatus,
+        statusState: (nextState as any) || undefined,
+        statusNote: nextNote,
+      });
+
       toast({
         title: 'Status updated',
-        description: 'Saved presence state + note. (Sidebar will refresh shortly.)',
+        description: 'Saved presence state + note.',
       });
     } finally {
       setSavingStatus(false);

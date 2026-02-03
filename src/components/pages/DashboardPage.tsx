@@ -124,7 +124,10 @@ export function DashboardPage() {
     }
   };
 
-  const patchAgentInRoster = (agentKey: string, patch: Partial<Pick<Agent, 'avatar' | 'color'>>) => {
+  const patchAgentInRoster = (
+    agentKey: string,
+    patch: Partial<Pick<Agent, 'avatar' | 'color' | 'status' | 'statusState' | 'statusNote' | 'currentTaskId'>>
+  ) => {
     setAgents((prev) => prev.map((a) => (a.id === agentKey ? { ...a, ...patch } : a)));
     setSelectedAgent((prev) => (prev && prev.id === agentKey ? { ...prev, ...patch } : prev));
   };
