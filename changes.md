@@ -1,3 +1,7 @@
+### AgentProfilePanel: quick-jump to brain doc editors (SOUL/USER/MEMORY)
+- Added a small **Brain docs** section in the AgentProfilePanel with one-click buttons to open the selected agent directly in **Manage → Agents** on the right editor tab.
+- Makes it much faster to go from “who is this agent?” → editing their brain docs without hunting through navigation.
+
 ### AgentProfilePanel: patch roster immediately after saving emoji/color (mobile polish)
 - After saving an agent’s **Emoji**/**Color**, the Dashboard roster + open AgentProfilePanel update immediately (no refresh needed).
 - Implemented via an optional `onAgentPatched` callback from Dashboard → AgentProfilePanel.

@@ -11,6 +11,7 @@ import { createActivity, updateAgentRoster } from '@/lib/api';
 import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useClawdOffice } from '@/lib/store';
+import type { AgentTab } from '@/lib/store';
 
 interface AgentProfilePanelProps {
   agent: Agent;
@@ -36,7 +37,7 @@ export function AgentProfilePanel({
   cronJobs = [],
   onAgentPatched,
 }: AgentProfilePanelProps) {
-  const { setViewMode, setActiveMainTab, setFocusCronJobId } = useClawdOffice();
+  const { setViewMode, setActiveMainTab, setFocusCronJobId, setSelectedAgentId, setActiveAgentTab } = useClawdOffice();
   const { toast } = useToast();
 
   const [messageDraft, setMessageDraft] = useState('');
@@ -48,6 +49,14 @@ export function AgentProfilePanel({
   const [emojiDraft, setEmojiDraft] = useState<string>((agent.avatar || '').trim());
   const [colorDraft, setColorDraft] = useState<string>((agent.color || '').trim());
   const [savingAppearance, setSavingAppearance] = useState(false);
+
+  const openAgentEditor = (tab: AgentTab) => {
+    setSelectedAgentId(agent.id);
+    setViewMode('manage');
+    setActiveMainTab('agents');
+    setActiveAgentTab(tab);
+    onClose();
+  };
 
   const copyAgentKey = async () => {
     try {
@@ -484,6 +493,25 @@ export function AgentProfilePanel({
             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SKILLS</h4>
             <p className="text-sm text-muted-foreground">
               Skill count: <span className="font-mono">{agent.skillCount ?? 0}</span>
+            </p>
+          </div>
+
+          {/* Brain docs (jump to Manage → Agents editor) */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">BRAIN DOCS</h4>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => openAgentEditor('soul')}>
+                Edit SOUL
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => openAgentEditor('user')}>
+                Edit USER
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => openAgentEditor('memory')}>
+                Edit MEMORY
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Opens the full editor in <span className="font-medium">Manage → Agents</span>.
             </p>
           </div>
 
