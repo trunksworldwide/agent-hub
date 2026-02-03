@@ -1,3 +1,7 @@
+### Dashboard Live Feed: quick search (persisted)
+- Added a small **Search…** box to the Live Feed header.
+- Filters by title/subtitle/message and persists per project via `localStorage` (`clawdos.feedSearch.<projectId>`).
+
 ### Dashboard Live Feed: filter by agent (persisted)
 - Added an **All agents / <agent>** dropdown next to the type filter in the Live Feed.
 - Filter persists per project via `localStorage` (`clawdos.feedAgent.<projectId>`).

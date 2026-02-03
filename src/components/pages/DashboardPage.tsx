@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -65,6 +66,7 @@ export function DashboardPage() {
 
   const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
   const [feedAgentFilter, setFeedAgentFilter] = useState<string>('all');
+  const [feedSearch, setFeedSearch] = useState<string>('');
 
   // Persist feed filters per project so the dashboard feels "sticky".
   useEffect(() => {
@@ -75,6 +77,10 @@ export function DashboardPage() {
 
       const rawAgent = window.localStorage.getItem(`clawdos.feedAgent.${projectId}`);
       if (rawAgent && typeof rawAgent === 'string') setFeedAgentFilter(rawAgent);
+
+      const rawSearch = window.localStorage.getItem(`clawdos.feedSearch.${projectId}`);
+      if (rawSearch && typeof rawSearch === 'string') setFeedSearch(rawSearch);
+      if (rawSearch === '') setFeedSearch('');
     } catch {
       // localStorage may be unavailable; fail soft.
     }
@@ -86,10 +92,11 @@ export function DashboardPage() {
     try {
       window.localStorage.setItem(`clawdos.feedType.${projectId}`, feedTypeFilter);
       window.localStorage.setItem(`clawdos.feedAgent.${projectId}`, feedAgentFilter);
+      window.localStorage.setItem(`clawdos.feedSearch.${projectId}`, feedSearch);
     } catch {
       // Ignore.
     }
-  }, [selectedProjectId, feedTypeFilter, feedAgentFilter]);
+  }, [selectedProjectId, feedTypeFilter, feedAgentFilter, feedSearch]);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -366,28 +373,38 @@ export function DashboardPage() {
   const filteredFeed = useMemo(() => {
     const byType = feedTypeFilter === 'all' ? feed : feed.filter((item) => item.type === feedTypeFilter);
 
-    if (feedAgentFilter === 'all') return byType;
+    const byAgent = (() => {
+      if (feedAgentFilter === 'all') return byType;
 
-    const agentKey = feedAgentFilter;
-    const agent = agentByKey.get(agentKey);
+      const agentKey = feedAgentFilter;
+      const agent = agentByKey.get(agentKey);
 
-    return byType.filter((item) => {
-      if (item.kind === 'activity') {
-        return item.actorAgentKey === agentKey || item.recipientAgentKey === agentKey;
-      }
+      return byType.filter((item) => {
+        if (item.kind === 'activity') {
+          return item.actorAgentKey === agentKey || item.recipientAgentKey === agentKey;
+        }
 
-      if (item.kind === 'cron') {
-        const job = cronJobs.find((j) => j.id === item.cronJobId);
-        if (!job) return false;
-        const hay = `${job.name || ''}\n${job.instructions || ''}`.toLowerCase();
-        const keyNeedle = String(agentKey).toLowerCase();
-        const nameNeedle = (agent?.name || '').toLowerCase();
-        return hay.includes(keyNeedle) || (nameNeedle ? hay.includes(nameNeedle) : false);
-      }
+        if (item.kind === 'cron') {
+          const job = cronJobs.find((j) => j.id === item.cronJobId);
+          if (!job) return false;
+          const hay = `${job.name || ''}\n${job.instructions || ''}`.toLowerCase();
+          const keyNeedle = String(agentKey).toLowerCase();
+          const nameNeedle = (agent?.name || '').toLowerCase();
+          return hay.includes(keyNeedle) || (nameNeedle ? hay.includes(nameNeedle) : false);
+        }
 
-      return true;
+        return true;
+      });
+    })();
+
+    const q = (feedSearch || '').trim().toLowerCase();
+    if (!q) return byAgent;
+
+    return byAgent.filter((item) => {
+      const hay = `${item.title || ''}\n${item.subtitle || ''}\n${item.rawMessage || ''}`.toLowerCase();
+      return hay.includes(q);
     });
-  }, [feed, feedTypeFilter, feedAgentFilter, cronJobs, agentByKey]);
+  }, [feed, feedTypeFilter, feedAgentFilter, feedSearch, cronJobs, agentByKey]);
 
   const iconForFeedType = (type: string) => {
     switch (type) {
@@ -830,6 +847,13 @@ export function DashboardPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <Input
+                  value={feedSearch}
+                  onChange={(e) => setFeedSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="h-7 w-[200px] text-xs"
+                />
 
                 <span className="text-[11px] text-muted-foreground">
                   {lastRefreshedAt
