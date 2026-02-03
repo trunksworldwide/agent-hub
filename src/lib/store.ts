@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
-import { getSelectedProjectId } from './project';
+import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId } from './project';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'skills' | 'channels' | 'cron' | 'config';
@@ -64,7 +64,10 @@ const initialProjectId = getSelectedProjectId();
 export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Project selection
   selectedProjectId: initialProjectId,
-  setSelectedProjectId: (id) => set({ selectedProjectId: id }),
+  setSelectedProjectId: (id) => {
+    persistSelectedProjectId(id);
+    set({ selectedProjectId: id });
+  },
 
   // View mode
   viewMode: 'manage',

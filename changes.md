@@ -1,3 +1,7 @@
+### Projects: persist selected project in localStorage
+- Switching projects now writes the selected project id to `localStorage` (key: `clawdos.project`).
+- Fixes the project selector resetting back to the default project on refresh/reload.
+
 ### Agents sidebar: subtle “working/online” glow around active agents
 - Mobile + desktop sidebar agent tiles now get a subtle ring/glow when an agent is **online** or **working**.
 - Makes the left rail feel more “alive” without deleting/changing any major UI.
