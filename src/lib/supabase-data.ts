@@ -20,6 +20,7 @@ export interface SupabaseProject {
   id: string;
   name: string;
   workspace_path: string | null;
+  tag?: string | null;
   created_at: string;
 }
 

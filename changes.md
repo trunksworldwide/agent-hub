@@ -1,3 +1,7 @@
+### Supabase projects typing: include `tag` in SupabaseProject
+- Updated `src/lib/supabase-data.ts` to include the `projects.tag` field in the SupabaseProject interface.
+- Keeps TypeScript types aligned with the `projects` table now that system/highlight tags are supported.
+
 ### Brain-doc sync: avoid clobbering newer Supabase edits (conflict-safe)
 - `scripts/brain-doc-sync.mjs` now checks `brain_docs.updated_at` vs local file mtime before upserting.
 - If Supabase is newer, it writes a local `.bak` conflict copy and re-applies the remote canonical content instead of overwriting.
