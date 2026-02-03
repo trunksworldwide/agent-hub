@@ -1,3 +1,7 @@
+### Supabase realtime: use the auth-aware client everywhere
+- `src/lib/supabase.ts` now re-exports the generated `@/integrations/supabase/client` instance (instead of creating a separate env-based client).
+- Fixes a subtle realtime bug where Dashboard realtime could be "disabled" (or unauthenticated) even though the rest of the app was using Supabase.
+
 ### TopBar: responsive notifications popover width
 - Notifications bell popover now uses a responsive width (`min(24rem, 100vw - 2rem)`) so it doesn’t overflow on mobile.
 

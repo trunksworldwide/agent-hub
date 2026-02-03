@@ -1,10 +1,14 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+export { supabase };
 
-export const supabase = url && anon ? createClient(url, anon) : null;
-
+/**
+ * We consider Supabase "enabled" whenever the app was built with the Supabase
+ * client available.
+ *
+ * Note: the generated client uses a publishable (anon) key + Supabase Auth.
+ * RLS policies typically require an authenticated session for writes.
+ */
 export function hasSupabase() {
   return Boolean(supabase);
 }
@@ -13,12 +17,8 @@ export type RealtimeUnsubscribe = () => void;
 
 /**
  * Best-effort realtime subscription for a project.
- *
- * When Supabase isn't configured, this returns a no-op unsubscribe.
  */
 export function subscribeToProjectRealtime(projectId: string, onChange: () => void): RealtimeUnsubscribe {
-  if (!supabase) return () => {};
-
   const channel = supabase
     .channel(`clawdos:project:${projectId}`)
     .on(
