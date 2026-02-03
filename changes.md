@@ -1,3 +1,7 @@
+### Agents sidebar: “Seen … ago” now uses newest heartbeat/activity (presence accuracy)
+- Sidebar no longer prioritizes heartbeat over activity; it now chooses whichever timestamp is newest.
+- Prevents agents from looking stale when they recently emitted activity but have an older heartbeat (or vice versa).
+
 ### Notifications: filter global activity bell by type (persisted)
 - Added a lightweight **All types / <type>** filter in the TopBar notification bell.
 - Filter persists via `localStorage` (`clawdos.globalActivity.type`) so the bell stays focused across reloads.

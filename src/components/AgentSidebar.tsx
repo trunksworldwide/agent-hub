@@ -151,8 +151,18 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     return styles[status];
   };
 
+  function newestIso(a: string | null | undefined, b: string | null | undefined) {
+    const at = a ? Date.parse(a) : Number.NaN;
+    const bt = b ? Date.parse(b) : Number.NaN;
+    if (Number.isNaN(at) && Number.isNaN(bt)) return null;
+    if (Number.isNaN(bt)) return a || null;
+    if (Number.isNaN(at)) return b || null;
+    return at >= bt ? (a || null) : (b || null);
+  }
+
   function formatSeenLabel(agent: Agent): string {
-    const lastSeenIso = agent.lastHeartbeatAt || agent.lastActivityAt;
+    // Presence: prefer the most recent of heartbeat/activity, not a fixed priority.
+    const lastSeenIso = newestIso(agent.lastActivityAt, agent.lastHeartbeatAt);
     if (!lastSeenIso) return agent.lastActive || '—';
 
     const last = new Date(lastSeenIso);
