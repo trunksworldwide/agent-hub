@@ -1,3 +1,7 @@
+### Manage TopBar: mobile-friendly tab strip (horizontal scroll)
+- Manage-mode navigation tabs now scroll horizontally on small screens (no more overflow/clipping).
+- Reduced nav tab padding on mobile for a denser, more usable header.
+
 ### AgentProfilePanel: run cron jobs directly from the Schedule tab
 - AgentProfilePanel Schedule tab now includes a **Run** button per matched cron job.
 - Uses the existing Control API `runCronJob()` wiring and shows a toast on success/failure.

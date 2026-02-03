@@ -445,14 +445,14 @@ export function TopBar() {
 
       {/* Main Navigation Bar - Only show in Manage mode */}
       {viewMode === 'manage' && (
-        <header className="h-12 border-b border-border bg-card/30 flex items-center justify-between px-6">
-          <nav className="flex items-center gap-1">
+        <header className="h-12 border-b border-border bg-card/30 flex items-center justify-between px-3 sm:px-6">
+          <nav className="flex flex-1 items-center gap-1 overflow-x-auto pr-2">
             {navTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveMainTab(tab.id)}
                 className={cn(
-                  "nav-tab flex items-center gap-2",
+                  "nav-tab flex items-center gap-2 flex-shrink-0 whitespace-nowrap",
                   activeMainTab === tab.id && "nav-tab-active"
                 )}
               >

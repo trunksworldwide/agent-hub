@@ -156,7 +156,7 @@
   }
   
   .nav-tab {
-    @apply px-4 py-2 text-sm font-medium text-muted-foreground rounded-lg transition-all;
+    @apply px-3 sm:px-4 py-2 text-sm font-medium text-muted-foreground rounded-lg transition-all;
     @apply hover:text-foreground hover:bg-secondary/50;
   }
   
