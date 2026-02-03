@@ -463,26 +463,35 @@ export async function getAgents(): Promise<Agent[]> {
     if (missingStatus.length > 0) {
       try {
         const nowIso = new Date().toISOString();
-        await supabase.from('agent_status').upsert(
-          missingStatus.map((a: any) => ({
+
+        // `agent_status.last_activity_at` is NOT NULL, so we must seed *something*.
+        // Using "now" makes every newly-seen agent look freshly online, even when
+        // it's just a missing row. Prefer the agent's `created_at` (if present) so
+        // seeded presence is stable + less misleading.
+        const seeded = missingStatus.map((a: any) => {
+          const rawCreatedAt = a?.created_at ? String(a.created_at) : '';
+          const createdAtMs = rawCreatedAt ? Date.parse(rawCreatedAt) : Number.NaN;
+          const seededActivityAt = Number.isFinite(createdAtMs) ? new Date(createdAtMs).toISOString() : nowIso;
+          return {
             project_id: projectId,
             agent_key: a.agent_key,
             state: 'idle',
             note: null,
-            last_activity_at: nowIso,
-          })),
-          { onConflict: 'project_id,agent_key' }
-        );
+            last_activity_at: seededActivityAt,
+          };
+        });
+
+        await supabase.from('agent_status').upsert(seeded, { onConflict: 'project_id,agent_key' });
 
         // Mirror defaults locally so the UI doesn't need a second round-trip.
-        for (const a of missingStatus) {
-          statusByKey.set(a.agent_key, {
-            agent_key: a.agent_key,
-            state: 'idle',
+        for (const row of seeded) {
+          statusByKey.set(row.agent_key, {
+            agent_key: row.agent_key,
+            state: row.state,
             current_task_id: null,
             last_heartbeat_at: null,
-            last_activity_at: nowIso,
-            note: null,
+            last_activity_at: row.last_activity_at,
+            note: row.note,
           });
         }
       } catch (e) {
