@@ -246,7 +246,7 @@ export function DashboardPage() {
       });
     }
 
-    for (const c of activity.slice(0, 20)) {
+    for (const c of activity) {
       const kind = (c.type || 'commit') as FeedItem['type'];
       const actorAgentKey = parseActorAgentKey(c.author);
       const recipientAgentKey = kind === 'session' ? parseRecipientAgentKey(c.message) : null;

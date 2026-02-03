@@ -1,3 +1,6 @@
+### Dashboard Live Feed: don’t truncate activity list at 20 items
+- The feed renderer no longer hard-caps Supabase activity items to 20; it now renders the full fetched list (respecting the configured fetch limit / “Load more”).
+
 ### Presence: seed missing agent_status rows using agents.created_at (less misleading)
 - When an agent exists in `agents` but is missing a matching `agent_status` row, we still upsert a default presence row so the dashboard can render.
 - Instead of seeding `last_activity_at` with "now" (which made agents look freshly online), we now prefer the agent's `created_at` timestamp when available.
