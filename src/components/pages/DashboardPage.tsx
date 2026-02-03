@@ -329,10 +329,13 @@ export function DashboardPage() {
       });
     }
 
+    // Keep the underlying feed list reasonably sized, but do NOT slice to the
+    // visible window here—filters/search should still work across the whole fetched
+    // activity range (activityLimit).
     return items
       .filter(Boolean)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      .slice(0, 25);
+      .slice(0, 200);
   }, [cronJobs, activity, agents]);
 
   const availableFeedTypes = useMemo(() => {
@@ -398,12 +401,16 @@ export function DashboardPage() {
     })();
 
     const q = (feedSearch || '').trim().toLowerCase();
-    if (!q) return byAgent;
+    const searched = !q
+      ? byAgent
+      : byAgent.filter((item) => {
+          const hay = `${item.title || ''}\n${item.subtitle || ''}\n${item.rawMessage || ''}`.toLowerCase();
+          return hay.includes(q);
+        });
 
-    return byAgent.filter((item) => {
-      const hay = `${item.title || ''}\n${item.subtitle || ''}\n${item.rawMessage || ''}`.toLowerCase();
-      return hay.includes(q);
-    });
+    // Visible window: keep the UI compact while allowing filters/search to work
+    // against the full fetched feed list.
+    return searched.slice(0, 25);
   }, [feed, feedTypeFilter, feedAgentFilter, feedSearch, cronJobs, agentByKey]);
 
   const iconForFeedType = (type: string) => {

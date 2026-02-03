@@ -1,3 +1,7 @@
+### Dashboard Live Feed: filter/search against full fetched feed (not just visible 25)
+- Live Feed filters/search now operate across the full fetched activity range (up to ~200 items), instead of only the first 25.
+- The UI still renders a compact 25-item window for performance.
+
 ### AgentProfilePanel: show more Timeline/Messages (activity feed polish)
 - Timeline and Messages tabs now show a count badge and support a **Show more / Show less** toggle.
 - Defaults remain compact (12 timeline rows / 10 messages) but you can expand up to 50 for deep debugging.
