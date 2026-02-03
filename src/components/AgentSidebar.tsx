@@ -34,6 +34,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [dragAgentId, setDragAgentId] = useState<string | null>(null);
   const [overAgentId, setOverAgentId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const { selectedAgentId, setSelectedAgentId, selectedProjectId } = useClawdOffice();
 
@@ -95,6 +96,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
         const next = await getAgents();
         if (!alive) return;
         setAgents(next);
+        setError(null);
         setLastRefreshedAt(new Date());
 
         // Best-effort keep custom order in sync as agents appear/disappear.
@@ -116,9 +118,10 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
           }
           return merged;
         });
-      } catch (e) {
+      } catch (e: any) {
         // Sidebar should fail soft.
         console.warn('Failed to load agents:', e);
+        if (alive) setError(String(e?.message || e));
       } finally {
         if (alive) setIsRefreshing(false);
       }
@@ -166,9 +169,11 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     try {
       const next = await getAgents();
       setAgents(next);
+      setError(null);
       setLastRefreshedAt(new Date());
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed to load agents:', e);
+      setError(String(e?.message || e));
     } finally {
       setIsRefreshing(false);
     }
