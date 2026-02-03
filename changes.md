@@ -529,3 +529,7 @@
 - Agent sidebar now shows an inline error banner when agent roster fetch fails.
 - Dashboard refresh failures now render an actionable error panel (with retry) instead of failing silently.
 - Default `selectedAgentId` now uses the canonical Supabase agent key (`agent:main:main`) so the right agent opens on first load.
+
+### Brain-doc sync: scope to global docs (agent_key is null)
+- `scripts/brain-doc-sync.mjs` now reads/writes only the “global” project brain docs (`agent_key IS NULL`) so it won’t collide with per-agent docs.
+- Upserts now use the full conflict key (`project_id, agent_key, doc_type`) to match the Supabase schema.

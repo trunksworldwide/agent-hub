@@ -49,15 +49,18 @@ async function gitCommit(filePath, message) {
   }
 }
 
+const GLOBAL_AGENT_KEY = null;
+
 async function upsertDoc(doc_type, content, updated_by) {
   await sb.from('brain_docs').upsert(
     {
       project_id: PROJECT_ID,
+      agent_key: GLOBAL_AGENT_KEY,
       doc_type,
       content,
       updated_by,
     },
-    { onConflict: 'project_id,doc_type' }
+    { onConflict: 'project_id,agent_key,doc_type' }
   );
 }
 
@@ -66,6 +69,7 @@ async function getRemoteDoc(doc_type) {
     .from('brain_docs')
     .select('content,updated_at')
     .eq('project_id', PROJECT_ID)
+    .is('agent_key', GLOBAL_AGENT_KEY)
     .eq('doc_type', doc_type)
     .maybeSingle();
   if (error) throw error;
@@ -76,7 +80,8 @@ async function pullOnce() {
   const { data, error } = await sb
     .from('brain_docs')
     .select('doc_type,content,updated_at')
-    .eq('project_id', PROJECT_ID);
+    .eq('project_id', PROJECT_ID)
+    .is('agent_key', GLOBAL_AGENT_KEY);
   if (error) throw error;
 
   const map = new Map((data || []).map((r) => [r.doc_type, r]));
@@ -103,6 +108,7 @@ async function seedIfMissing() {
         .from('brain_docs')
         .select('id')
         .eq('project_id', PROJECT_ID)
+        .is('agent_key', GLOBAL_AGENT_KEY)
         .eq('doc_type', d.doc_type)
         .maybeSingle();
       if (error) throw error;
@@ -178,7 +184,12 @@ async function subscribeRemote() {
     .channel(`brain-docs:${PROJECT_ID}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'brain_docs', filter: `project_id=eq.${PROJECT_ID}` },
+      {
+        event: '*',
+        schema: 'public',
+        table: 'brain_docs',
+        filter: `project_id=eq.${PROJECT_ID},agent_key=is.null`,
+      },
       async (payload) => {
         const row = payload.new || payload.old;
         const docType = row?.doc_type;
