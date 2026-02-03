@@ -272,7 +272,22 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                 const emoji = window.prompt('Emoji/avatar (optional):', '🤖') || undefined;
                 const role = window.prompt('Role/description (optional):', '') || undefined;
 
-                const res = await createAgent({ agentKey, name, emoji, role });
+                const palette = [
+                  '#3b82f6', // blue
+                  '#22c55e', // green
+                  '#f97316', // orange
+                  '#a855f7', // purple
+                  '#06b6d4', // cyan
+                  '#ef4444', // red
+                  '#eab308', // yellow
+                  '#ec4899', // pink
+                ];
+                const hash = Array.from(agentKey).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7);
+                const suggestedColor = palette[hash % palette.length];
+                const colorRaw = window.prompt('Theme color (hex, optional):', suggestedColor) || '';
+                const color = colorRaw.trim() || undefined;
+
+                const res = await createAgent({ agentKey, name, emoji, role, color });
                 if (!res.ok) {
                   window.alert(`Failed to create agent: ${res.error || 'unknown_error'}`);
                   return;

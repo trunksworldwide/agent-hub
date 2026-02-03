@@ -1,3 +1,7 @@
+### Agents sidebar: New Agent prompt includes theme color (suggested)
+- Creating a new agent from the sidebar now asks for an optional **theme color** (hex).
+- We suggest a deterministic color from a small palette based on the agent key, so new agents get a consistent visual identity by default.
+
 ### Dashboard Live Feed: click cron entries to open Cron page
 - Clicking a Live Feed item for `cron` (or `cron_run_requested`) now switches to **Manage → Cron**.
   - Makes the feed actionable instead of a dead list.
