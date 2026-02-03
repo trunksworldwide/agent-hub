@@ -1084,7 +1084,9 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
   return { ok: true };
 }
 
-export async function getActivity(): Promise<ActivityItem[]> {
+export async function getActivity(limit = 50): Promise<ActivityItem[]> {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+
   // Prefer Supabase activities if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
@@ -1093,7 +1095,7 @@ export async function getActivity(): Promise<ActivityItem[]> {
       .select('id,type,message,actor_agent_key,task_id,created_at')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(safeLimit);
 
     if (error) throw error;
 

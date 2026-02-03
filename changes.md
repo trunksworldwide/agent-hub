@@ -1,3 +1,7 @@
+### Dashboard Live Feed: Load more button + configurable activity fetch limit
+- `getActivity(limit)` now accepts a limit (clamped 1–200) instead of hardcoding 50.
+- Dashboard Live Feed shows a **Load more** button when the feed hits the current limit, so you can pull older history without a reload.
+
 ### Projects: persist selected project in localStorage
 - Switching projects now writes the selected project id to `localStorage` (key: `clawdos.project`).
 - Fixes the project selector resetting back to the default project on refresh/reload.

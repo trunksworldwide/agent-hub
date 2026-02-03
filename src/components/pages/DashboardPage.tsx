@@ -36,6 +36,7 @@ export function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [activityLimit, setActivityLimit] = useState(50);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -50,7 +51,7 @@ export function DashboardPage() {
         getAgents(),
         getTasks(),
         getCronJobs(),
-        getActivity(),
+        getActivity(activityLimit),
       ]);
       setAgents(a);
       setTasks(t);
@@ -152,7 +153,7 @@ export function DashboardPage() {
       if (queued) clearTimeout(queued);
       unsubscribe();
     };
-  }, [selectedProjectId]);
+  }, [selectedProjectId, activityLimit]);
 
   const parseActorAgentKey = (author: string | undefined | null): string | null => {
     if (!author) return null;
@@ -783,6 +784,28 @@ export function DashboardPage() {
                 </div>
               ))
             )}
+
+            {activity.length === activityLimit ? (
+              <div className="pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  onClick={async () => {
+                    const next = activityLimit + 50;
+                    setActivityLimit(next);
+                    try {
+                      const more = await getActivity(next);
+                      setActivity(more);
+                    } catch {
+                      // ignore; the main poll/realtime loop will retry
+                    }
+                  }}
+                >
+                  Load more
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
