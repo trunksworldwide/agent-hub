@@ -112,6 +112,11 @@ export function DashboardPage() {
     }
   };
 
+  const patchAgentInRoster = (agentKey: string, patch: Partial<Pick<Agent, 'avatar' | 'color'>>) => {
+    setAgents((prev) => prev.map((a) => (a.id === agentKey ? { ...a, ...patch } : a)));
+    setSelectedAgent((prev) => (prev && prev.id === agentKey ? { ...prev, ...patch } : prev));
+  };
+
   useEffect(() => {
     refresh();
 
@@ -1101,6 +1106,7 @@ export function DashboardPage() {
             tasks={tasks}
             activity={activity}
             cronJobs={cronJobs}
+            onAgentPatched={patchAgentInRoster}
             onClose={() => setSelectedAgent(null)}
           />
         </div>
@@ -1122,6 +1128,7 @@ export function DashboardPage() {
                 tasks={tasks}
                 activity={activity}
                 cronJobs={cronJobs}
+                onAgentPatched={patchAgentInRoster}
                 onClose={() => setSelectedAgent(null)}
               />
             </SheetContent>

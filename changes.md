@@ -1,3 +1,7 @@
+### AgentProfilePanel: patch roster immediately after saving emoji/color (mobile polish)
+- After saving an agent’s **Emoji**/**Color**, the Dashboard roster + open AgentProfilePanel update immediately (no refresh needed).
+- Implemented via an optional `onAgentPatched` callback from Dashboard → AgentProfilePanel.
+
 ### Manage → Agents: project-scoped selection (no stale agent keys)
 - When switching projects, if the previously selected agent doesn’t exist in the new project, the sidebar auto-selects the first available agent (or clears selection).
 - AgentDetail now reloads on project change and shows a soft “Agent not found in this project” state instead of rendering a broken header.

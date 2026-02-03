@@ -21,6 +21,10 @@ interface AgentProfilePanelProps {
   activity?: ActivityItem[];
   tasks?: Task[];
   cronJobs?: CronJob[];
+
+  // Optional: if the parent holds the roster in state, let it patch the agent
+  // immediately after saving appearance (emoji/color) so the UI updates without a full refresh.
+  onAgentPatched?: (agentKey: string, patch: Partial<Pick<Agent, 'avatar' | 'color'>>) => void;
 }
 
 export function AgentProfilePanel({
@@ -30,6 +34,7 @@ export function AgentProfilePanel({
   activity = [],
   tasks = [],
   cronJobs = [],
+  onAgentPatched,
 }: AgentProfilePanelProps) {
   const { setViewMode, setActiveMainTab, setFocusCronJobId } = useClawdOffice();
   const { toast } = useToast();
@@ -110,6 +115,8 @@ export function AgentProfilePanel({
         });
         return;
       }
+
+      onAgentPatched?.(agent.id, { avatar: nextEmoji || '', color: nextColor || '' });
 
       toast({
         title: 'Updated',
