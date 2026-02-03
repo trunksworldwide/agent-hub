@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -61,17 +61,29 @@ async function upsertDoc(doc_type, content, updated_by) {
   );
 }
 
+async function getRemoteDoc(doc_type) {
+  const { data, error } = await sb
+    .from('brain_docs')
+    .select('content,updated_at')
+    .eq('project_id', PROJECT_ID)
+    .eq('doc_type', doc_type)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
 async function pullOnce() {
   const { data, error } = await sb
     .from('brain_docs')
-    .select('doc_type,content')
+    .select('doc_type,content,updated_at')
     .eq('project_id', PROJECT_ID);
   if (error) throw error;
 
-  const map = new Map((data || []).map((r) => [r.doc_type, r.content]));
+  const map = new Map((data || []).map((r) => [r.doc_type, r]));
 
   for (const d of DOCS) {
-    const content = map.get(d.doc_type);
+    const row = map.get(d.doc_type);
+    const content = row?.content;
     if (typeof content !== 'string') continue;
 
     const existing = await readFile(d.path, 'utf8').catch(() => null);
@@ -103,6 +115,18 @@ async function seedIfMissing() {
   }
 }
 
+async function writeConflictBackup(targetPath, content) {
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const backup = `${targetPath}.local-conflict-${ts}.bak`;
+    await ensureParent(backup);
+    await writeFile(backup, content, 'utf8');
+    console.warn('brain-doc-sync: wrote conflict backup', backup);
+  } catch {
+    // ignore
+  }
+}
+
 async function watchLocal() {
   // simple polling watcher (cross-platform reliable)
   for (const d of DOCS) {
@@ -115,10 +139,33 @@ async function watchLocal() {
       try {
         const content = await readFile(d.path, 'utf8').catch(() => '');
         const prev = lastLocal.get(d.doc_type);
-        if (content !== prev) {
-          lastLocal.set(d.doc_type, content);
-          await upsertDoc(d.doc_type, content, 'local_file');
+        if (content === prev) continue;
+
+        // Safety: avoid clobbering a newer Supabase edit if the local file changed while a more
+        // recent remote update exists. This can happen if the sync process is interrupted or
+        // a user edits the file around the same time as a dashboard edit.
+        const st = await stat(d.path).catch(() => null);
+        const localMtimeMs = st?.mtimeMs || 0;
+
+        const remote = await getRemoteDoc(d.doc_type).catch(() => null);
+        const remoteUpdatedAtMs = remote?.updated_at ? Date.parse(remote.updated_at) : 0;
+
+        if (remote && typeof remote.content === 'string' && remoteUpdatedAtMs > localMtimeMs + 1000) {
+          // Remote is clearly newer than the local file write time → don't overwrite Supabase.
+          // Preserve local edits to a backup and re-apply remote canonical content.
+          await writeConflictBackup(d.path, content);
+          await ensureParent(d.path);
+          await writeFile(d.path, remote.content, 'utf8');
+          lastLocal.set(d.doc_type, remote.content);
+          console.warn('brain-doc-sync: skipped local upsert; remote was newer', {
+            doc_type: d.doc_type,
+            remote_updated_at: remote.updated_at,
+          });
+          continue;
         }
+
+        lastLocal.set(d.doc_type, content);
+        await upsertDoc(d.doc_type, content, 'local_file');
       } catch {
         // ignore
       }

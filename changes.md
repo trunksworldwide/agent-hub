@@ -1,3 +1,8 @@
+### Brain-doc sync: avoid clobbering newer Supabase edits (conflict-safe)
+- `scripts/brain-doc-sync.mjs` now checks `brain_docs.updated_at` vs local file mtime before upserting.
+- If Supabase is newer, it writes a local `.bak` conflict copy and re-applies the remote canonical content instead of overwriting.
+- Reduces accidental “last writer wins” damage during simultaneous dashboard + local edits.
+
 ### Dashboard Live Feed: persist type filter per project
 - The Live Feed type filter now saves to `localStorage` (`clawdos.feedType.<projectId>`) and restores on reload/project switch.
 - Makes it easier to keep the feed focused (e.g. build_update/session) while iterating.
