@@ -223,7 +223,7 @@ export function TopBar() {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-96 p-0">
+            <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-0">
               <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                 <div className="text-sm font-medium">Recent activity</div>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={refreshGlobalActivity}>
