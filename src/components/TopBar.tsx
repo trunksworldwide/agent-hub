@@ -52,6 +52,23 @@ export function TopBar() {
   const [globalActivityUpdatedAt, setGlobalActivityUpdatedAt] = useState<Date | null>(null);
   const [globalActivityLimit, setGlobalActivityLimit] = useState<number>(10);
 
+  const globalActivityTypeKey = 'clawdos.globalActivity.type';
+  const [globalActivityType, setGlobalActivityType] = useState<string>(() => {
+    try {
+      return localStorage.getItem(globalActivityTypeKey) || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(globalActivityTypeKey, globalActivityType);
+    } catch {
+      // ignore
+    }
+  }, [globalActivityType]);
+
   useEffect(() => {
     getProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
@@ -162,6 +179,19 @@ export function TopBar() {
     }).length;
   })();
 
+  const globalActivityTypes = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of globalActivity) {
+      if (a?.type) s.add(a.type);
+    }
+    return Array.from(s).sort();
+  }, [globalActivity]);
+
+  const visibleGlobalActivity = useMemo(() => {
+    if (globalActivityType === 'all') return globalActivity;
+    return globalActivity.filter((a) => a.type === globalActivityType);
+  }, [globalActivity, globalActivityType]);
+
   const formatWhen = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -251,18 +281,33 @@ export function TopBar() {
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-0">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
                 <div className="text-sm font-medium">Recent activity</div>
-                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => refreshGlobalActivity()}>
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="h-7 rounded-md bg-secondary border border-border px-2 text-xs"
+                    value={globalActivityType}
+                    onChange={(e) => setGlobalActivityType(e.target.value)}
+                    title="Filter by type"
+                  >
+                    <option value="all">All types</option>
+                    {globalActivityTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => refreshGlobalActivity()}>
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
               <div className="max-h-[420px] overflow-y-auto">
-                {globalActivity.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground">No recent activity.</div>
+                {visibleGlobalActivity.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">No recent activity for this filter.</div>
                 ) : (
                   <div className="divide-y divide-border">
-                    {globalActivity.map((a) => (
+                    {visibleGlobalActivity.map((a) => (
                       <button
                         key={a.id}
                         type="button"

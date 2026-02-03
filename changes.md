@@ -1,3 +1,7 @@
+### Notifications: filter global activity bell by type (persisted)
+- Added a lightweight **All types / <type>** filter in the TopBar notification bell.
+- Filter persists via `localStorage` (`clawdos.globalActivity.type`) so the bell stays focused across reloads.
+
 ### TopBar: pulse the “Connected” status dot (alive UI polish)
 - Online/connected status dot now has a subtle pulse so the header feels less static.
 - Respects `prefers-reduced-motion` (animation disabled).
