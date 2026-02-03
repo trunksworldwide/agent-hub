@@ -1,3 +1,7 @@
+### AgentProfilePanel: show more Timeline/Messages (activity feed polish)
+- Timeline and Messages tabs now show a count badge and support a **Show more / Show less** toggle.
+- Defaults remain compact (12 timeline rows / 10 messages) but you can expand up to 50 for deep debugging.
+
 ### Dashboard Live Feed: quick search (persisted)
 - Added a small **Search…** box to the Live Feed header.
 - Filters by title/subtitle/message and persists per project via `localStorage` (`clawdos.feedSearch.<projectId>`).

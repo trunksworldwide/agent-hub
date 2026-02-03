@@ -46,6 +46,10 @@ export function AgentProfilePanel({
   const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState(false);
 
+  // Activity/message rendering: default to a small window, with an optional “show more”.
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [messagesExpanded, setMessagesExpanded] = useState(false);
+
   // Appearance editing (Supabase roster)
   const [emojiDraft, setEmojiDraft] = useState<string>((agent.avatar || '').trim());
   const [colorDraft, setColorDraft] = useState<string>((agent.color || '').trim());
@@ -289,7 +293,8 @@ export function AgentProfilePanel({
     return false;
   };
 
-  const timeline = activity.filter((a) => matchesAgent(a, agent.id)).slice(0, 12);
+  const timelineAll = activity.filter((a) => matchesAgent(a, agent.id));
+  const timeline = timelineAll.slice(0, timelineExpanded ? 50 : 12);
 
   const extractDirectedMessage = (rawMessage: string) => {
     const m = (rawMessage || '').trim();
@@ -310,14 +315,15 @@ export function AgentProfilePanel({
     return null;
   };
 
-  const messages = activity
+  const messagesAll = activity
     .filter((a) => a.type === 'session')
     .map((a) => {
       const directed = extractDirectedMessage(a.message || '');
       return directed ? { activity: a, directed } : null;
     })
-    .filter((x): x is { activity: ActivityItem; directed: { needle: string; body: string } } => Boolean(x))
-    .slice(0, 10);
+    .filter((x): x is { activity: ActivityItem; directed: { needle: string; body: string } } => Boolean(x));
+
+  const messages = messagesAll.slice(0, messagesExpanded ? 50 : 10);
 
   const agentMatchNeedle = (s: string) => s.toLowerCase();
 
@@ -617,6 +623,9 @@ export function AgentProfilePanel({
               <TabsTrigger value="timeline" className="flex-1 gap-1.5 text-xs">
                 <Clock className="w-3 h-3" />
                 Timeline
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  {timelineAll.length}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="schedule" className="flex-1 gap-1.5 text-xs">
                 <Clock className="w-3 h-3" />
@@ -628,6 +637,9 @@ export function AgentProfilePanel({
               <TabsTrigger value="messages" className="flex-1 gap-1.5 text-xs">
                 <MessageSquare className="w-3 h-3" />
                 Messages
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  {messagesAll.length}
+                </Badge>
               </TabsTrigger>
             </TabsList>
 
@@ -669,6 +681,20 @@ export function AgentProfilePanel({
                       </div>
                     </div>
                   ))}
+
+                  {timelineAll.length > 12 ? (
+                    <div className="pt-1 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={() => setTimelineExpanded((s) => !s)}
+                      >
+                        {timelineExpanded ? 'Show less' : `Show more (${timelineAll.length})`}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </TabsContent>
@@ -779,6 +805,20 @@ export function AgentProfilePanel({
                       <div className="text-xs text-muted-foreground mt-2">{formatAt(a.date)}</div>
                     </div>
                   ))}
+
+                  {messagesAll.length > 10 ? (
+                    <div className="pt-1 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={() => setMessagesExpanded((s) => !s)}
+                      >
+                        {messagesExpanded ? 'Show less' : `Show more (${messagesAll.length})`}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </TabsContent>
