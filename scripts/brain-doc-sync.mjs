@@ -28,6 +28,10 @@ const DOCS = [
   { doc_type: 'memory_long', path: join(WORKSPACE, 'MEMORY.md') },
 ];
 
+// Used to prevent immediate echo loops where a remote update writes a local file and the
+// local polling watcher immediately upserts the same content back to Supabase.
+const lastLocal = new Map();
+
 async function ensureParent(fp) {
   await mkdir(dirname(fp), { recursive: true });
 }
@@ -69,8 +73,13 @@ async function pullOnce() {
   for (const d of DOCS) {
     const content = map.get(d.doc_type);
     if (typeof content !== 'string') continue;
+
+    const existing = await readFile(d.path, 'utf8').catch(() => null);
+    if (existing === content) continue;
+
     await ensureParent(d.path);
     await writeFile(d.path, content, 'utf8');
+    lastLocal.set(d.doc_type, content);
     await gitCommit(d.path, `ClawdOS: sync ${d.doc_type} from Supabase`);
   }
 }
@@ -96,16 +105,18 @@ async function seedIfMissing() {
 
 async function watchLocal() {
   // simple polling watcher (cross-platform reliable)
-  const last = new Map();
-  for (const d of DOCS) last.set(d.doc_type, '');
+  for (const d of DOCS) {
+    const content = await readFile(d.path, 'utf8').catch(() => '');
+    lastLocal.set(d.doc_type, content);
+  }
 
   setInterval(async () => {
     for (const d of DOCS) {
       try {
         const content = await readFile(d.path, 'utf8').catch(() => '');
-        const prev = last.get(d.doc_type);
+        const prev = lastLocal.get(d.doc_type);
         if (content !== prev) {
-          last.set(d.doc_type, content);
+          lastLocal.set(d.doc_type, content);
           await upsertDoc(d.doc_type, content, 'local_file');
         }
       } catch {
@@ -127,8 +138,13 @@ async function subscribeRemote() {
         const content = row?.content;
         const target = DOCS.find((d) => d.doc_type === docType);
         if (!target || typeof content !== 'string') return;
+
+        const existing = await readFile(target.path, 'utf8').catch(() => null);
+        if (existing === content) return;
+
         await ensureParent(target.path);
         await writeFile(target.path, content, 'utf8');
+        lastLocal.set(docType, content);
         await gitCommit(target.path, `ClawdOS: sync ${docType} from Supabase`);
       }
     )

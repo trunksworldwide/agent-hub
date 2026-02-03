@@ -1,3 +1,8 @@
+### Brain-doc sync: avoid echo loops + redundant writes
+- `scripts/brain-doc-sync.mjs` now skips writing local brain docs when content is unchanged.
+- The local polling watcher now initializes from existing file contents (avoids an immediate first-tick upsert).
+- Added an in-memory `lastLocal` cache so remote updates don't immediately bounce back into Supabase as a redundant `local_file` upsert.
+
 ### Supabase: add per-agent brain_docs (SOUL/USER/MEMORY) + realtime subscription
 - Added a `brain_docs` table migration with RLS + updated_at trigger (`supabase/migrations/20260203000001_add_brain_docs.sql`).
 - Fixed Supabase-mode agent file reads/writes to scope by `agent_key` (was incorrectly shared across all agents in a project).
