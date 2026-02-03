@@ -1,3 +1,6 @@
+### TopBar: responsive notifications popover width
+- Notifications bell popover now uses a responsive width (`min(24rem, 100vw - 2rem)`) so it doesn’t overflow on mobile.
+
 ### Brain-doc sync: avoid echo loops + redundant writes
 - `scripts/brain-doc-sync.mjs` now skips writing local brain docs when content is unchanged.
 - The local polling watcher now initializes from existing file contents (avoids an immediate first-tick upsert).
