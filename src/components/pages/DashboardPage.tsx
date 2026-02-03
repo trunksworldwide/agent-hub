@@ -3,15 +3,20 @@ import { createTask, getActivity, getAgents, getCronJobs, getStatus, getTasks, u
 import { hasSupabase, subscribeToProjectRealtime, supabase } from '@/lib/supabase';
 import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
+import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AgentProfilePanel } from '@/components/dashboard/AgentProfilePanel';
 
 interface FeedItem {
   id: string;
+
+  kind: 'activity' | 'cron';
+
   cronJobId?: string;
+  cronSchedule?: string;
 
   /** Parsed agent key when the feed item is attributable to an agent. */
   actorAgentKey?: string | null;
@@ -27,6 +32,12 @@ interface FeedItem {
   title: string;
   subtitle?: string;
   createdAt: string;
+
+  // Debug-friendly raw fields for a details view.
+  rawAuthor?: string | null;
+  rawAuthorLabel?: string | null;
+  rawHash?: string | null;
+  rawMessage?: string | null;
 }
 
 export function DashboardPage() {
@@ -43,6 +54,7 @@ export function DashboardPage() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedFeedDetails, setSelectedFeedDetails] = useState<FeedItem | null>(null);
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -210,7 +222,9 @@ export function DashboardPage() {
     for (const j of cronJobs.slice(0, 10)) {
       items.push({
         id: `cron-${j.id}`,
+        kind: 'cron',
         cronJobId: j.id,
+        cronSchedule: j.schedule,
         type: 'cron',
         title: `cron: ${j.name}`,
         subtitle: j.schedule,
@@ -238,12 +252,17 @@ export function DashboardPage() {
 
       items.push({
         id: `${kind}-${c.hash}`,
+        kind: 'activity',
         type: kind,
         title: c.message,
         subtitle,
         createdAt: c.date,
         actorAgentKey,
         recipientAgentKey: recipientAgentKey || undefined,
+        rawAuthor: c.author || null,
+        rawAuthorLabel: c.authorLabel || null,
+        rawHash: c.hash || null,
+        rawMessage: c.message || null,
       });
     }
 
@@ -704,7 +723,7 @@ export function DashboardPage() {
                     setSelectedAgent(a);
                   }}
                   className={cn(
-                    "p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors",
+                    "relative p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors",
                     (() => {
                       const primaryKey =
                         item.type === 'session' && item.recipientAgentKey
@@ -714,6 +733,18 @@ export function DashboardPage() {
                     })()
                   )}
                 >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-2 right-2 h-7 w-7 opacity-70 hover:opacity-100"
+                    title="Details"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFeedDetails(item);
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                  </Button>
                   <div className="flex items-start gap-3">
                     {(() => {
                       const key =
@@ -805,6 +836,132 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(selectedFeedDetails)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedFeedDetails(null);
+        }}
+      >
+        <DialogContent className="max-w-[min(700px,calc(100vw-2rem))]">
+          <DialogHeader>
+            <DialogTitle>Feed item details</DialogTitle>
+          </DialogHeader>
+
+          {selectedFeedDetails ? (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <div className="font-medium break-words">{selectedFeedDetails.title}</div>
+                <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                  <span className="font-mono">{selectedFeedDetails.type}</span>
+                  <span>·</span>
+                  <span
+                    title={(() => {
+                      const d = new Date(selectedFeedDetails.createdAt);
+                      return Number.isNaN(d.getTime()) ? selectedFeedDetails.createdAt : d.toISOString();
+                    })()}
+                    className="cursor-help"
+                  >
+                    {formatRelativeTime(selectedFeedDetails.createdAt)}
+                  </span>
+                </div>
+              </div>
+
+              {selectedFeedDetails.subtitle ? (
+                <div className="text-sm text-muted-foreground break-words">
+                  {selectedFeedDetails.subtitle}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  if (selectedFeedDetails.type === 'cron' || selectedFeedDetails.type === 'cron_run_requested') {
+                    return (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setSelectedFeedDetails(null);
+                          setViewMode('manage');
+                          setActiveMainTab('cron');
+                        }}
+                      >
+                        Open Cron manager
+                      </Button>
+                    );
+                  }
+
+                  const primaryKey =
+                    selectedFeedDetails.type === 'session' && selectedFeedDetails.recipientAgentKey
+                      ? selectedFeedDetails.recipientAgentKey
+                      : selectedFeedDetails.actorAgentKey || selectedFeedDetails.recipientAgentKey;
+
+                  if (!primaryKey) return null;
+                  const a = agentByKey.get(primaryKey);
+                  if (!a) return null;
+
+                  return (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setSelectedFeedDetails(null);
+                        setSelectedAgent(a);
+                      }}
+                    >
+                      Open agent
+                    </Button>
+                  );
+                })()}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const payload = {
+                      ...selectedFeedDetails,
+                      absoluteTime: (() => {
+                        const d = new Date(selectedFeedDetails.createdAt);
+                        return Number.isNaN(d.getTime()) ? selectedFeedDetails.createdAt : d.toISOString();
+                      })(),
+                    };
+
+                    try {
+                      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+                    } catch {
+                      // no-op
+                    }
+                  }}
+                >
+                  Copy JSON
+                </Button>
+              </div>
+
+              <pre className="text-xs bg-muted/40 border border-border rounded-md p-3 overflow-x-auto max-h-[40vh]">
+{JSON.stringify(
+  {
+    kind: selectedFeedDetails.kind,
+    type: selectedFeedDetails.type,
+    title: selectedFeedDetails.title,
+    subtitle: selectedFeedDetails.subtitle,
+    createdAt: selectedFeedDetails.createdAt,
+    cronJobId: selectedFeedDetails.cronJobId,
+    cronSchedule: selectedFeedDetails.cronSchedule,
+    actorAgentKey: selectedFeedDetails.actorAgentKey,
+    recipientAgentKey: selectedFeedDetails.recipientAgentKey,
+    rawAuthor: selectedFeedDetails.rawAuthor,
+    rawAuthorLabel: selectedFeedDetails.rawAuthorLabel,
+    rawHash: selectedFeedDetails.rawHash,
+    rawMessage: selectedFeedDetails.rawMessage,
+  },
+  null,
+  2
+)}
+              </pre>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Agent Profile Panel (desktop sidebar) */}
       {selectedAgent && (

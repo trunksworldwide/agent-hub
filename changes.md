@@ -1,3 +1,7 @@
+### Dashboard Live Feed: feed item details dialog
+- Added an inline **Details** (ⓘ) button on each Live Feed card to open a dialog with raw fields.
+- Includes quick actions (Open agent/Open Cron manager when applicable) + a **Copy JSON** button for debugging.
+
 ### TopBar: Load more for global activity notifications
 - Global activity bell now supports **Load more** (increments fetch limit in steps of 10, clamped to 200).
 - The popover keeps auto-refreshing at the currently selected limit.
