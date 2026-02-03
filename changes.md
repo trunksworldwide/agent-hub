@@ -483,3 +483,7 @@
 ### Presence: sync agent_status from /api/status (throttled)
 - Added a throttled presence sync in the Control API `/api/status` handler that reads active Clawdbot sessions and upserts `agent_status` for any agent keys it can infer.
 - Keeps the Dashboard presence (ONLINE/WORKING + last seen) accurate even if the user never opens the Sessions tab.
+
+### Presence: bump agent_status when logging activities via scripts
+- Updated `scripts/log-activity.mjs` and `scripts/log-build-update.mjs` to best-effort upsert `agent_status.last_activity_at` for agent actors.
+- This keeps presence accurate when activities are emitted outside the UI (cron/CI/dev scripts).

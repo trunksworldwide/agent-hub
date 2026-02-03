@@ -33,4 +33,27 @@ if (error) {
   process.exit(1);
 }
 
+// Best-effort presence bump so the dashboard presence stays fresh even when
+// activities are emitted via scripts (cron, CI, etc.).
+const normalizeAgentKey = (raw) => {
+  const parts = String(raw || '').split(':');
+  if (parts[0] === 'agent' && parts.length >= 3) return parts.slice(0, 3).join(':');
+  return String(raw || '').trim();
+};
+
+if (String(actor || '').startsWith('agent:')) {
+  try {
+    await supabase.from('agent_status').upsert(
+      {
+        project_id: projectId,
+        agent_key: normalizeAgentKey(actor),
+        last_activity_at: new Date().toISOString(),
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+  } catch {
+    // fail soft
+  }
+}
+
 console.log('[log-activity] ok');
