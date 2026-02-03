@@ -1,3 +1,7 @@
+### AgentProfilePanel: copy agent key button
+- Agent profile header now shows the agent key (e.g. `agent:main:main`) with a one-click **Copy** action.
+- Handy for wiring cron heuristics, activity debugging, and quick “message routing” tests.
+
 ### Dashboard Live Feed: keep cron “upcoming” links from floating above real activity
 - Cron jobs in the Live Feed are now anchored to epoch time so upcoming schedules (future timestamps) don’t sort above real recent activity.
 - Still shows the next run time in the subtitle ("Next: …") and remains clickable for quick navigation to Cron manager.

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, AlertTriangle, Clock, MessageSquare } from 'lucide-react';
+import { X, AlertTriangle, Clock, MessageSquare, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/datetime';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,17 @@ export function AgentProfilePanel({
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState(false);
+
+  const copyAgentKey = async () => {
+    try {
+      await navigator.clipboard.writeText(agent.id);
+      setCopiedKey(true);
+      window.setTimeout(() => setCopiedKey(false), 1500);
+    } catch {
+      // Ignore; clipboard may be unavailable.
+    }
+  };
 
   const sendMessage = async () => {
     const msg = messageDraft.trim();
@@ -298,6 +309,22 @@ export function AgentProfilePanel({
               <Badge variant="outline" className="mt-1 text-xs font-medium">
                 {agent.role}
               </Badge>
+
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[11px] font-mono text-muted-foreground break-all">{agent.id}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => void copyAgentKey()}
+                  title="Copy agent key"
+                  aria-label="Copy agent key"
+                >
+                  <Copy className="w-3 h-3 mr-1" />
+                  {copiedKey ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
             </div>
           </div>
 
