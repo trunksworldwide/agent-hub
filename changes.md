@@ -1,3 +1,7 @@
+### Agents sidebar: subtle “working/online” glow around active agents
+- Mobile + desktop sidebar agent tiles now get a subtle ring/glow when an agent is **online** or **working**.
+- Makes the left rail feel more “alive” without deleting/changing any major UI.
+
 ### Presence: normalize agent keys when bumping agent_status from activity writes
 - When `createActivity()` writes directly to Supabase, presence updates now normalize actor keys like `agent:main:main:cron` → `agent:main:main`.
 - Prevents presence rows from splitting into duplicate keys and keeps the sidebar/profile status accurate.

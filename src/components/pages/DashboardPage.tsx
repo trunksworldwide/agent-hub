@@ -371,7 +371,14 @@ export function DashboardPage() {
                   )}
                 >
                   <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-xl shrink-0 relative overflow-hidden"
+                    className={cn(
+                      'w-9 h-9 rounded-lg flex items-center justify-center text-xl shrink-0 relative overflow-hidden',
+                      agent.status === 'running'
+                        ? 'ring-2 ring-primary/25 shadow-[0_0_0_6px_hsl(var(--primary)/0.10)]'
+                        : agent.status === 'online'
+                          ? 'ring-1 ring-primary/15'
+                          : ''
+                    )}
                     style={
                       agent.color
                         ? {
@@ -453,7 +460,12 @@ export function DashboardPage() {
                 <div
                   className={cn(
                     'rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden',
-                    agentPanelCollapsed ? 'w-8 h-8 text-lg' : 'w-9 h-9 text-xl'
+                    agentPanelCollapsed ? 'w-8 h-8 text-lg' : 'w-9 h-9 text-xl',
+                    agent.status === 'running'
+                      ? 'ring-2 ring-primary/25 shadow-[0_0_0_6px_hsl(var(--primary)/0.10)]'
+                      : agent.status === 'online'
+                        ? 'ring-1 ring-primary/15'
+                        : ''
                   )}
                   style={
                     agent.color
