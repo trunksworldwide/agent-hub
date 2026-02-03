@@ -575,10 +575,18 @@ export async function getAgents(): Promise<Agent[]> {
       state: Agent['statusState'] | undefined,
       lastSeenAt: string | null | undefined
     ): Agent['status'] => {
-      if (state === 'sleeping') return 'offline';
-      if (state === 'working') return 'running';
-
       const age = msSince(lastSeenAt);
+
+      // If an agent explicitly reports sleeping, treat it as offline regardless of recency.
+      if (state === 'sleeping') return 'offline';
+
+      // Guard against a "stuck" WORKING state: if we haven't seen the agent recently,
+      // degrade it so the UI doesn't show permanently-running ghosts.
+      if (state === 'working') {
+        if (age !== null && age >= 30 * 60_000) return 'offline';
+        return 'running';
+      }
+
       if (age === null) return 'idle';
       if (age <= 5 * 60_000) return 'online';
       if (age >= 60 * 60_000) return 'offline';

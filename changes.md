@@ -1,3 +1,7 @@
+### Presence: prevent “stuck WORKING” status when an agent hasn’t been seen recently
+- Dashboard presence now degrades a `working` agent to **OFFLINE** if we haven’t seen heartbeat/activity in ~30 minutes.
+- Prevents permanently-running “ghost” agents when a session crashes or presence updates stop flowing.
+
 ### Agents sidebar: “Seen … ago” now uses newest heartbeat/activity (presence accuracy)
 - Sidebar no longer prioritizes heartbeat over activity; it now chooses whichever timestamp is newest.
 - Prevents agents from looking stale when they recently emitted activity but have an older heartbeat (or vice versa).
