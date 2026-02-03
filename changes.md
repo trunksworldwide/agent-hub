@@ -1,3 +1,7 @@
+### AgentProfilePanel: standardize timestamps via shared datetime helpers
+- Agent profile Timeline/Messages now uses `formatDateTime()` for consistent 12h month/day timestamps.
+- Schedule tab “Next run” label now uses the same formatter when `nextRunAtMs` is available.
+
 ### Dashboard Live Feed: session items open the recipient agent
 - Live Feed session entries now prefer the **recipient** agent (when present) for avatar tinting + click-through.
   - Example: a feed item showing `dashboard → Research` now opens **Research** instead of the sender.

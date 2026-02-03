@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, AlertTriangle, Clock, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -78,18 +79,7 @@ export function AgentProfilePanel({
 
   const lastSeenAt = newestIso(agent.lastActivityAt, agent.lastHeartbeatAt);
 
-  const formatAt = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
+  const formatAt = (iso: string) => formatDateTime(iso);
 
   const getStatusColor = (status: Agent['status']) => {
     switch (status) {
@@ -448,14 +438,7 @@ export function AgentProfilePanel({
                     const expanded = Boolean(expandedScheduleIds[j.id]);
                     const nextRunLabel =
                       typeof j.nextRunAtMs === 'number' && Number.isFinite(j.nextRunAtMs)
-                        ? new Date(j.nextRunAtMs).toLocaleString('en-US', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true,
-                          })
+                        ? formatDateTime(new Date(j.nextRunAtMs))
                         : j.nextRun || '—';
 
                     return (
