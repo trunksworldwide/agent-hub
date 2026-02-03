@@ -1,3 +1,8 @@
+### Datetime helpers: shared relative timestamps (feed + agent profile)
+- Added `formatRelativeTime()` to `src/lib/datetime.ts` so relative timestamps are consistent across the app.
+- Dashboard Live Feed now uses the shared helper (with a stable `now` tick).
+- AgentProfilePanel Timeline/Messages now show relative time with absolute time on hover.
+
 ### Agents sidebar: smarter default emoji when creating a new agent
 - The **New Agent** prompt now suggests an emoji based on the agent key/name/role (keyword match + deterministic fallback).
 - Helps keep agents visually distinct out of the box (pairs nicely with the existing suggested theme color).

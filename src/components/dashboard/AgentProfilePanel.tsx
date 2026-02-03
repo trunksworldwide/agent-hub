@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, AlertTriangle, Clock, MessageSquare, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/datetime';
+import { formatDateTime, formatRelativeTime } from '@/lib/datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -387,6 +387,8 @@ export function AgentProfilePanel({
   const displayEmoji = (emojiDraft || '').trim() || agent.avatar;
   const displayColor = (colorDraft || '').trim() || null;
 
+  const now = new Date();
+
   return (
     <div
       className={cn(
@@ -676,7 +678,9 @@ export function AgentProfilePanel({
                         <div className="text-lg leading-none">{iconForActivityType(a.type)}</div>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate">{a.message}</div>
-                          <div className="text-xs text-muted-foreground mt-1">{formatAt(a.date)}</div>
+                          <div className="text-xs text-muted-foreground mt-1" title={formatAt(a.date)}>
+                            {formatRelativeTime(a.date, now)}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -802,7 +806,9 @@ export function AgentProfilePanel({
                         </span>
                       </div>
                       <div className="text-sm whitespace-pre-wrap break-words mt-1">{directed.body}</div>
-                      <div className="text-xs text-muted-foreground mt-2">{formatAt(a.date)}</div>
+                      <div className="text-xs text-muted-foreground mt-2" title={formatAt(a.date)}>
+                        {formatRelativeTime(a.date, now)}
+                      </div>
                     </div>
                   ))}
 

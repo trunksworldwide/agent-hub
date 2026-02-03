@@ -3,6 +3,7 @@ import { createTask, getActivity, getAgents, getCronJobs, getStatus, getTasks, u
 import { hasSupabase, subscribeToProjectRealtime, supabase } from '@/lib/supabase';
 import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/datetime';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -467,26 +468,6 @@ export function DashboardPage() {
     }).toUpperCase();
   };
 
-  const formatRelativeTime = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-
-    const deltaMs = currentTime.getTime() - d.getTime();
-    if (deltaMs < 0) return 'just now';
-
-    const s = Math.floor(deltaMs / 1000);
-    if (s < 10) return 'just now';
-    if (s < 60) return `${s}s ago`;
-
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m ago`;
-
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-
-    const days = Math.floor(h / 24);
-    return `${days}d ago`;
-  };
 
   const withAlpha = (color: string, alphaHex: string) => {
     const c = (color || '').trim();
@@ -990,7 +971,7 @@ export function DashboardPage() {
 
                           return (
                             <span title={absolute} className="cursor-help">
-                              {formatRelativeTime(item.createdAt)}
+                              {formatRelativeTime(item.createdAt, currentTime)}
                             </span>
                           );
                         })()}
@@ -1051,7 +1032,7 @@ export function DashboardPage() {
                     })()}
                     className="cursor-help"
                   >
-                    {formatRelativeTime(selectedFeedDetails.createdAt)}
+                    {formatRelativeTime(selectedFeedDetails.createdAt, currentTime)}
                   </span>
                 </div>
               </div>
