@@ -508,3 +508,6 @@
 
 ### Dev tooling: add `npm run log:activity`
 - Added a tiny helper script + npm script for emitting a Supabase `activities` row from the CLI.
+
+### Dev tooling: log-activity loads .env.local automatically
+- `scripts/log-activity.mjs` now reads `.env.local`/`.env` via dotenv so cron/dev runs can emit Supabase activities without manual env exports.

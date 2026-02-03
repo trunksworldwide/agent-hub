@@ -1,4 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+// Load local env for CLI usage (best-effort; does not throw).
+// Prefer .env.local (secrets) then .env (defaults).
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
 
 function env(name) {
   const v = process.env[name];
