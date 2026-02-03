@@ -1,3 +1,7 @@
+### TopBar: visually highlight Front Office (system) project
+- When the selected project is tagged `system` (Front Office), the top bar now gets a subtle amber tint.
+- Makes it obvious you’re editing the admin system itself (without deleting/changing any major UI).
+
 ### Presence: optional Supabase-only dashboard keepalive (agent_status)
 - Dashboard can now *optionally* upsert presence directly to Supabase every 60s (for Supabase-only deployments where the Control API isn’t available).
 - Opt-in via:

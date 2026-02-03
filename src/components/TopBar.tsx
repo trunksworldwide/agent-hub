@@ -62,6 +62,8 @@ export function TopBar() {
     return projects.find((p) => p.id === selectedProjectId) || projects[0];
   }, [projects, selectedProjectId]);
 
+  const isFrontOffice = selectedProject?.tag === 'system' || selectedProjectId === 'front-office';
+
   const parseCronJobIdFromActivity = (a: GlobalActivityItem): string | null => {
     if (!a?.message) return null;
 
@@ -172,7 +174,12 @@ export function TopBar() {
   return (
     <div className="sticky top-0 z-50">
       {/* Main Header Bar - Logo, View Toggle, Project Selector */}
-      <div className="h-14 border-b border-border bg-background flex items-center justify-between px-6">
+      <div
+        className={cn(
+          "h-14 border-b border-border bg-background flex items-center justify-between px-6",
+          isFrontOffice && "bg-amber-50/40 dark:bg-amber-950/10 border-b-amber-300/40"
+        )}
+      >
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🦞</span>
