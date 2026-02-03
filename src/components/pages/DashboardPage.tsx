@@ -65,6 +65,28 @@ export function DashboardPage() {
 
   const [feedTypeFilter, setFeedTypeFilter] = useState<string>('all');
 
+  // Persist the feed type filter per project so the dashboard feels "sticky".
+  // (Useful when you mostly want build_update/session/etc while you iterate.)
+  useEffect(() => {
+    const projectId = selectedProjectId || 'front-office';
+    try {
+      const raw = window.localStorage.getItem(`clawdos.feedType.${projectId}`);
+      if (raw && typeof raw === 'string') setFeedTypeFilter(raw);
+    } catch {
+      // localStorage may be unavailable; fail soft.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    const projectId = selectedProjectId || 'front-office';
+    try {
+      window.localStorage.setItem(`clawdos.feedType.${projectId}`, feedTypeFilter);
+    } catch {
+      // Ignore.
+    }
+  }, [selectedProjectId, feedTypeFilter]);
+
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = async () => {

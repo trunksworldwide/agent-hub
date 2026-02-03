@@ -1,3 +1,7 @@
+### Dashboard Live Feed: persist type filter per project
+- The Live Feed type filter now saves to `localStorage` (`clawdos.feedType.<projectId>`) and restores on reload/project switch.
+- Makes it easier to keep the feed focused (e.g. build_update/session) while iterating.
+
 ### Dashboard: clear selected agent when switching projects
 - Prevents the AgentProfilePanel from showing stale data from the previously selected project.
 - Keeps roster/tasks/activity context correctly project-scoped (mobile sheet closes too).
