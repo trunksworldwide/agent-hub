@@ -1,3 +1,7 @@
+### Agents sidebar: smarter default emoji when creating a new agent
+- The **New Agent** prompt now suggests an emoji based on the agent key/name/role (keyword match + deterministic fallback).
+- Helps keep agents visually distinct out of the box (pairs nicely with the existing suggested theme color).
+
 ### Manage → Activity: new full-page project activity feed
 - Added a dedicated **Activity** tab in the Manage navbar.
 - Shows the full project-scoped activity feed (Supabase `activities` + git commits fallback) with type filter + search + load more.

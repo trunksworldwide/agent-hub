@@ -304,8 +304,28 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                 if (!agentKey) return;
 
                 const name = window.prompt('Agent display name:', agentKey) || agentKey;
-                const emoji = window.prompt('Emoji/avatar (optional):', '🤖') || undefined;
                 const role = window.prompt('Role/description (optional):', '') || undefined;
+
+                const hash = Array.from(agentKey).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7);
+
+                const emojiByKeyword: Array<[RegExp, string]> = [
+                  [/research|investigat|analy|intel/, '🔎'],
+                  [/build|dev|engineer|code/, '🛠️'],
+                  [/design|ui|ux|brand/, '🎨'],
+                  [/ops|infra|deploy|server|gateway/, '🛰️'],
+                  [/pm|project|plan|scope/, '🗂️'],
+                  [/write|docs|document/, '✍️'],
+                  [/qa|test|verify/, '🧪'],
+                  [/sales|biz|growth|market/, '📈'],
+                ];
+
+                const emojiPalette = ['🤖', '🧠', '⚙️', '🧩', '🛰️', '🛠️', '🔎', '🗂️', '🎨', '🧪', '✍️', '📈', '🧭'];
+                const blob = `${agentKey} ${name} ${role || ''}`.toLowerCase();
+                const keywordMatch = emojiByKeyword.find(([re]) => re.test(blob));
+                const suggestedEmoji = keywordMatch?.[1] ?? emojiPalette[hash % emojiPalette.length];
+
+                const emojiRaw = window.prompt('Emoji/avatar (optional):', suggestedEmoji) || '';
+                const emoji = emojiRaw.trim() || undefined;
 
                 const palette = [
                   '#3b82f6', // blue
@@ -317,7 +337,6 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                   '#eab308', // yellow
                   '#ec4899', // pink
                 ];
-                const hash = Array.from(agentKey).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7);
                 const suggestedColor = palette[hash % palette.length];
                 const colorRaw = window.prompt('Theme color (hex, optional):', suggestedColor) || '';
                 const color = colorRaw.trim() || undefined;
