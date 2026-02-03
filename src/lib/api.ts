@@ -1031,19 +1031,26 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
     // Best-effort presence bump: if the activity is attributable to a real agent,
     // keep their `agent_status.last_activity_at` fresh so the dashboard presence
     // reflects emitted activity even in Supabase-only deployments.
+    //
+    // NOTE: Some emitters may use a longer actor key (e.g. `agent:main:main:cron`).
+    // We normalize to the base `agent:<name>:<kind>` key so it matches the roster/presence rows.
+    const normalizeAgentKey = (raw: string) => {
+      const parts = String(raw || '').split(':');
+      if (parts[0] === 'agent' && parts.length >= 3) return parts.slice(0, 3).join(':');
+      return String(raw || '').trim();
+    };
+
     if (actorKey.startsWith('agent:')) {
       try {
         const nowIso = new Date().toISOString();
-        await supabase
-          .from('agent_status')
-          .upsert(
-            {
-              project_id: projectId,
-              agent_key: actorKey,
-              last_activity_at: nowIso,
-            },
-            { onConflict: 'project_id,agent_key' }
-          );
+        await supabase.from('agent_status').upsert(
+          {
+            project_id: projectId,
+            agent_key: normalizeAgentKey(actorKey),
+            last_activity_at: nowIso,
+          },
+          { onConflict: 'project_id,agent_key' }
+        );
       } catch {
         // fail soft
       }

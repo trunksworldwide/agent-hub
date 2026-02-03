@@ -1,3 +1,7 @@
+### Presence: normalize agent keys when bumping agent_status from activity writes
+- When `createActivity()` writes directly to Supabase, presence updates now normalize actor keys like `agent:main:main:cron` → `agent:main:main`.
+- Prevents presence rows from splitting into duplicate keys and keeps the sidebar/profile status accurate.
+
 ### AgentProfilePanel: standardize timestamps via shared datetime helpers
 - Agent profile Timeline/Messages now uses `formatDateTime()` for consistent 12h month/day timestamps.
 - Schedule tab “Next run” label now uses the same formatter when `nextRunAtMs` is available.
