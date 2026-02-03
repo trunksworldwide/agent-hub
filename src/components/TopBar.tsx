@@ -42,6 +42,7 @@ export function TopBar() {
     setLastRefresh,
     viewMode,
     setViewMode,
+    setFocusCronJobId,
   } = useClawdOffice();
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -60,6 +61,22 @@ export function TopBar() {
   const selectedProject = useMemo(() => {
     return projects.find((p) => p.id === selectedProjectId) || projects[0];
   }, [projects, selectedProjectId]);
+
+  const parseCronJobIdFromActivity = (a: GlobalActivityItem): string | null => {
+    if (!a?.message) return null;
+
+    // Server currently logs:
+    // - "Requested cron run: <jobId>"
+    // (and other messages may include the raw jobId as a token).
+    const m = a.message.match(/Requested cron run:\s*(.+)$/i);
+    if (m?.[1]) return m[1].trim();
+
+    // Fallback: if the message is just the job id, treat it as such.
+    // (Useful if we later decide to log only the id.)
+    if (/^[a-zA-Z0-9._:-]{6,}$/.test(a.message.trim())) return a.message.trim();
+
+    return null;
+  };
 
   const fetchStatus = async () => {
     setIsRefreshing(true);
@@ -241,7 +258,19 @@ export function TopBar() {
                         type="button"
                         className="w-full text-left p-4 hover:bg-muted/40 transition-colors"
                         onClick={() => {
+                          // Always switch to the activity's project first.
                           setSelectedProjectId(a.projectId);
+
+                          // Deep-link: cron activities should take you straight to Manage → Cron.
+                          if (a.type === 'cron' || a.type === 'cron_run_requested') {
+                            const jobId = parseCronJobIdFromActivity(a);
+                            if (jobId) setFocusCronJobId(jobId);
+                            setViewMode('manage');
+                            setActiveMainTab('cron');
+                            return;
+                          }
+
+                          // Default: bounce back to Dashboard for everything else.
                           setViewMode('dashboard');
                         }}
                         title={`Switch to ${a.projectName}`}

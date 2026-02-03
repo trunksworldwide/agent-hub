@@ -23,6 +23,10 @@
 ### TopBar: responsive notifications popover width
 - Notifications bell popover now uses a responsive width (`min(24rem, 100vw - 2rem)`) so it doesn’t overflow on mobile.
 
+### TopBar: global activity bell deep-links cron entries
+- Clicking a `cron` / `cron_run_requested` notification now jumps straight to **Manage → Cron**.
+- If the activity message includes a job id (e.g. `Requested cron run: <jobId>`), the Cron page auto-expands + scrolls to that job.
+
 ### Brain-doc sync: avoid echo loops + redundant writes
 - `scripts/brain-doc-sync.mjs` now skips writing local brain docs when content is unchanged.
 - The local polling watcher now initializes from existing file contents (avoids an immediate first-tick upsert).
