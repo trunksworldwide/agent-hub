@@ -311,6 +311,11 @@ export function DashboardPage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
+                    {agent.lastActive ? (
+                      <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">
+                        Last active {agent.lastActive}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -352,7 +357,11 @@ export function DashboardPage() {
                   agentPanelCollapsed ? "p-2 justify-center" : "p-3",
                   selectedAgent?.id === agent.id && "bg-muted"
                 )}
-                title={agentPanelCollapsed ? `${agent.name} - ${agent.status}` : undefined}
+                title={
+                  agentPanelCollapsed
+                    ? `${agent.name} - ${agent.status}${agent.lastActive ? ` (${agent.lastActive})` : ''}`
+                    : undefined
+                }
               >
                 <span className={cn("text-xl", agentPanelCollapsed && "text-lg")}>{agent.avatar}</span>
                 {!agentPanelCollapsed && (
@@ -367,6 +376,11 @@ export function DashboardPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
+                      {agent.lastActive ? (
+                        <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">
+                          {agent.lastActive}
+                        </p>
+                      ) : null}
                     </div>
                     <span className={cn("badge-status text-[10px]", getStatusBadge(agent.status))}>
                       {agent.status === 'running' ? 'WORKING' : agent.status.toUpperCase()}

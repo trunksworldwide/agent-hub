@@ -1,3 +1,7 @@
+### Dashboard: show agent “last active” in sidebar (desktop + mobile)
+- Added a subtle `Last active …` line under each agent (when available) so presence is readable at a glance.
+- Collapsed sidebar tooltips now include last active info.
+
 ### Supabase realtime: use the auth-aware client everywhere
 - `src/lib/supabase.ts` now re-exports the generated `@/integrations/supabase/client` instance (instead of creating a separate env-based client).
 - Fixes a subtle realtime bug where Dashboard realtime could be "disabled" (or unauthenticated) even though the rest of the app was using Supabase.
