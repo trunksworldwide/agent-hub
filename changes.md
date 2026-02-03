@@ -386,3 +386,9 @@
 ### Dashboard feed: session messages target the recipient agent
 - Dashboard live feed now parses `session` activity messages (e.g. `To agent:main:main: ...`) and treats the recipient as the clickable agent.
 - This makes “Send message” entries open the right AgentProfilePanel even though the activity actor is `dashboard`.
+
+### UI: icons for agent_created + project_created activities
+- Activity icon mapping now includes:
+  - `agent_created` → 🤖
+  - `project_created` → 📁
+- Applied across Dashboard Live Feed, AgentProfilePanel timelines, and TopBar notifications.
