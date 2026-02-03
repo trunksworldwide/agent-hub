@@ -10,6 +10,7 @@ export function MemoryEditor() {
   const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   const [activeMemoryTab, setActiveMemoryTab] = useState<'long' | 'today'>('long');
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const longKey = `${selectedAgentId}-memory_long`;
   const todayKey = `${selectedAgentId}-memory_today`;
@@ -17,18 +18,25 @@ export function MemoryEditor() {
   const longState = files[longKey];
   const todayState = files[todayKey];
 
+  const load = async () => {
+    if (!selectedAgentId) return;
+    setLoadError(null);
+    try {
+      const [longData, todayData] = await Promise.all([
+        getAgentFile(selectedAgentId, 'memory_long'),
+        getAgentFile(selectedAgentId, 'memory_today'),
+      ]);
+      setFileOriginal(longKey, longData.content);
+      setFileOriginal(todayKey, todayData.content);
+    } catch (e: any) {
+      console.error('Failed to load memory docs', e);
+      setLoadError(String(e?.message || e));
+    }
+  };
+
   useEffect(() => {
-    if (selectedAgentId) {
-      if (!longState) {
-        getAgentFile(selectedAgentId, 'memory_long').then((data) => {
-          setFileOriginal(longKey, data.content);
-        });
-      }
-      if (!todayState) {
-        getAgentFile(selectedAgentId, 'memory_today').then((data) => {
-          setFileOriginal(todayKey, data.content);
-        });
-      }
+    if (selectedAgentId && (!longState || !todayState)) {
+      load();
     }
   }, [selectedAgentId]);
 
@@ -80,8 +88,18 @@ export function MemoryEditor() {
 
   if (!currentState) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Loading...
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 px-6 text-center">
+        {loadError ? (
+          <>
+            <div className="text-destructive">Failed to load memory docs</div>
+            <div className="text-xs text-muted-foreground break-all">{loadError}</div>
+            <Button variant="outline" size="sm" onClick={load}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <div>Loading…</div>
+        )}
       </div>
     );
   }
