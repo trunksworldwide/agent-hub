@@ -794,15 +794,56 @@ export async function getProjects(): Promise<Project[]> {
   ];
 }
 
-export async function createProject(input: { id: string; name: string; tag?: string }): Promise<{ ok: boolean; project?: Project }> {
+export async function createProject(input: { id: string; name: string; tag?: string }): Promise<{ ok: boolean; project?: Project; error?: string }> {
+  // Prefer Supabase projects if configured.
+  // NOTE: In Supabase-only builds we may not have a Control API to create a workspace folder on disk.
+  // This path creates the DB row so the UI can proceed; workspace_path can be set later by the Control API.
+  if (hasSupabase() && supabase) {
+    const id = (input.id || '').trim();
+    if (!id) return { ok: false, error: 'missing_id' };
+    const name = (input.name || id).trim() || id;
+    const tag = input.tag?.trim() || null;
+
+    try {
+      const { error } = await supabase.from('projects').upsert(
+        {
+          id,
+          name,
+          workspace_path: null,
+          tag,
+        } as any,
+        { onConflict: 'id' }
+      );
+      if (error) throw error;
+
+      // Best-effort: activity entry so it shows up in the global bell.
+      try {
+        await supabase.from('activities').insert({
+          project_id: id,
+          type: 'project_created',
+          message: `Created project ${name}`,
+          actor_agent_key: 'dashboard',
+          task_id: null,
+        });
+      } catch {
+        // ignore
+      }
+
+      return { ok: true, project: { id, name, workspace: '', tag: tag || undefined } };
+    } catch (e: any) {
+      console.error('createProject (supabase) failed:', e);
+      return { ok: false, error: String(e?.message || e) };
+    }
+  }
+
   if (USE_REMOTE) {
-    return requestJson<{ ok: boolean; project?: Project }>('/api/projects', {
+    return requestJson<{ ok: boolean; project?: Project; error?: string }>('/api/projects', {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
   }
   if (!ALLOW_MOCKS) {
-    return requestJson<{ ok: boolean; project?: Project }>('/api/projects', {
+    return requestJson<{ ok: boolean; project?: Project; error?: string }>('/api/projects', {
       method: 'POST',
       body: JSON.stringify({ input }),
     });

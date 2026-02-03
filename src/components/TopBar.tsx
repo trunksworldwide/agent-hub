@@ -308,7 +308,11 @@ export function TopBar() {
               const id = (prompt('New project id (slug)') || '').trim();
               if (!id) return;
               const name = (prompt('New project name') || id).trim();
-              await createProject({ id, name });
+              const res = await createProject({ id, name });
+              if (!res?.ok) {
+                alert(`Failed to create project: ${res?.error || 'unknown_error'}`);
+                return;
+              }
               window.location.reload();
             }}
             title="New project"

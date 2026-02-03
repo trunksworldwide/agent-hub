@@ -1,3 +1,7 @@
+### Supabase-only builds: create projects via Supabase (no Control API required)
+- `createProject()` now supports Supabase mode by upserting the `projects` row directly (workspace_path can be set later).
+- TopBar “New project” now alerts on failure instead of silently reloading.
+
 ### Supabase-only builds: status fetch fails soft + restart disabled without Control API
 - `getStatus()` now returns a **Supabase connectivity** status when Supabase is configured but `VITE_API_BASE_URL` is missing.
   - Prevents the UI from crashing in Supabase-first deployments.
