@@ -457,3 +457,6 @@
 ### Presence: dashboard keepalive no longer requires Supabase Auth session
 - Dashboard UI keepalive now attempts Supabase `agents` / `agent_status` upserts even when there is no active Supabase Auth session.
 - This improves presence reliability for Supabase setups that allow anon presence writes (or use RLS policies keyed off the anon/service key).
+
+### UI: subtle glow for working agents
+- Agents marked as WORKING now get a gentle pulse/glow around their avatar in sidebars to make active work feel more alive without reworking layout.

@@ -15,6 +15,18 @@ function getAgentSortModeStorageKey(projectId: string) {
 
 type AgentSortMode = 'status' | 'custom';
 
+function withAlpha(color: string | null | undefined, alphaHex: string) {
+  const c = (color || '').trim();
+  if (/^#([0-9a-fA-F]{6})$/.test(c)) return `${c}${alphaHex}`;
+  if (/^#([0-9a-fA-F]{3})$/.test(c)) {
+    const r = c[1];
+    const g = c[2];
+    const b = c[3];
+    return `#${r}${r}${g}${g}${b}${b}${alphaHex}`;
+  }
+  return c;
+}
+
 export function AgentSidebar({ className, onSelect }: { className?: string; onSelect?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -350,6 +362,13 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
             >
               <div className="flex items-start gap-3">
                 <div className="relative">
+                  {agent.statusState === 'working' ? (
+                    <span
+                      className="absolute -inset-2 rounded-full blur-md opacity-50 animate-pulse"
+                      style={{ backgroundColor: withAlpha(agent.color || '#22c55e', '55') }}
+                      aria-hidden
+                    />
+                  ) : null}
                   {agent.color ? (
                     <span
                       className="absolute -left-1 -top-1 h-3 w-3 rounded-full ring-2 ring-background"
@@ -357,7 +376,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
                       aria-hidden
                     />
                   ) : null}
-                  <span className="text-2xl">{agent.avatar}</span>
+                  <span className="relative z-10 text-2xl">{agent.avatar}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
