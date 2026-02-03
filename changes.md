@@ -1,3 +1,7 @@
+### Manage → Activity: click an activity author to jump to the agent editor
+- In the full-page **Manage → Activity** feed, the author label is now clickable when it refers to an `agent:*` key.
+- Clicking it jumps you to **Manage → Agents** with that agent selected (handy for presence debugging / brain docs edits).
+
 ### Datetime helpers: shared relative timestamps (feed + agent profile)
 - Added `formatRelativeTime()` to `src/lib/datetime.ts` so relative timestamps are consistent across the app.
 - Dashboard Live Feed now uses the shared helper (with a stable `now` tick).

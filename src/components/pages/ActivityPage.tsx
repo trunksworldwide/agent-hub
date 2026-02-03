@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/datetime';
+import { useClawdOffice } from '@/lib/store';
 
 export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -16,6 +17,8 @@ export function ActivityPage() {
 
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
+
+  const { setActiveMainTab, setSelectedAgentId } = useClawdOffice();
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -53,6 +56,12 @@ export function ActivityPage() {
       return hay.includes(needle);
     });
   }, [items, typeFilter, search]);
+
+  const openAgent = (agentKey: string) => {
+    if (!agentKey || !String(agentKey).startsWith('agent:')) return;
+    setSelectedAgentId(agentKey);
+    setActiveMainTab('agents');
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -97,9 +106,7 @@ export function ActivityPage() {
         </div>
       </div>
 
-      {loadError ? (
-        <div className="p-4 text-sm text-destructive">{loadError}</div>
-      ) : null}
+      {loadError ? <div className="p-4 text-sm text-destructive">{loadError}</div> : null}
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
@@ -108,19 +115,35 @@ export function ActivityPage() {
           ) : (
             filtered.map((i) => {
               const d = new Date(i.date);
-              const timeLabel = Number.isNaN(d.getTime()) ? i.date : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatTime(d)}`;
+              const timeLabel = Number.isNaN(d.getTime())
+                ? i.date
+                : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatTime(d)}`;
+
+              const canOpen = Boolean(i.author && String(i.author).startsWith('agent:'));
 
               return (
                 <div key={i.hash} className="p-3 rounded-lg border border-border bg-card">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium break-words">{i.message || '(no message)'}</div>
-                      <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                      <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center">
                         <span className="font-mono">{i.type}</span>
                         {i.authorLabel ? (
                           <>
                             <span>·</span>
-                            <span className="font-mono">{i.authorLabel}</span>
+                            {canOpen ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 px-1 text-xs font-mono underline underline-offset-2"
+                                onClick={() => openAgent(i.author)}
+                                title={`Open ${i.author} in Manage → Agents`}
+                              >
+                                {i.authorLabel}
+                              </Button>
+                            ) : (
+                              <span className="font-mono">{i.authorLabel}</span>
+                            )}
                           </>
                         ) : null}
                       </div>
@@ -137,12 +160,7 @@ export function ActivityPage() {
 
           {items.length === limit ? (
             <div className="pt-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full"
-                onClick={() => setLimit((l) => l + 200)}
-              >
+              <Button variant="secondary" size="sm" className="w-full" onClick={() => setLimit((l) => l + 200)}>
                 Load more
               </Button>
             </div>
