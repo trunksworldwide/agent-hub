@@ -901,26 +901,50 @@ export function DashboardPage() {
                     );
                   }
 
-                  const primaryKey =
-                    selectedFeedDetails.type === 'session' && selectedFeedDetails.recipientAgentKey
-                      ? selectedFeedDetails.recipientAgentKey
-                      : selectedFeedDetails.actorAgentKey || selectedFeedDetails.recipientAgentKey;
+                  const actorKey = selectedFeedDetails.actorAgentKey || null;
+                  const recipientKey = selectedFeedDetails.recipientAgentKey || null;
 
-                  if (!primaryKey) return null;
-                  const a = agentByKey.get(primaryKey);
-                  if (!a) return null;
+                  const primaryKey =
+                    selectedFeedDetails.type === 'session' && recipientKey
+                      ? recipientKey
+                      : actorKey || recipientKey;
+
+                  const buttons: Array<{ key: string; label: string }> = [];
+
+                  if (selectedFeedDetails.type === 'session') {
+                    if (recipientKey) buttons.push({ key: recipientKey, label: 'Open recipient' });
+                    if (actorKey && actorKey !== recipientKey) buttons.push({ key: actorKey, label: 'Open sender' });
+                  } else {
+                    if (primaryKey) buttons.push({ key: primaryKey, label: 'Open agent' });
+                  }
+
+                  const deduped = Array.from(
+                    new Map(buttons.map((b) => [b.key, b] as const)).values()
+                  );
+
+                  if (deduped.length === 0) return null;
 
                   return (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setSelectedFeedDetails(null);
-                        setSelectedAgent(a);
-                      }}
-                    >
-                      Open agent
-                    </Button>
+                    <>
+                      {deduped.map((b) => {
+                        const a = agentByKey.get(b.key);
+                        if (!a) return null;
+
+                        return (
+                          <Button
+                            key={b.key}
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setSelectedFeedDetails(null);
+                              setSelectedAgent(a);
+                            }}
+                          >
+                            {b.label}
+                          </Button>
+                        );
+                      })}
+                    </>
                   );
                 })()}
 

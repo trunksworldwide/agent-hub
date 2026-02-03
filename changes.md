@@ -1,3 +1,9 @@
+### Dashboard Live Feed: Details dialog can open sender vs recipient agents
+- Feed item Details dialog now offers clearer navigation:
+  - For `session` items: **Open recipient** and (when different) **Open sender**.
+  - For other activity items: keeps a single **Open agent** button.
+- Makes it faster to jump to the right agent when reading dashboard → agent messages.
+
 ### AgentProfilePanel: Messages tab renders clean "inbox" messages
 - Session activity messages like `To agent:main:main: ...` now render as a clean message body (without the routing prefix).
 - Shows a lightweight **From <author>** line so per-agent inboxes are easier to scan.
