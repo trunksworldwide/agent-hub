@@ -1,3 +1,8 @@
+### Datetime formatting: standardize on 12h “normal time” across UI
+- Added `src/lib/datetime.ts` helpers (`formatDateTime`, `formatTime`) for consistent month/day + 12h timestamps.
+- Cron page now uses the shared formatter for next-run + run history + “Updated” label.
+- Notifications tooltip now uses the same 12h time formatting.
+
 ### TopBar: visually highlight Front Office (system) project
 - When the selected project is tagged `system` (Front Office), the top bar now gets a subtle amber tint.
 - Makes it obvious you’re editing the admin system itself (without deleting/changing any major UI).

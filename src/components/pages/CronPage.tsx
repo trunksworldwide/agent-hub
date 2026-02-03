@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getCronJobs, toggleCronJob, editCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
+import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useClawdOffice } from '@/lib/store';
@@ -40,7 +41,7 @@ export function CronPage() {
     if (ms < 3_000) return 'just now';
     if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s ago`;
     if (ms < 60 * 60_000) return `${Math.max(1, Math.round(ms / 60_000))}m ago`;
-    return new Date(lastRefreshedAt).toLocaleString();
+    return formatDateTime(lastRefreshedAt);
   }, [lastRefreshedAt]);
 
   const loadJobs = async () => {
@@ -228,7 +229,7 @@ export function CronPage() {
                         <p className="text-sm text-muted-foreground">
                           Next run:{' '}
                           {typeof job.nextRunAtMs === 'number'
-                            ? new Date(job.nextRunAtMs).toLocaleString()
+                            ? formatDateTime(job.nextRunAtMs)
                             : (job.nextRun || '—')}
                         </p>
                       </div>
@@ -304,7 +305,7 @@ export function CronPage() {
 
                       <div className="space-y-2">
                         {(runsByJob[job.id] || []).slice(0, 5).map((r) => {
-                          const when = r.runAtMs ? new Date(r.runAtMs).toLocaleString() : new Date(r.ts).toLocaleString();
+                          const when = r.runAtMs ? formatDateTime(r.runAtMs) : formatDateTime(r.ts);
                           const dur = typeof r.durationMs === 'number' ? `${Math.round(r.durationMs / 1000)}s` : '';
                           const status = r.status || 'unknown';
 

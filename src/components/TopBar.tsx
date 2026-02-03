@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useClawdOffice, type MainTab } from '@/lib/store';
 import { createProject, getGlobalActivity, getProjects, getStatus, restartSystem, type GlobalActivityItem, type Project } from '@/lib/api';
 import { setSelectedProjectId as persistSelectedProjectId } from '@/lib/project';
+import { formatTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -237,7 +238,7 @@ export function TopBar() {
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 relative"
-                title={globalActivityUpdatedAt ? `Notifications (updated ${globalActivityUpdatedAt.toLocaleTimeString()})` : 'Notifications'}
+                title={globalActivityUpdatedAt ? `Notifications (updated ${formatTime(globalActivityUpdatedAt)})` : 'Notifications'}
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
