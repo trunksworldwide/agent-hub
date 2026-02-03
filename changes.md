@@ -1,3 +1,7 @@
+### AgentProfilePanel: better “Send message” UX (toast + safer Enter)
+- Sending a message now shows a success toast and surfaces errors via a destructive toast.
+- Enter-to-send now avoids firing while IME composition is active (prevents accidental sends while typing in Japanese/Chinese/etc).
+
 ### Presence: main agent status uses per-agent session count (more accurate)
 - `/api/status` no longer marks `agent:main:main` as WORKING just because *any* agent has active sessions.
 - We now count sessions whose key normalizes to `agent:main:main` and use that for the main presence row.

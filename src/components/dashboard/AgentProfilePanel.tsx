@@ -57,6 +57,7 @@ export function AgentProfilePanel({
   const sendMessage = async () => {
     const msg = messageDraft.trim();
     if (!msg || sendingMessage) return;
+
     setSendingMessage(true);
     try {
       await createActivity({
@@ -66,7 +67,19 @@ export function AgentProfilePanel({
         message: `To ${agent.id}: ${msg}`,
         actorAgentKey: 'dashboard',
       });
+
       setMessageDraft('');
+      toast({
+        title: 'Message logged',
+        description: `Sent to ${agent.name}.`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Failed to send message',
+        description: msg || 'unknown_error',
+        variant: 'destructive',
+      });
     } finally {
       setSendingMessage(false);
     }
@@ -660,7 +673,11 @@ export function AgentProfilePanel({
             value={messageDraft}
             onChange={(e) => setMessageDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              // Avoid sending while the user is composing text with an IME.
+              // Also allow Shift+Enter for accessibility (even though Input is single-line).
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const isComposing = Boolean((e.nativeEvent as any)?.isComposing);
+              if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                 e.preventDefault();
                 void sendMessage();
               }
