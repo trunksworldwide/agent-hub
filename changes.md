@@ -1,3 +1,8 @@
+### AgentProfilePanel: Schedule tab shows cron jobs (with instructions)
+- AgentProfilePanel now includes a **Schedule** tab that lists cron jobs that appear to belong to the agent.
+- Shows schedule, enabled/disabled, next run, and lets you expand to view the job’s full instructions.
+- v1 heuristic: matches jobs by scanning the job name/instructions for the agent key or display name.
+
 ### Agents sidebar: New Agent prompt includes theme color (suggested)
 - Creating a new agent from the sidebar now asks for an optional **theme color** (hex).
 - We suggest a deterministic color from a small palette based on the agent key, so new agents get a consistent visual identity by default.

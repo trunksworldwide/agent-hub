@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { createActivity } from '@/lib/api';
-import type { ActivityItem, Agent, Task } from '@/lib/api';
+import type { ActivityItem, Agent, CronJob, Task } from '@/lib/api';
 
 interface AgentProfilePanelProps {
   agent: Agent;
@@ -17,6 +17,7 @@ interface AgentProfilePanelProps {
   // Optional wiring from the Dashboard so the panel can show real data.
   activity?: ActivityItem[];
   tasks?: Task[];
+  cronJobs?: CronJob[];
 }
 
 export function AgentProfilePanel({
@@ -25,9 +26,11 @@ export function AgentProfilePanel({
   variant = 'sidebar',
   activity = [],
   tasks = [],
+  cronJobs = [],
 }: AgentProfilePanelProps) {
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [expandedScheduleIds, setExpandedScheduleIds] = useState<Record<string, boolean>>({});
 
   const sendMessage = async () => {
     const msg = messageDraft.trim();
@@ -185,6 +188,26 @@ export function AgentProfilePanel({
       );
     })
     .slice(0, 10);
+
+  const agentMatchNeedle = (s: string) => s.toLowerCase();
+
+  const cronMatchesAgent = (j: CronJob) => {
+    const name = agentMatchNeedle(j.name || '');
+    const instr = agentMatchNeedle(j.instructions || '');
+    const schedule = agentMatchNeedle(j.schedule || '');
+
+    const idNeedle = agentMatchNeedle(agent.id);
+    const nameNeedle = agentMatchNeedle(agent.name);
+
+    // Heuristic v1: match on agent key OR agent display name appearing in the job metadata.
+    // (We don't yet have a structured "agentKey" field on cron jobs.)
+    return (
+      (idNeedle && (name.includes(idNeedle) || instr.includes(idNeedle) || schedule.includes(idNeedle))) ||
+      (nameNeedle && (name.includes(nameNeedle) || instr.includes(nameNeedle)))
+    );
+  };
+
+  const scheduledJobs = cronJobs.filter(cronMatchesAgent);
 
   const withAlpha = (color: string, alphaHex: string) => {
     const c = (color || '').trim();
@@ -348,6 +371,13 @@ export function AgentProfilePanel({
                 <Clock className="w-3 h-3" />
                 Timeline
               </TabsTrigger>
+              <TabsTrigger value="schedule" className="flex-1 gap-1.5 text-xs">
+                <Clock className="w-3 h-3" />
+                Schedule
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  {scheduledJobs.length}
+                </Badge>
+              </TabsTrigger>
               <TabsTrigger value="messages" className="flex-1 gap-1.5 text-xs">
                 <MessageSquare className="w-3 h-3" />
                 Messages
@@ -392,6 +422,79 @@ export function AgentProfilePanel({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="schedule" className="mt-4">
+              {scheduledJobs.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  No scheduled jobs matched this agent yet.
+                  <div className="text-xs mt-2">
+                    (v1 heuristic: we match cron jobs by looking for <span className="font-mono">{agent.id}</span> or
+                    <span className="font-mono"> {agent.name}</span> in the job name/instructions.)
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {scheduledJobs.map((j) => {
+                    const expanded = Boolean(expandedScheduleIds[j.id]);
+                    const nextRunLabel =
+                      typeof j.nextRunAtMs === 'number' && Number.isFinite(j.nextRunAtMs)
+                        ? new Date(j.nextRunAtMs).toLocaleString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
+                          })
+                        : j.nextRun || '—';
+
+                    return (
+                      <div key={j.id} className="p-3 rounded-lg border border-border bg-card">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">{j.name}</div>
+                            <div className="text-[11px] text-muted-foreground mt-1 font-mono break-all">
+                              {j.schedule}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-1">Next: {nextRunLabel}</div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <Badge variant={j.enabled ? 'secondary' : 'outline'} className="text-[10px]">
+                              {j.enabled ? 'enabled' : 'disabled'}
+                            </Badge>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-[11px]"
+                              onClick={() =>
+                                setExpandedScheduleIds((s) => ({
+                                  ...s,
+                                  [j.id]: !Boolean(s[j.id]),
+                                }))
+                              }
+                            >
+                              {expanded ? 'Hide' : 'Show'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {expanded ? (
+                          <div className="mt-3 text-xs">
+                            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                              Instructions
+                            </div>
+                            <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px] bg-muted/40 border border-border rounded-md p-2">
+                              {j.instructions || '—'}
+                            </pre>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>

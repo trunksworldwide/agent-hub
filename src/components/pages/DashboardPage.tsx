@@ -643,6 +643,7 @@ export function DashboardPage() {
             agent={selectedAgent}
             tasks={tasks}
             activity={activity}
+            cronJobs={cronJobs}
             onClose={() => setSelectedAgent(null)}
           />
         </div>
@@ -663,6 +664,7 @@ export function DashboardPage() {
                 agent={selectedAgent}
                 tasks={tasks}
                 activity={activity}
+                cronJobs={cronJobs}
                 onClose={() => setSelectedAgent(null)}
               />
             </SheetContent>
