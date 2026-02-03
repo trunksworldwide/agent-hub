@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createTask, getActivity, getAgents, getCronJobs, getStatus, getTasks, updateTask, type ActivityItem, type Agent, type CronJob, type Task, type TaskStatus } from '@/lib/api';
-import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
+import { hasSupabase, subscribeToProjectRealtime, supabase } from '@/lib/supabase';
 import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Clock, PanelLeftClose, PanelLeft, Plus, RefreshCw } from 'lucide-react';
@@ -71,7 +71,58 @@ export function DashboardPage() {
     // This helps keep the dashboard agent "online" while the UI is open, even if no other
     // activity is being emitted.
     const presence = setInterval(() => {
+      // If the Control API exists, this call upserts server-side presence.
+      // In Supabase-only deployments, this may be a no-op; we optionally fall back
+      // to a client-side Supabase upsert (opt-in via env var) so presence can still work.
       getStatus().catch(() => {});
+
+      const heartbeatAgentKey = String(import.meta.env.VITE_DASHBOARD_PRESENCE_AGENT_KEY || '').trim();
+      if (!heartbeatAgentKey) return;
+      if (!(hasSupabase() && supabase)) return;
+
+      const projectId = selectedProjectId || 'front-office';
+      const nowIso = new Date().toISOString();
+
+      supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (!data?.session) return;
+
+          const createAgent =
+            String(import.meta.env.VITE_DASHBOARD_PRESENCE_CREATE_AGENT || '').toLowerCase() === 'true';
+
+          if (createAgent) {
+            supabase
+              .from('agents')
+              .upsert(
+                {
+                  project_id: projectId,
+                  agent_key: heartbeatAgentKey,
+                  name: 'Dashboard',
+                  role: 'UI',
+                  emoji: '🖥️',
+                },
+                { onConflict: 'project_id,agent_key' }
+              )
+              .catch(() => {});
+          }
+
+          supabase
+            .from('agent_status')
+            .upsert(
+              {
+                project_id: projectId,
+                agent_key: heartbeatAgentKey,
+                state: 'idle',
+                last_heartbeat_at: nowIso,
+                last_activity_at: nowIso,
+                note: 'Dashboard open (UI keepalive)',
+              },
+              { onConflict: 'project_id,agent_key' }
+            )
+            .catch(() => {});
+        })
+        .catch(() => {});
     }, 60_000);
 
     // Default to polling, but when Supabase is configured we prefer realtime updates

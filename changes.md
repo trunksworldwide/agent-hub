@@ -1,3 +1,9 @@
+### Presence: optional Supabase-only dashboard keepalive (agent_status)
+- Dashboard can now *optionally* upsert presence directly to Supabase every 60s (for Supabase-only deployments where the Control API isn’t available).
+- Opt-in via:
+  - `VITE_DASHBOARD_PRESENCE_AGENT_KEY=agent:ui:dashboard` (or any agent key)
+  - optional `VITE_DASHBOARD_PRESENCE_CREATE_AGENT=true` to also seed an `agents` roster row.
+
 ### AgentProfilePanel: open scheduled job in Cron manager
 - Schedule tab now includes an **Open** button per matched cron job.
 - Clicking it switches to **Manage → Cron**, auto-expands that job, and scrolls it into view.
