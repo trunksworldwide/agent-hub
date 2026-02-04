@@ -1013,6 +1013,18 @@ export interface CronCreateRequest {
   completedAt?: string | null;
 }
 
+export interface CronDeleteRequest {
+  id: string;
+  projectId: string;
+  jobId: string;
+  requestedAt: string;
+  requestedBy?: string | null;
+  status: 'queued' | 'running' | 'done' | 'error';
+  result?: any;
+  pickedUpAt?: string | null;
+  completedAt?: string | null;
+}
+
 /**
  * Queue a cron job patch request (toggle, edit, etc.) for offline execution.
  */
@@ -1126,6 +1138,74 @@ export async function getCronPatchRequests(limit = 20): Promise<CronPatchRequest
     projectId: row.project_id,
     jobId: row.job_id,
     patchJson: row.patch_json,
+    requestedAt: row.requested_at,
+    requestedBy: row.requested_by,
+    status: row.status,
+    result: row.result,
+    pickedUpAt: row.picked_up_at,
+    completedAt: row.completed_at,
+  }));
+}
+
+/**
+ * Queue a cron delete request for offline execution.
+ */
+export async function queueCronDeleteRequest(jobId: string): Promise<{ ok: boolean; requestId?: string; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('cron_delete_requests')
+      .insert({
+        project_id: projectId,
+        job_id: jobId,
+        requested_by: 'ui',
+        status: 'queued',
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Log activity
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'cron_delete_queued',
+      message: `Queued deletion of cron job ${jobId}`,
+      actor_agent_key: 'dashboard',
+    });
+
+    return { ok: true, requestId: data?.id };
+  } catch (e: any) {
+    console.error('queueCronDeleteRequest failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Get recent cron delete requests from Supabase.
+ */
+export async function getCronDeleteRequests(limit = 20): Promise<CronDeleteRequest[]> {
+  if (!(hasSupabase() && supabase)) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('cron_delete_requests')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    projectId: row.project_id,
+    jobId: row.job_id,
     requestedAt: row.requested_at,
     requestedBy: row.requested_by,
     status: row.status,
