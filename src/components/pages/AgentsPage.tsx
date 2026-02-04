@@ -134,12 +134,11 @@ export function AgentsPage() {
             <TooltipContent className="max-w-xs text-xs">
               <div className="space-y-1">
                 <p><strong>Status indicators:</strong></p>
-                <p>🟢 <strong>ONLINE</strong>: Seen within 5 minutes</p>
                 <p>🟢 <strong>WORKING</strong>: Currently executing a task</p>
-                <p>🟡 <strong>IDLE</strong>: Available but not active</p>
-                <p>🔴 <strong>OFFLINE</strong>: No activity for 60+ minutes</p>
+                <p>🟡 <strong>IDLE</strong>: Seen within last 60 minutes</p>
+                <p>⚫ <strong>OFFLINE</strong>: No activity for 60+ minutes</p>
                 <p className="text-muted-foreground mt-2">
-                  Hover over any status badge for details.
+                  Hover over any status dot for details.
                 </p>
               </div>
             </TooltipContent>
