@@ -83,6 +83,15 @@ export function TopBar() {
     return projects.find((p) => p.id === selectedProjectId) || projects[0];
   }, [projects, selectedProjectId]);
 
+  // Fail-soft if localStorage (or a deep-link) points to a project id we don't currently have.
+  // Keeps the selector controlled value valid and avoids rendering an empty selection.
+  useEffect(() => {
+    if (!projects.length) return;
+    if (!selectedProjectId || !projects.some((p) => p.id === selectedProjectId)) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId, setSelectedProjectId]);
+
   const isFrontOffice = selectedProject?.tag === 'system' || selectedProjectId === 'front-office';
 
   const parseCronJobIdFromActivity = (a: GlobalActivityItem): string | null => {

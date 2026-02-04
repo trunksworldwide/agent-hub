@@ -1,3 +1,7 @@
+### TopBar: auto-recover when selected project id is missing (projects scoping)
+- If `localStorage` (or a deep-link) points at a project id that isn't in the current projects list, we now auto-select the first available project.
+- Prevents a controlled `<select>` from rendering with an empty/invalid value in flaky-load scenarios.
+
 ### Manage → Agents: reload brain docs from server (sync-friendly)
 - Added a **Reload** button to SOUL/USER/MEMORY editors.
 - If you have unsaved changes, we confirm before discarding.
