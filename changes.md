@@ -674,3 +674,6 @@
   - defaults the actor to `VITE_DASHBOARD_PRESENCE_AGENT_KEY` when `actor_agent_key` isn't provided
   - best-effort upserts `agent_status.last_activity_at` for agent actors (normalized) after inserting the activity
 - Keeps presence accurate even when the app is using the lightweight Supabase data helpers (tasks CRUD etc).
+
+### UI: subtle dashboard texture background
+- Applied the existing `dashboard-texture` background to the Dashboard root container for a light mission-control gradient/texture without changing layout.

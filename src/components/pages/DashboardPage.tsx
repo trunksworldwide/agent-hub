@@ -505,7 +505,7 @@ export function DashboardPage() {
   const totalTasks = tasks.length;
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden dashboard-texture">
       {/* Mobile sidebar (drawer) */}
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-80">
