@@ -15,36 +15,76 @@ export function hasSupabase() {
 
 export type RealtimeUnsubscribe = () => void;
 
+export interface RealtimeChange {
+  table: string;
+  event: 'INSERT' | 'UPDATE' | 'DELETE' | string;
+  new?: any;
+  old?: any;
+}
+
 /**
  * Best-effort realtime subscription for a project.
+ *
+ * Note: `onChange` is called for *every* matching postgres change event.
+ * Consumers can either do a full refresh, or apply small incremental patches.
  */
-export function subscribeToProjectRealtime(projectId: string, onChange: () => void): RealtimeUnsubscribe {
+export function subscribeToProjectRealtime(projectId: string, onChange: (change?: RealtimeChange) => void): RealtimeUnsubscribe {
   const channel = supabase
     .channel(`clawdos:project:${projectId}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'activities', filter: `project_id=eq.${projectId}` },
-      () => onChange()
+      (payload) =>
+        onChange({
+          table: 'activities',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'agent_status', filter: `project_id=eq.${projectId}` },
-      () => onChange()
+      (payload) =>
+        onChange({
+          table: 'agent_status',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'agents', filter: `project_id=eq.${projectId}` },
-      () => onChange()
+      (payload) =>
+        onChange({
+          table: 'agents',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` },
-      () => onChange()
+      (payload) =>
+        onChange({
+          table: 'tasks',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'brain_docs', filter: `project_id=eq.${projectId}` },
-      () => onChange()
+      (payload) =>
+        onChange({
+          table: 'brain_docs',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
     )
     .subscribe();
 

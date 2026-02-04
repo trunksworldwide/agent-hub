@@ -207,8 +207,74 @@ export function DashboardPage() {
       }, 250);
     };
 
+    const toAuthorLabel = (raw: string | null | undefined) => {
+      if (!raw) return '';
+      const parts = String(raw).split(':');
+      if (parts[0] === 'agent' && parts.length >= 2) return parts[1] || String(raw);
+      return String(raw);
+    };
+
+    const deriveStatusFromState = (state: string | null | undefined): Agent['status'] => {
+      const s = (state || '').toLowerCase();
+      if (s === 'working') return 'running';
+      if (s === 'blocked' || s === 'sleeping') return 'idle';
+      if (s) return 'online';
+      return 'online';
+    };
+
+    const handleRealtime = (change?: { table: string; event: string; new?: any }) => {
+      if (!change) return scheduleRefresh();
+
+      // Prefer small incremental patches for the high-churn tables so the dashboard feels snappy.
+      // Fall back to a full refresh for anything we don't recognize.
+      if (change.table === 'activities' && change.event === 'INSERT' && change.new) {
+        const row = change.new;
+        const item: ActivityItem = {
+          hash: String(row.id || ''),
+          author: String(row.actor_agent_key || ''),
+          authorLabel: toAuthorLabel(row.actor_agent_key),
+          date: String(row.created_at || ''),
+          message: String(row.message || ''),
+          type: row.type ? String(row.type) : undefined,
+          taskId: row.task_id ?? null,
+        };
+
+        if (!item.hash) return scheduleRefresh();
+
+        setActivity((prev) => {
+          if (prev.some((p) => p.hash === item.hash)) return prev;
+          return [item, ...prev].slice(0, activityLimit);
+        });
+
+        return;
+      }
+
+      if ((change.table === 'agent_status' || change.table === 'agents') && change.new) {
+        // We'll let agent roster updates re-render immediately without waiting for polling.
+        // If we can't map it cleanly, we self-heal via a refresh.
+        if (change.table === 'agent_status') {
+          const row = change.new;
+          const agentKey = String(row.agent_key || '').trim();
+          if (!agentKey) return scheduleRefresh();
+
+          patchAgentInRoster(agentKey, {
+            status: deriveStatusFromState(row.state),
+            statusState: row.state ?? undefined,
+            statusNote: row.note ?? undefined,
+            currentTaskId: row.current_task_id ?? undefined,
+          });
+          return;
+        }
+
+        // Agents roster changes affect name/role/emoji/color ordering; simplest to refresh.
+        return scheduleRefresh();
+      }
+
+      return scheduleRefresh();
+    };
+
     if (hasSupabase()) {
-      unsubscribe = subscribeToProjectRealtime(selectedProjectId || 'front-office', scheduleRefresh);
+      unsubscribe = subscribeToProjectRealtime(selectedProjectId || 'front-office', handleRealtime);
     }
 
     return () => {

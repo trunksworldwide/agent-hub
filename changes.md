@@ -1,3 +1,7 @@
+### Dashboard: realtime patches for activity + presence (Supabase)
+- `subscribeToProjectRealtime()` now forwards realtime event details instead of just “something changed”.
+- Dashboard applies **activity INSERTs** + **agent_status updates** incrementally for snappier UI, while still falling back to a debounced full refresh for everything else.
+
 ### Dashboard: subtle textured gradient background (mobile polish)
 - Applied the existing `.dashboard-texture` CSS to the Dashboard view wrapper.
 - Gives the main screen a slightly more “alive” mission-control feel without adding any image assets.
