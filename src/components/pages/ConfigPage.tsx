@@ -1,4 +1,4 @@
-import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive } from 'lucide-react';
+import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive, ExternalLink, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice } from '@/lib/store';
 import { restartSystem, getStatus } from '@/lib/api';
@@ -92,7 +92,7 @@ export function ConfigPage() {
         {/* Actions */}
         <div className="p-4 rounded-lg border border-border bg-card">
           <h2 className="text-lg font-semibold mb-4">Actions</h2>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button
               variant="outline"
               onClick={handleRefresh}
@@ -101,6 +101,36 @@ export function ConfigPage() {
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh Status
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Implement Open Claw functionality
+                toast({
+                  title: 'Coming soon',
+                  description: 'Open Claw functionality will be available soon.',
+                });
+              }}
+              className="gap-2"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Open Claw
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Implement Update Claw functionality
+                toast({
+                  title: 'Coming soon',
+                  description: 'Update Claw functionality will be available soon.',
+                });
+              }}
+              className="gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Update Claw
             </Button>
             
             <AlertDialog>
