@@ -1,130 +1,62 @@
 
 
-# Implementation Plan: Resume Layout Refactor from Start
+# Fix Light Theme: Remove Dark Mode Override
 
-## Current Status
+## Problem Summary
 
-The Phase 1 changes were reverted - we're back to the original codebase with:
-- Dark theme
-- Dashboard/Manage toggle via `viewMode`
-- No route-based navigation
-- No `src/components/layout/` directory
+The light theme CSS variables are correctly configured in `src/index.css`, but the app is still showing dark mode because:
 
-## Implementation Steps
+1. **`index.html` has `class="dark"` on the HTML element** - This activates the `.dark` CSS override
+2. The theme-color meta tag is set to a dark color `#0a0c10`
 
-### Step 1: Create Layout Directory & Core Components
+## Changes Required
 
-Create `src/components/layout/` with:
+### 1. Update `index.html`
 
-**AppShell.tsx**
-- Main layout wrapper using `SidebarProvider` from shadcn
-- Contains `AppSidebar` + `AppTopBar` + `<Outlet />` for routed content
-- Mobile-responsive with Sheet overlay for sidebar
+Remove `class="dark"` from the `<html>` tag and update the theme-color:
 
-**AppSidebar.tsx**
-- Left navigation with: Activity, Tasks, Agents, Brief, Schedule, Settings
-- Uses `NavLink` from react-router-dom for active state
-- Icons + labels, active route highlighting
-- Collapsible on mobile (hamburger trigger)
+```html
+<!-- Before -->
+<html lang="en" class="dark">
+  <meta name="theme-color" content="#0a0c10" />
 
-**AppTopBar.tsx**
-- Logo/brand
-- Project dropdown (reuse existing logic from `TopBar.tsx`)
-- Create project button
-- Connection indicator (Supabase/API status)
-- Compact stats (agents count, tasks count)
-- Activity bell
-
-### Step 2: Create New Page Components
-
-**TasksPage.tsx**
-- Extract Kanban board logic from `DashboardPage.tsx`
-- Horizontal scroll on mobile with snap scrolling
-- New Task button in header
-
-**BriefPage.tsx**
-- Auto-generated daily summary
-- Sections: Shipped, Blocked, Needs Attention, Team Status
-- Query existing Supabase tables (activities, agent_status, tasks)
-
-**SettingsPage.tsx**
-- Tabbed interface with: System, Skills, Channels
-- Reuse existing ConfigPage, SkillsPage, ChannelsPage content
-
-**SchedulePage.tsx**
-- Wrapper around existing CronPage
-- Preserve `focusCronJobId` deep-link behavior
-
-### Step 3: Update Routing in App.tsx
-
-```typescript
-<Routes>
-  <Route path="/" element={<Navigate to="/activity" replace />} />
-  <Route element={<AppShell />}>
-    <Route path="/activity" element={<ActivityPage />} />
-    <Route path="/tasks" element={<TasksPage />} />
-    <Route path="/agents" element={<AgentsPage />} />
-    <Route path="/brief" element={<BriefPage />} />
-    <Route path="/schedule" element={<SchedulePage />} />
-    <Route path="/settings" element={<SettingsPage />} />
-  </Route>
-  <Route path="*" element={<NotFound />} />
-</Routes>
+<!-- After -->
+<html lang="en">
+  <meta name="theme-color" content="#ffffff" />
 ```
 
-### Step 4: Update Theme (Light Mode)
+### 2. Polish the Sidebar Styling
 
-Update `src/index.css` with light theme CSS variables:
-- White/light gray backgrounds
-- Dark text on light
-- Subtle borders and shadows
-- Updated sidebar colors
+The sidebar `bg-sidebar` will now correctly use `--sidebar-background: 0 0% 98%` (light gray). However, to match the reference screenshot's cleaner look, we should make a few refinements:
 
-### Step 5: Redesign AgentsPage
+**In `src/components/layout/AppSidebar.tsx`:**
+- Change `bg-sidebar` to `bg-white` for a cleaner, pure white sidebar (matching the reference screenshot)
+- Add a subtle shadow instead of heavy border for more modern feel
 
-- Convert from sidebar+detail to 2-column grid
-- Agent cards show: emoji, name, role, status badge, last seen
-- Clicking a card opens detail in a slide-out Sheet
-- Preserve all agent editing functionality (SOUL/USER/MEMORY tabs)
+**In `src/components/layout/AppTopBar.tsx`:**
+- Ensure the top bar uses `bg-white` for consistency
+- Update the project dropdown to use white background with subtle border
 
-### Step 6: Update ActivityPage
+### 3. Refine CSS Variables (Optional Polish)
 
-- Replace `setViewMode`/`setActiveMainTab` calls with `useNavigate()`
-- Minor styling updates for light theme
-
-### Step 7: Keep Deprecated But Functional
-
-- Keep `viewMode` in store (not used in UI, for compatibility)
-- Keep old `TopBar.tsx`, `DashboardPage.tsx`, `AgentSidebar.tsx` temporarily (can clean up later)
-
-## Files to Create
-
-| File | Purpose |
-|------|---------|
-| `src/components/layout/AppShell.tsx` | Main layout wrapper |
-| `src/components/layout/AppSidebar.tsx` | Sidebar navigation |
-| `src/components/layout/AppTopBar.tsx` | Simplified top bar |
-| `src/components/pages/TasksPage.tsx` | Standalone kanban |
-| `src/components/pages/BriefPage.tsx` | Daily ops summary |
-| `src/components/pages/SettingsPage.tsx` | Grouped settings |
-| `src/components/pages/SchedulePage.tsx` | Cron wrapper |
+**In `src/index.css`:**
+- Consider making `--sidebar-background` pure white (`0 0% 100%`) instead of 98%
+- Ensure all light mode variables are optimized for the clean look
 
 ## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/index.css` | Light theme variables |
-| `src/App.tsx` | Add routes for all sections |
-| `src/components/pages/AgentsPage.tsx` | Redesign to grid + detail panel |
-| `src/components/pages/ActivityPage.tsx` | Use route navigation |
+| `index.html` | Remove `class="dark"`, update theme-color to light |
+| `src/components/layout/AppSidebar.tsx` | Use white background, refine styling |
+| `src/components/layout/AppTopBar.tsx` | Ensure white background, polish dropdown |
+| `src/index.css` | Optional: tweak sidebar-background to pure white |
 
-## Non-Breaking Guarantees
+## Result
 
-- All Supabase queries unchanged
-- All error/retry UI preserved
-- Agent editing works exactly as before
-- Cron deep-linking preserved
-- Agent selection preserved
-- Project scoping continues to work
-- No database schema changes
+After these changes:
+- App will display in light mode with white/light gray backgrounds
+- Sidebar will be clean white (or very light gray)
+- Top bar will match
+- All the existing functionality remains intact
 
