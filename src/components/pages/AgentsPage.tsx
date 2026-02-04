@@ -168,14 +168,26 @@ export function AgentsPage() {
                 agent.status === 'working' && 'agent-card-working'
               )}
             >
+              {agent.color ? (
+                <span
+                  className="absolute inset-x-0 top-0 h-1"
+                  style={{ backgroundColor: agent.color }}
+                  aria-hidden
+                />
+              ) : null}
               <div className="flex items-start gap-3">
                 <div className="relative">
-                  {agent.color && (
-                    <span
-                      className="absolute -left-1 -top-1 h-3 w-3 rounded-full ring-2 ring-background"
-                      style={{ backgroundColor: agent.color }}
-                    />
-                  )}
+                  <span
+                    className={cn(
+                      'absolute -left-1 -top-1 ring-2 ring-background rounded-full status-dot h-3 w-3',
+                      agent.status === 'working'
+                        ? 'status-dot-working'
+                        : agent.status === 'idle'
+                          ? 'status-dot-idle'
+                          : 'status-dot-offline'
+                    )}
+                    aria-hidden
+                  />
                   <span className="text-3xl">{agent.avatar || '🤖'}</span>
                 </div>
                 <div className="flex-1 min-w-0">

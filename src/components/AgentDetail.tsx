@@ -129,13 +129,17 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
             </Button>
 
             <div className="relative">
-              {agent?.color ? (
-                <span
-                  className="absolute -left-1 -top-1 h-3 w-3 rounded-full ring-2 ring-background"
-                  style={{ backgroundColor: agent.color }}
-                  aria-hidden
-                />
-              ) : null}
+              <span
+                className={cn(
+                  'absolute -left-1 -top-1 ring-2 ring-background rounded-full status-dot h-3 w-3',
+                  agent.status === 'working'
+                    ? 'status-dot-working'
+                    : agent.status === 'idle'
+                      ? 'status-dot-idle'
+                      : 'status-dot-offline'
+                )}
+                aria-hidden
+              />
               <span className="text-3xl">{agent?.avatar || '🤖'}</span>
             </div>
 
