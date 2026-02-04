@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -29,12 +30,27 @@ import {
   queueCronCreateRequest,
   queueCronDeleteRequest,
   getCronDeleteRequests,
+  getAgents,
   type CronJob,
   type CronRunEntry,
   type CronMirrorJob,
   type CronRunRequest,
   type CronDeleteRequest,
+  type Agent,
 } from '@/lib/api';
+import {
+  type ScheduleConfig,
+  type FrequencyType,
+  SCHEDULE_PRESETS,
+  DAY_OPTIONS,
+  COMMON_TIMEZONES,
+  parseScheduleToConfig,
+  configToScheduleExpression,
+  formatScheduleDisplay,
+  encodeTargetAgent,
+  decodeTargetAgent,
+} from '@/lib/schedule-utils';
+import { InlineScheduleEditor } from '@/components/schedule/ScheduleEditor';
 import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -63,79 +79,7 @@ import {
 
 // ============= Helpers =============
 
-/** Abbreviate common timezone names for compact display */
-function abbreviateTz(tz: string | null | undefined): string {
-  if (!tz) return '';
-  const abbrevMap: Record<string, string> = {
-    'America/New_York': 'ET',
-    'America/Chicago': 'CT',
-    'America/Denver': 'MT',
-    'America/Los_Angeles': 'PT',
-    'America/Phoenix': 'AZ',
-    'Europe/London': 'GMT',
-    'Europe/Paris': 'CET',
-    'Asia/Tokyo': 'JST',
-    'UTC': 'UTC',
-  };
-  return abbrevMap[tz] || tz;
-}
-
-/**
- * Format schedule expression into human-readable text
- */
-function formatSchedule(kind: string | null | undefined, expr: string | null | undefined, tz?: string | null, compact = true): string {
-  if (!expr) return '—';
-  
-  const tzLabel = compact ? abbreviateTz(tz) : tz;
-  
-  // Handle "every" type (milliseconds)
-  if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
-    const ms = parseInt(expr, 10);
-    if (!isNaN(ms)) {
-      if (ms < 60000) return `Every ${Math.round(ms / 1000)}s`;
-      if (ms < 3600000) {
-        const mins = Math.round(ms / 60000);
-        return `Every ${mins} minute${mins > 1 ? 's' : ''}`;
-      }
-      const hours = Math.round(ms / 3600000);
-      return `Every ${hours} hour${hours > 1 ? 's' : ''}`;
-    }
-  }
-  
-  // Handle cron expressions
-  if (kind === 'cron' || (!kind && expr.includes(' '))) {
-    const parts = expr.split(' ');
-    if (parts.length === 5) {
-      const [min, hour, dom, mon, dow] = parts;
-      
-      // Daily at specific time
-      if (dom === '*' && mon === '*' && dow === '*' && hour !== '*' && min !== '*') {
-        const hourNum = parseInt(hour, 10);
-        const minNum = parseInt(min, 10);
-        const ampm = hourNum >= 12 ? 'PM' : 'AM';
-        const hour12 = hourNum === 0 ? 12 : hourNum > 12 ? hourNum - 12 : hourNum;
-        const timeStr = `${hour12}:${String(minNum).padStart(2, '0')} ${ampm}`;
-        return `Daily at ${timeStr}${tzLabel ? ` ${tzLabel}` : ''}`;
-      }
-      
-      // Every N minutes
-      if (min.startsWith('*/') && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
-        const interval = parseInt(min.slice(2), 10);
-        return `Every ${interval} minute${interval > 1 ? 's' : ''}`;
-      }
-      
-      // Hourly
-      if (min !== '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
-        return `Hourly at :${min.padStart(2, '0')}`;
-      }
-    }
-    
-    // Fallback: show cron expression
-    return `Cron: ${expr}${tzLabel ? ` (${tzLabel})` : ''}`;
-  }
-  
-  return expr;
-}
+// Format schedule is now imported from schedule-utils
 
 // ============= Sub-components =============
 
@@ -188,6 +132,7 @@ interface CronJobRowProps {
   onEdit: () => void;
   onDelete: () => void;
   onToggleEnabled: () => void;
+  onScheduleChange: (result: { kind: 'cron' | 'every'; expr: string; tz?: string }) => void;
   running: boolean;
   controlApiConnected: boolean;
   pendingToggle: boolean;
@@ -205,6 +150,7 @@ function CronJobRow({
   onEdit,
   onDelete,
   onToggleEnabled,
+  onScheduleChange,
   running,
   controlApiConnected,
   pendingToggle,
@@ -269,17 +215,21 @@ function CronJobRow({
                     </Badge>
                   )}
                 </div>
-                {/* Schedule on second line - cleaner look */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                      {formatSchedule(job.scheduleKind, job.scheduleExpr, job.tz, true)}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{formatSchedule(job.scheduleKind, job.scheduleExpr, job.tz, false)}</p>
-                  </TooltipContent>
-                </Tooltip>
+                {/* Schedule on second line - clickable inline editor */}
+                <InlineScheduleEditor
+                  scheduleKind={job.scheduleKind}
+                  scheduleExpr={job.scheduleExpr}
+                  tz={job.tz}
+                  onSave={onScheduleChange}
+                  disabled={pendingDelete}
+                >
+                  <button 
+                    className="text-sm text-primary hover:text-primary/80 mt-0.5 truncate text-left hover:underline cursor-pointer"
+                    disabled={pendingDelete}
+                  >
+                    {formatScheduleDisplay(job.scheduleKind, job.scheduleExpr, job.tz, true)}
+                  </button>
+                </InlineScheduleEditor>
               </div>
             </div>
 
@@ -464,14 +414,19 @@ export function CronPage() {
   const [editInstructions, setEditInstructions] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Create dialog state
+  // Create dialog state - human-friendly
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createName, setCreateName] = useState('');
-  const [createSchedule, setCreateSchedule] = useState('');
-  const [createScheduleKind, setCreateScheduleKind] = useState<'cron' | 'every'>('cron');
-  const [createTz, setCreateTz] = useState('');
+  const [createFrequency, setCreateFrequency] = useState<FrequencyType>('every-15');
+  const [createTime, setCreateTime] = useState('09:00');
+  const [createDays, setCreateDays] = useState<string[]>(['mon']);
+  const [createCustomCron, setCreateCustomCron] = useState('');
+  const [createTz, setCreateTz] = useState('America/New_York');
   const [createInstructions, setCreateInstructions] = useState('');
+  const [createTargetAgent, setCreateTargetAgent] = useState('');
   const [savingCreate, setSavingCreate] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>([]);
 
   // Delete dialog state
   const [deletingJob, setDeletingJob] = useState<CronMirrorJob | null>(null);
@@ -690,44 +645,101 @@ export function CronPage() {
     }
   };
 
-  // Create new scheduled job
+  // Handle schedule change from inline editor
+  const handleScheduleChange = async (job: CronMirrorJob, result: { kind: 'cron' | 'every'; expr: string; tz?: string }) => {
+    try {
+      if (controlApiConnected) {
+        // Direct edit via Control API
+        await editCronJob(job.jobId, {
+          schedule: result.expr,
+        });
+        // Optimistic update
+        setMirrorJobs(mirrorJobs.map(j =>
+          j.jobId === job.jobId 
+            ? { ...j, scheduleKind: result.kind, scheduleExpr: result.expr, tz: result.tz || j.tz }
+            : j
+        ));
+        toast({
+          title: 'Schedule updated',
+          description: `${job.name} schedule has been changed.`,
+        });
+      } else {
+        // Queue patch request for offline execution
+        const patchResult = await queueCronPatchRequest(job.jobId, {
+          scheduleKind: result.kind,
+          scheduleExpr: result.expr,
+          tz: result.tz,
+        });
+        if (patchResult.ok) {
+          // Optimistic update
+          setMirrorJobs(mirrorJobs.map(j =>
+            j.jobId === job.jobId
+              ? { ...j, scheduleKind: result.kind, scheduleExpr: result.expr, tz: result.tz || j.tz }
+              : j
+          ));
+          toast({
+            title: 'Schedule update queued',
+            description: `${job.name} schedule will be updated when the Mac mini executor picks up the request.`,
+          });
+        } else {
+          throw new Error(patchResult.error || 'Failed to queue schedule update');
+        }
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Failed to update schedule',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Create new scheduled job with human-friendly config
   const handleCreate = async () => {
-    if (!createName.trim() || !createSchedule.trim()) return;
+    if (!createName.trim()) return;
+    
+    // Convert human-friendly config to schedule expression
+    const scheduleConfig: ScheduleConfig = {
+      frequency: createFrequency,
+      time: createTime,
+      days: createDays,
+      cronExpr: createCustomCron,
+      tz: createTz,
+    };
+    const scheduleResult = configToScheduleExpression(scheduleConfig);
+    
+    // Encode target agent into instructions if set
+    const finalInstructions = encodeTargetAgent(createTargetAgent || null, createInstructions);
     
     setSavingCreate(true);
     try {
-      if (controlApiConnected) {
-        // TODO: Direct creation via Control API when implemented
+      // Queue create request (works for both modes)
+      const result = await queueCronCreateRequest({
+        name: createName,
+        scheduleKind: scheduleResult.kind,
+        scheduleExpr: scheduleResult.expr,
+        tz: createTz || undefined,
+        instructions: finalInstructions || undefined,
+      });
+      
+      if (result.ok) {
         toast({
-          title: 'Not implemented',
-          description: 'Direct creation requires Control API support.',
-          variant: 'destructive',
+          title: 'Create request queued',
+          description: `"${createName}" will be created when the Mac mini executor picks up the request.`,
         });
+        setShowCreateDialog(false);
+        setCreateName('');
+        setCreateFrequency('every-15');
+        setCreateTime('09:00');
+        setCreateDays(['mon']);
+        setCreateCustomCron('');
+        setCreateTz('America/New_York');
+        setCreateInstructions('');
+        setCreateTargetAgent('');
+        setShowAdvanced(false);
+        await loadJobs();
       } else {
-        // Queue create request
-        const result = await queueCronCreateRequest({
-          name: createName,
-          scheduleKind: createScheduleKind,
-          scheduleExpr: createSchedule,
-          tz: createTz || undefined,
-          instructions: createInstructions || undefined,
-        });
-        
-        if (result.ok) {
-          toast({
-            title: 'Create request queued',
-            description: `"${createName}" will be created when the Mac mini executor picks up the request.`,
-          });
-          setShowCreateDialog(false);
-          setCreateName('');
-          setCreateSchedule('');
-          setCreateScheduleKind('cron');
-          setCreateTz('');
-          setCreateInstructions('');
-          await loadJobs();
-        } else {
-          throw new Error(result.error || 'Failed to queue creation');
-        }
+        throw new Error(result.error || 'Failed to queue creation');
       }
     } catch (err: any) {
       toast({
@@ -739,6 +751,11 @@ export function CronPage() {
       setSavingCreate(false);
     }
   };
+
+  // Load agents for target dropdown
+  useEffect(() => {
+    getAgents().then(setAgents).catch(console.error);
+  }, []);
 
   // Run job: Control API direct or queue request
   const handleRunNow = async (job: CronMirrorJob) => {
@@ -974,6 +991,7 @@ export function CronPage() {
               onEdit={() => openEdit(job)}
               onDelete={() => setDeletingJob(job)}
               onToggleEnabled={() => handleToggle(job)}
+              onScheduleChange={(result) => handleScheduleChange(job, result)}
               running={runningJob === job.jobId}
               controlApiConnected={controlApiConnected}
               pendingToggle={pendingToggles.has(job.jobId)}
@@ -1163,75 +1181,190 @@ export function CronPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Dialog */}
+      {/* Create Dialog - Human-Friendly */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[640px]">
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Scheduled Job</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Job Name */}
             <div className="space-y-2">
-              <div className="text-sm font-medium">Name</div>
+              <label className="text-sm font-medium">Job Name</label>
               <Input 
                 value={createName} 
                 onChange={(e) => setCreateName(e.target.value)} 
-                placeholder="My scheduled job" 
+                placeholder="e.g., Daily Summary, Hourly Sync" 
               />
             </div>
 
+            {/* Schedule Frequency */}
             <div className="space-y-2">
-              <div className="text-sm font-medium">Schedule Type</div>
-              <Select value={createScheduleKind} onValueChange={(v) => setCreateScheduleKind(v as 'cron' | 'every')}>
+              <label className="text-sm font-medium">Runs...</label>
+              <Select value={createFrequency} onValueChange={(v) => setCreateFrequency(v as FrequencyType)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cron">Cron Expression</SelectItem>
-                  <SelectItem value="every">Interval (ms)</SelectItem>
+                <SelectContent className="bg-popover">
+                  {SCHEDULE_PRESETS.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">
-                {createScheduleKind === 'cron' ? 'Cron Expression' : 'Interval (milliseconds)'}
+            {/* Time Picker - for daily/weekdays/weekly */}
+            {(createFrequency === 'daily' || createFrequency === 'weekdays' || createFrequency === 'weekly') && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">At time</label>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="time"
+                    value={createTime}
+                    onChange={(e) => setCreateTime(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
               </div>
-              <Input 
-                value={createSchedule} 
-                onChange={(e) => setCreateSchedule(e.target.value)} 
-                placeholder={createScheduleKind === 'cron' ? '*/30 * * * *' : '900000'} 
-              />
+            )}
+
+            {/* Day Picker - for weekly */}
+            {createFrequency === 'weekly' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">On days</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAY_OPTIONS.map((day) => (
+                    <label
+                      key={day.id}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors",
+                        createDays.includes(day.id) 
+                          ? "bg-primary text-primary-foreground border-primary" 
+                          : "bg-muted/50 border-border hover:bg-muted"
+                      )}
+                    >
+                      <Checkbox
+                        checked={createDays.includes(day.id)}
+                        onCheckedChange={() => {
+                          setCreateDays(prev => {
+                            if (prev.includes(day.id)) {
+                              if (prev.length === 1) return prev; // Don't remove last day
+                              return prev.filter(d => d !== day.id);
+                            }
+                            return [...prev, day.id];
+                          });
+                        }}
+                        className="sr-only"
+                      />
+                      <span className="text-sm">{day.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Cron Input */}
+            {createFrequency === 'custom' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Cron expression</label>
+                <Input
+                  value={createCustomCron}
+                  onChange={(e) => setCreateCustomCron(e.target.value)}
+                  placeholder="0 9 * * *"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: minute hour day-of-month month day-of-week
+                </p>
+              </div>
+            )}
+
+            {/* Timezone */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Timezone</label>
+              <Select value={createTz} onValueChange={setCreateTz}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {COMMON_TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.id} value={tz.id}>
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Target Agent */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Target Agent (optional)</label>
+              <Select value={createTargetAgent} onValueChange={setCreateTargetAgent}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an agent..." />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="">No specific agent</SelectItem>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.avatar || '🤖'} {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                {createScheduleKind === 'cron' 
-                  ? 'Standard cron format: minute hour day month weekday' 
-                  : 'Example: 900000 = 15 minutes'}
+                The agent that will receive this scheduled task
               </p>
             </div>
 
+            {/* Instructions */}
             <div className="space-y-2">
-              <div className="text-sm font-medium">Timezone (optional)</div>
-              <Input 
-                value={createTz} 
-                onChange={(e) => setCreateTz(e.target.value)} 
-                placeholder="America/New_York" 
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Instructions</div>
+              <label className="text-sm font-medium">Instructions</label>
               <Textarea
                 value={createInstructions}
                 onChange={(e) => setCreateInstructions(e.target.value)}
                 placeholder="What should this job do?"
-                className="min-h-[100px] font-mono"
+                className="min-h-[80px]"
               />
             </div>
 
+            {/* Advanced Toggle */}
+            <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", showAdvanced && "rotate-180")} />
+                  Advanced
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-2">
+                <div className="p-3 rounded-md bg-muted/50 font-mono text-sm">
+                  <div className="text-xs text-muted-foreground mb-1">Generated expression:</div>
+                  <code>
+                    {(() => {
+                      const config: ScheduleConfig = {
+                        frequency: createFrequency,
+                        time: createTime,
+                        days: createDays,
+                        cronExpr: createCustomCron,
+                        tz: createTz,
+                      };
+                      const result = configToScheduleExpression(config);
+                      return `${result.kind}: ${result.expr}`;
+                    })()}
+                  </code>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Offline Warning */}
             {!controlApiConnected && (
               <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
                 <p className="text-sm text-warning">
-                  Control API is offline. This will queue a create request for when the Mac mini executor is online.
+                  This will queue a create request for when the Mac mini executor is online.
                 </p>
               </div>
             )}
@@ -1243,7 +1376,7 @@ export function CronPage() {
             </Button>
             <Button 
               onClick={handleCreate} 
-              disabled={savingCreate || !createName.trim() || !createSchedule.trim()} 
+              disabled={savingCreate || !createName.trim()} 
               className="gap-2"
             >
               {savingCreate ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}

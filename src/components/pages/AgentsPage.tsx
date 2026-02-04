@@ -9,9 +9,17 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusTooltip } from '@/components/ui/StatusTooltip';
 import { AgentDetail } from '@/components/AgentDetail';
 import { useToast } from '@/hooks/use-toast';
+
+// Curated emoji options for agents
+const EMOJI_OPTIONS = [
+  '🤖', '🧠', '💻', '📊', '🔬', '✍️', '🎨', '📈',
+  '🔒', '⚙️', '🧪', '🤝', '📝', '🎯', '🚀', '💡',
+  '🔍', '📚', '🛠️', '🎭', '🌐', '⚡', '🔥', '🌟',
+];
 
 // Auto-suggest emoji based on name/purpose
 function suggestEmoji(name: string, purpose?: string): string {
@@ -362,14 +370,24 @@ export function AgentsPage() {
             <div className="flex gap-4">
               <div className="space-y-2 flex-1">
                 <label className="text-sm font-medium">Emoji</label>
-                <Input
-                  value={newAgentEmoji}
-                  onChange={(e) => setNewAgentEmoji(e.target.value)}
-                  placeholder="🤖"
-                  className="text-center text-2xl"
-                  maxLength={4}
-                  disabled={isCreating}
-                />
+                <Select value={newAgentEmoji} onValueChange={setNewAgentEmoji} disabled={isCreating}>
+                  <SelectTrigger className="text-2xl h-12">
+                    <SelectValue placeholder="🤖" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover">
+                    <div className="grid grid-cols-6 gap-1 p-2">
+                      {EMOJI_OPTIONS.map((emoji) => (
+                        <SelectItem
+                          key={emoji}
+                          value={emoji}
+                          className="text-2xl p-2 cursor-pointer hover:bg-muted rounded justify-center"
+                        >
+                          {emoji}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2 flex-1">
                 <label className="text-sm font-medium">Color (optional)</label>
@@ -377,7 +395,7 @@ export function AgentsPage() {
                   type="color"
                   value={newAgentColor || '#6366f1'}
                   onChange={(e) => setNewAgentColor(e.target.value)}
-                  className="h-10 p-1"
+                  className="h-12 p-1"
                   disabled={isCreating}
                 />
               </div>
