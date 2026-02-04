@@ -1,3 +1,7 @@
+### AgentProfilePanel: Presence “Last seen” shows relative + absolute time
+- Presence section now includes a **Last seen** row that combines a relative timestamp (e.g. "5m ago") with the absolute datetime.
+- Makes it easier to sanity-check presence freshness at a glance.
+
 ### Dashboard Live Feed: taller, responsive scroll region (mobile polish)
 - Live Feed now uses a responsive max height (`60vh` up to ~520px) instead of a hard 300px cap.
 - Makes the activity feed usable on larger screens while still behaving nicely on mobile.

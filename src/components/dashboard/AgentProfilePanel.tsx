@@ -284,6 +284,12 @@ export function AgentProfilePanel({
 
   const presenceRows: Array<{ label: string; value: string | null | undefined }> = [
     { label: 'State', value: agent.statusState || null },
+    {
+      label: 'Last seen',
+      value: lastSeenAt
+        ? `${formatRelativeTime(lastSeenAt, new Date())} (${formatAt(lastSeenAt)})`
+        : null,
+    },
     { label: 'Current task', value: currentTaskLabel },
     { label: 'Last heartbeat', value: agent.lastHeartbeatAt ? formatAt(agent.lastHeartbeatAt) : null },
     { label: 'Last activity', value: agent.lastActivityAt ? formatAt(agent.lastActivityAt) : null },
