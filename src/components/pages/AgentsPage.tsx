@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
+import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -13,6 +14,7 @@ export function AgentsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [detailOpen, setDetailOpen] = useState(false);
+  const refreshDebounceRef = useRef<number | null>(null);
 
   // Keep time ticking for "last seen" labels
   useEffect(() => {
@@ -36,6 +38,32 @@ export function AgentsPage() {
     refresh();
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
+  }, [selectedProjectId]);
+
+  // Supabase realtime: keep roster/presence live without waiting for the poll.
+  useEffect(() => {
+    if (!hasSupabase()) return;
+    if (!selectedProjectId) return;
+
+    const scheduleRefresh = () => {
+      if (refreshDebounceRef.current) window.clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = window.setTimeout(() => {
+        refreshDebounceRef.current = null;
+        void refresh();
+      }, 500);
+    };
+
+    const unsubscribe = subscribeToProjectRealtime(selectedProjectId, (change) => {
+      const table = change?.table;
+      if (table === 'agents' || table === 'agent_status') scheduleRefresh();
+    });
+
+    return () => {
+      if (refreshDebounceRef.current) window.clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = null;
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId]);
 
   const newestIso = (a: string | null | undefined, b: string | null | undefined) => {

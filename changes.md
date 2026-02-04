@@ -1,3 +1,7 @@
+### Manage: realtime refresh for Agents + Activity (presence + feed)
+- **Agents** and **Activity** pages now listen to Supabase realtime (`activities`, `agents`, `agent_status`) and refresh within ~500ms.
+- Debounced to avoid hammering when many events fire.
+
 ### brain-doc-sync: write Supabase activities for local brain doc edits (brain-doc sync)
 - When `scripts/brain-doc-sync.mjs` detects a local file change and upserts it to Supabase, it now also inserts a `brain_doc_updated` activity row.
 - Keeps the Live Feed consistent even when edits happen outside the dashboard UI.

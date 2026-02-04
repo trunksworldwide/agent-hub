@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clock, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getActivity, type ActivityItem } from '@/lib/api';
@@ -9,6 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/datetime';
 import { useClawdOffice } from '@/lib/store';
+import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
+
 export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [limit, setLimit] = useState(200);
@@ -18,7 +20,8 @@ export function ActivityPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
 
-  const { setActiveMainTab, setSelectedAgentId } = useClawdOffice();
+  const { selectedProjectId, setSelectedAgentId } = useClawdOffice();
+  const refreshDebounceRef = useRef<number | null>(null);
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -38,6 +41,31 @@ export function ActivityPage() {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
+
+  // Supabase realtime: refresh quickly on new activity without hammering.
+  useEffect(() => {
+    if (!hasSupabase()) return;
+    if (!selectedProjectId) return;
+
+    const scheduleRefresh = () => {
+      if (refreshDebounceRef.current) window.clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = window.setTimeout(() => {
+        refreshDebounceRef.current = null;
+        void refresh();
+      }, 500);
+    };
+
+    const unsubscribe = subscribeToProjectRealtime(selectedProjectId, (change) => {
+      if (change?.table === 'activities') scheduleRefresh();
+    });
+
+    return () => {
+      if (refreshDebounceRef.current) window.clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = null;
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId, limit]);
 
   const knownTypes = useMemo(() => {
     const set = new Set<string>();
