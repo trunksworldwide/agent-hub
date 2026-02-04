@@ -60,7 +60,7 @@ export function AgentProfilePanel({
   const [savingAppearance, setSavingAppearance] = useState(false);
 
   // Presence editing (Supabase agent_status)
-  const [statusStateDraft, setStatusStateDraft] = useState<Agent['statusState'] | ''>((agent.statusState || '').trim());
+  const [statusStateDraft, setStatusStateDraft] = useState<Agent['statusState'] | ''>(agent.statusState || '');
   const [statusNoteDraft, setStatusNoteDraft] = useState<string>((agent.statusNote || '').trim());
   const [savingStatus, setSavingStatus] = useState(false);
 
