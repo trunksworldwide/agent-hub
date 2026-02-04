@@ -99,6 +99,37 @@ export interface CronRunEntry {
   nextRunAtMs?: number;
 }
 
+// ============= Cron Mirror (Supabase-backed) =============
+
+export interface CronMirrorJob {
+  id: string;
+  projectId: string;
+  jobId: string;
+  name: string;
+  scheduleKind?: string | null;
+  scheduleExpr?: string | null;
+  tz?: string | null;
+  enabled: boolean;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastStatus?: string | null;
+  lastDurationMs?: number | null;
+  instructions?: string | null;
+  updatedAt: string;
+}
+
+export interface CronRunRequest {
+  id: string;
+  projectId: string;
+  jobId: string;
+  requestedBy?: string | null;
+  requestedAt: string;
+  status: 'queued' | 'running' | 'done' | 'error';
+  pickedUpAt?: string | null;
+  completedAt?: string | null;
+  result?: any;
+}
+
 export interface Channel {
   id: string;
   name: string;
@@ -851,6 +882,104 @@ export async function getTools(): Promise<Tool[]> {
   await delay(100);
   return mockTools;
 }
+
+// ============= Cron Mirror (Supabase) Functions =============
+
+/**
+ * Get cron jobs from Supabase cron_mirror table.
+ * This is the primary data source for the Schedule page.
+ */
+export async function getCronMirrorJobs(): Promise<CronMirrorJob[]> {
+  if (!(hasSupabase() && supabase)) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('cron_mirror')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    projectId: row.project_id,
+    jobId: row.job_id,
+    name: row.name,
+    scheduleKind: row.schedule_kind,
+    scheduleExpr: row.schedule_expr,
+    tz: row.tz,
+    enabled: row.enabled,
+    nextRunAt: row.next_run_at,
+    lastRunAt: row.last_run_at,
+    lastStatus: row.last_status,
+    lastDurationMs: row.last_duration_ms,
+    instructions: row.instructions,
+    updatedAt: row.updated_at,
+  }));
+}
+
+/**
+ * Queue a cron run request in Supabase for the Mac mini worker to execute.
+ */
+export async function queueCronRunRequest(jobId: string): Promise<{ ok: boolean; requestId?: string; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('cron_run_requests')
+      .insert({
+        project_id: projectId,
+        job_id: jobId,
+        requested_by: 'ui',
+        status: 'queued',
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    return { ok: true, requestId: data?.id };
+  } catch (e: any) {
+    console.error('queueCronRunRequest failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Get recent cron run requests from Supabase.
+ */
+export async function getCronRunRequests(limit = 20): Promise<CronRunRequest[]> {
+  if (!(hasSupabase() && supabase)) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('cron_run_requests')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    projectId: row.project_id,
+    jobId: row.job_id,
+    requestedBy: row.requested_by,
+    requestedAt: row.requested_at,
+    status: row.status,
+    pickedUpAt: row.picked_up_at,
+    completedAt: row.completed_at,
+    result: row.result,
+  }));
+}
+
+// ============= Legacy Control API Cron Functions =============
 
 export async function getCronJobs(): Promise<CronJob[]> {
   // Supabase-only deployments don't have cron management in the DB yet;
