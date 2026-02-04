@@ -103,14 +103,13 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
   };
 
   const getStatusBadge = (status: Agent['status'] | undefined) => {
-    const styles = {
-      online: 'badge-online',
+    const styles: Record<string, string> = {
+      working: 'badge-working',
       idle: 'badge-idle',
-      running: 'badge-running',
       offline: 'badge-offline',
     };
-    if (!status) return 'badge-idle';
-    return styles[status] || 'badge-idle';
+    if (!status) return 'badge-offline';
+    return styles[status] || 'badge-offline';
   };
 
   return (

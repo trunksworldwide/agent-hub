@@ -214,10 +214,9 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
     // Default: keep the existing behavior (status priority + name).
     return [...agents].sort((a, b) => {
       const pri: Record<Agent['status'], number> = {
-        running: 0,
-        online: 1,
-        idle: 2,
-        offline: 3,
+        working: 0,
+        idle: 1,
+        offline: 2,
       };
       const pa = pri[a.status] ?? 99;
       const pb = pri[b.status] ?? 99;
@@ -401,7 +400,7 @@ export function AgentSidebar({ className, onSelect }: { className?: string; onSe
               }}
               className={cn(
                 'agent-card w-full text-left',
-                agent.status === 'running' && 'agent-card-running',
+                agent.status === 'working' && 'agent-card-working',
                 selectedAgentId === agent.id && 'agent-card-active',
                 sortMode === 'custom' && overAgentId === agent.id && dragAgentId !== agent.id && 'ring-2 ring-primary/40'
               )}

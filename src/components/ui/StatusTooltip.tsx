@@ -3,18 +3,17 @@ import { formatDistanceToNow } from 'date-fns';
 import type { ReactNode } from 'react';
 
 interface StatusTooltipProps {
-  status: 'online' | 'idle' | 'running' | 'offline';
+  status: 'working' | 'idle' | 'offline';
   statusState?: 'idle' | 'working' | 'blocked' | 'sleeping' | null;
   lastActivityAt?: string | null;
   lastHeartbeatAt?: string | null;
   children: ReactNode;
 }
 
-const STATUS_RULES = {
+const STATUS_RULES: Record<string, string> = {
+  working: 'state=working AND seen within 30 minutes',
+  idle: 'Seen within last 60 minutes, not actively working',
   offline: 'No heartbeat/activity in 60+ minutes OR state=sleeping',
-  running: 'state=working AND seen within 30 minutes',
-  online: 'Seen within 5 minutes',
-  idle: 'state=idle OR seen 5-60 minutes ago',
 };
 
 export function StatusTooltip({
@@ -36,13 +35,9 @@ export function StatusTooltip({
   };
 
   const getStateLabel = () => {
-    if (statusState === 'working') return 'WORKING';
-    if (statusState === 'blocked') return 'BLOCKED';
-    if (statusState === 'sleeping') return 'SLEEPING';
-    if (status === 'online') return 'ONLINE';
-    if (status === 'running') return 'WORKING';
-    if (status === 'offline') return 'OFFLINE';
-    return 'IDLE';
+    if (status === 'working') return 'WORKING';
+    if (status === 'idle') return 'IDLE';
+    return 'OFFLINE';
   };
 
   const hasData = lastActivityAt || lastHeartbeatAt || statusState;

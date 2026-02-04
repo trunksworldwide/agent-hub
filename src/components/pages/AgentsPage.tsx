@@ -97,13 +97,12 @@ export function AgentsPage() {
   };
 
   const getStatusBadge = (status: Agent['status']) => {
-    const styles = {
-      online: 'badge-online',
+    const styles: Record<string, string> = {
+      working: 'badge-working',
       idle: 'badge-idle',
-      running: 'badge-running',
       offline: 'badge-offline',
     };
-    return styles[status] || 'badge-idle';
+    return styles[status] || 'badge-offline';
   };
 
   const handleAgentClick = (agent: Agent) => {
@@ -165,7 +164,8 @@ export function AgentsPage() {
               onClick={() => handleAgentClick(agent)}
               className={cn(
                 'agent-card w-full text-left',
-                selectedAgentId === agent.id && 'agent-card-active'
+                selectedAgentId === agent.id && 'agent-card-active',
+                agent.status === 'working' && 'agent-card-working'
               )}
             >
               <div className="flex items-start gap-3">
