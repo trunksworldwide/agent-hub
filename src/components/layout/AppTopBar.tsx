@@ -132,7 +132,7 @@ export function AppTopBar({ onMenuClick }: AppTopBarProps) {
   return (
     <header className={cn(
       "h-14 border-b border-border bg-background flex items-center justify-between px-4",
-      isFrontOffice && "bg-amber-50/40 border-b-amber-300/40"
+      isFrontOffice && "bg-amber-50 border-b-amber-200"
     )}>
       {/* Left section */}
       <div className="flex items-center gap-4">

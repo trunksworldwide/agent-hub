@@ -19,7 +19,7 @@ interface AppSidebarProps {
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   return (
     <aside className={cn(
-      'w-56 border-r border-border bg-sidebar flex flex-col',
+      'w-56 border-r border-border bg-background flex flex-col',
       className
     )}>
       <nav className="flex-1 p-3 space-y-1">
