@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTask, getAgents, getTasks, updateTask, type Agent, type Task, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatRelativeTime } from '@/lib/datetime';
 import { useClawdOffice } from '@/lib/store';
+import { useToast } from '@/hooks/use-toast';
 
 const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
   { id: 'inbox', label: 'Inbox', color: 'bg-muted' },
@@ -21,12 +21,14 @@ const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
 
 export function TasksPage() {
   const { selectedProjectId } = useClawdOffice();
+  const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState<string>('');
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -77,19 +79,60 @@ export function TasksPage() {
       );
     } catch (e) {
       console.error('Failed to move task:', e);
+      toast({
+        title: 'Failed to move task',
+        description: String(e),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleReassignTask = async (taskId: string, assigneeAgentKey: string | undefined) => {
+    try {
+      await updateTask(taskId, { assigneeAgentKey: assigneeAgentKey || undefined });
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, assigneeAgentKey } : t))
+      );
+      toast({
+        title: assigneeAgentKey ? 'Task assigned' : 'Task unassigned',
+        description: assigneeAgentKey 
+          ? `Assigned to ${agentByKey.get(assigneeAgentKey)?.name || assigneeAgentKey}`
+          : 'Task is now unassigned',
+      });
+    } catch (e) {
+      console.error('Failed to reassign task:', e);
+      toast({
+        title: 'Failed to reassign task',
+        description: String(e),
+        variant: 'destructive',
+      });
     }
   };
 
   const handleCreateTask = async () => {
     if (!newTaskTitle.trim()) return;
     try {
-      await createTask({ title: newTaskTitle, description: newTaskDescription || undefined });
+      await createTask({ 
+        title: newTaskTitle, 
+        description: newTaskDescription || undefined,
+        assigneeAgentKey: newTaskAssignee || undefined,
+      });
       setNewTaskTitle('');
       setNewTaskDescription('');
+      setNewTaskAssignee('');
       setShowNewTask(false);
       await refresh();
+      toast({
+        title: 'Task created',
+        description: newTaskTitle,
+      });
     } catch (e) {
       console.error('Failed to create task:', e);
+      toast({
+        title: 'Failed to create task',
+        description: String(e),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -154,13 +197,49 @@ export function TasksPage() {
                             {task.description}
                           </div>
                         )}
-                        <div className="flex items-center justify-between gap-2">
-                          {agent && (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <span>{agent.avatar}</span>
-                              <span>{agent.name}</span>
-                            </div>
-                          )}
+                        
+                        {/* Assignee display and quick reassign */}
+                        <div className="mb-2">
+                          <Select
+                            value={task.assigneeAgentKey || '__unassigned__'}
+                            onValueChange={(v) => handleReassignTask(task.id, v === '__unassigned__' ? undefined : v)}
+                          >
+                            <SelectTrigger className="h-7 w-full text-xs">
+                              <div className="flex items-center gap-1.5">
+                                {agent ? (
+                                  <>
+                                    <span>{agent.avatar}</span>
+                                    <span>{agent.name}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <User className="w-3 h-3 text-muted-foreground" />
+                                    <span className="text-muted-foreground">Unassigned</span>
+                                  </>
+                                )}
+                              </div>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__unassigned__">
+                                <div className="flex items-center gap-1.5">
+                                  <User className="w-3 h-3" />
+                                  <span>Unassigned</span>
+                                </div>
+                              </SelectItem>
+                              {agents.map((a) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{a.avatar}</span>
+                                    <span>{a.name}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Status selector */}
+                        <div className="flex items-center justify-end">
                           <Select
                             value={task.status}
                             onValueChange={(v) => handleMoveTask(task.id, v as TaskStatus)}
@@ -210,12 +289,45 @@ export function TasksPage() {
                 placeholder="Task description"
               />
             </div>
+            <div>
+              <label className="text-sm font-medium">Assignee</label>
+              <Select
+                value={newTaskAssignee || '__unassigned__'}
+                onValueChange={(v) => setNewTaskAssignee(v === '__unassigned__' ? '' : v)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__unassigned__">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      <span>Unassigned</span>
+                    </div>
+                  </SelectItem>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{a.avatar}</span>
+                        <span>{a.name}</span>
+                        {a.role && <span className="text-muted-foreground">· {a.role}</span>}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Assign this task to a project agent
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewTask(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateTask}>Create</Button>
+            <Button onClick={handleCreateTask} disabled={!newTaskTitle.trim()}>
+              Create
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

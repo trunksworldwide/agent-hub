@@ -158,6 +158,9 @@ export interface ActivityItem {
   date: string;
   message: string;
 
+  /** Human-friendly summary (from DB or generated client-side). */
+  summary?: string | null;
+
   // Optional richer typing when backed by Supabase `activities`
   type?: string;
   taskId?: string | null;
@@ -976,6 +979,159 @@ export async function getCronRunRequests(limit = 20): Promise<CronRunRequest[]> 
     pickedUpAt: row.picked_up_at,
     completedAt: row.completed_at,
     result: row.result,
+  }));
+}
+
+// ============= Cron Patch/Create Request Queues (Supabase) =============
+
+export interface CronPatchRequest {
+  id: string;
+  projectId: string;
+  jobId: string;
+  patchJson: Record<string, any>;
+  requestedAt: string;
+  requestedBy?: string | null;
+  status: 'queued' | 'running' | 'done' | 'error';
+  result?: any;
+  pickedUpAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface CronCreateRequest {
+  id: string;
+  projectId: string;
+  name: string;
+  scheduleKind?: string | null;
+  scheduleExpr: string;
+  tz?: string | null;
+  instructions?: string | null;
+  requestedAt: string;
+  requestedBy?: string | null;
+  status: 'queued' | 'running' | 'done' | 'error';
+  result?: any;
+  pickedUpAt?: string | null;
+  completedAt?: string | null;
+}
+
+/**
+ * Queue a cron job patch request (toggle, edit, etc.) for offline execution.
+ */
+export async function queueCronPatchRequest(
+  jobId: string, 
+  patch: Record<string, any>
+): Promise<{ ok: boolean; requestId?: string; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('cron_job_patch_requests')
+      .insert({
+        project_id: projectId,
+        job_id: jobId,
+        patch_json: patch,
+        requested_by: 'ui',
+        status: 'queued',
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Log activity
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'cron_job_patch_queued',
+      message: `Queued patch for cron job ${jobId}: ${JSON.stringify(patch)}`,
+      actor_agent_key: 'dashboard',
+    });
+
+    return { ok: true, requestId: data?.id };
+  } catch (e: any) {
+    console.error('queueCronPatchRequest failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Queue a new cron job creation request for offline execution.
+ */
+export async function queueCronCreateRequest(input: {
+  name: string;
+  scheduleKind?: string;
+  scheduleExpr: string;
+  tz?: string;
+  instructions?: string;
+}): Promise<{ ok: boolean; requestId?: string; error?: string }> {
+  if (!(hasSupabase() && supabase)) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('cron_create_requests')
+      .insert({
+        project_id: projectId,
+        name: input.name,
+        schedule_kind: input.scheduleKind || 'cron',
+        schedule_expr: input.scheduleExpr,
+        tz: input.tz || null,
+        instructions: input.instructions || null,
+        requested_by: 'ui',
+        status: 'queued',
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Log activity
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'cron_create_queued',
+      message: `Queued creation of cron job: ${input.name}`,
+      actor_agent_key: 'dashboard',
+    });
+
+    return { ok: true, requestId: data?.id };
+  } catch (e: any) {
+    console.error('queueCronCreateRequest failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Get recent cron patch requests from Supabase.
+ */
+export async function getCronPatchRequests(limit = 20): Promise<CronPatchRequest[]> {
+  if (!(hasSupabase() && supabase)) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('cron_job_patch_requests')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    projectId: row.project_id,
+    jobId: row.job_id,
+    patchJson: row.patch_json,
+    requestedAt: row.requested_at,
+    requestedBy: row.requested_by,
+    status: row.status,
+    result: row.result,
+    pickedUpAt: row.picked_up_at,
+    completedAt: row.completed_at,
   }));
 }
 

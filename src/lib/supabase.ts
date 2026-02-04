@@ -108,6 +108,28 @@ export function subscribeToProjectRealtime(projectId: string, onChange: (change?
           old: (payload as any).old,
         })
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cron_job_patch_requests', filter: `project_id=eq.${projectId}` },
+      (payload) =>
+        onChange({
+          table: 'cron_job_patch_requests',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cron_create_requests', filter: `project_id=eq.${projectId}` },
+      (payload) =>
+        onChange({
+          table: 'cron_create_requests',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
+    )
     .subscribe();
 
   return () => {
