@@ -507,7 +507,7 @@ export async function updateAgentStatus(input: {
       last_activity_at: nowIso,
     };
 
-    if (input.state !== undefined) patch.state = input.state || 'idle';
+    if (input.state !== undefined) patch.state = input.state === null ? null : input.state;
     if (input.note !== undefined) patch.note = (input.note || '').trim() || null;
     if (input.currentTaskId !== undefined) patch.current_task_id = input.currentTaskId || null;
 

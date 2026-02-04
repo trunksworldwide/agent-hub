@@ -648,3 +648,7 @@
 ### Dashboard: mobile-friendly Live Feed controls
 - Live Feed filter controls (type/agent/search/refresh) now wrap on small screens, with a full-width search field.
 - Keeps the dashboard usable on phones without horizontal overflow.
+
+### Presence: allow clearing agent_status.state ("auto" mode)
+- Fixed `updateAgentStatus()` so passing `state: null` clears the `agent_status.state` field instead of forcing it to `idle`.
+- This makes the AgentProfilePanel “(auto)” presence state actually work.
