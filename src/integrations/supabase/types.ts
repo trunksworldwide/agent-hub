@@ -186,6 +186,93 @@ export type Database = {
           },
         ]
       }
+      cron_mirror: {
+        Row: {
+          enabled: boolean
+          id: string
+          instructions: string | null
+          job_id: string
+          last_duration_ms: number | null
+          last_run_at: string | null
+          last_status: string | null
+          name: string
+          next_run_at: string | null
+          project_id: string
+          schedule_expr: string | null
+          schedule_kind: string | null
+          tz: string | null
+          updated_at: string
+        }
+        Insert: {
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          job_id: string
+          last_duration_ms?: number | null
+          last_run_at?: string | null
+          last_status?: string | null
+          name: string
+          next_run_at?: string | null
+          project_id: string
+          schedule_expr?: string | null
+          schedule_kind?: string | null
+          tz?: string | null
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          job_id?: string
+          last_duration_ms?: number | null
+          last_run_at?: string | null
+          last_status?: string | null
+          name?: string
+          next_run_at?: string | null
+          project_id?: string
+          schedule_expr?: string | null
+          schedule_kind?: string | null
+          tz?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cron_run_requests: {
+        Row: {
+          completed_at: string | null
+          id: string
+          job_id: string
+          picked_up_at: string | null
+          project_id: string
+          requested_at: string
+          requested_by: string | null
+          result: Json | null
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          job_id: string
+          picked_up_at?: string | null
+          project_id: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          job_id?: string
+          picked_up_at?: string | null
+          project_id?: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
       project_documents: {
         Row: {
           content_text: string | null
