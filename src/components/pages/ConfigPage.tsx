@@ -1,4 +1,4 @@
-import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive, ExternalLink, Download } from 'lucide-react';
+import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice } from '@/lib/store';
 import { restartSystem, getStatus } from '@/lib/api';
@@ -106,21 +106,6 @@ export function ConfigPage() {
             <Button
               variant="outline"
               onClick={() => {
-                // TODO: Implement Open Claw functionality
-                toast({
-                  title: 'Coming soon',
-                  description: 'Open Claw functionality will be available soon.',
-                });
-              }}
-              className="gap-2"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Open Claw
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => {
                 // TODO: Implement Update Claw functionality
                 toast({
                   title: 'Coming soon',
@@ -129,7 +114,7 @@ export function ConfigPage() {
               }}
               className="gap-2"
             >
-              <Download className="w-4 h-4" />
+              <span>🦀</span>
               Update Claw
             </Button>
             
