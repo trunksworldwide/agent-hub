@@ -28,7 +28,7 @@ const navItems = [
   { to: '/activity', label: 'Activity', icon: Activity },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/agents', label: 'Agents', icon: Bot },
-  { to: '/documents', label: 'Documents', icon: FileStack },
+  { to: '/documents', label: 'Knowledge', icon: FileStack },
   { to: '/brief', label: 'Brief', icon: FileText },
   { to: '/schedule', label: 'Schedule', icon: Clock },
   { to: '/settings', label: 'Settings', icon: Settings },
