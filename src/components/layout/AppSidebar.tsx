@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell } from 'lucide-react';
+import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell, FileStack } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { useClawdOffice } from '@/lib/store';
 import { 
   createProject, 
@@ -11,14 +19,16 @@ import {
   type GlobalActivityItem, 
   type Project 
 } from '@/lib/api';
-import { setSelectedProjectId as persistSelectedProjectId } from '@/lib/project';
+import { setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } from '@/lib/project';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/hooks/use-toast';
 
 const navItems = [
   { to: '/activity', label: 'Activity', icon: Activity },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/agents', label: 'Agents', icon: Bot },
+  { to: '/documents', label: 'Documents', icon: FileStack },
   { to: '/brief', label: 'Brief', icon: FileText },
   { to: '/schedule', label: 'Schedule', icon: Clock },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -31,6 +41,7 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { 
     selectedProjectId,
     setSelectedProjectId,
@@ -40,6 +51,12 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
   const [globalActivityOpen, setGlobalActivityOpen] = useState(false);
+  
+  // Create project dialog state
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newProjectId, setNewProjectId] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => setProjects([]));
@@ -67,12 +84,60 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
     return projects.find((p) => p.id === selectedProjectId) || projects[0];
   }, [projects, selectedProjectId]);
 
+  // Improved project defaulting logic
   useEffect(() => {
     if (!projects.length) return;
-    if (!selectedProjectId || !projects.some((p) => p.id === selectedProjectId)) {
-      setSelectedProjectId(projects[0].id);
+    
+    // Check if current selection is valid
+    const currentValid = projects.some((p) => p.id === selectedProjectId);
+    if (currentValid) return;
+    
+    // Try to select front-office first
+    const frontOffice = projects.find((p) => p.id === DEFAULT_PROJECT_ID);
+    if (frontOffice) {
+      setSelectedProjectId(frontOffice.id);
+      return;
     }
-  }, [projects, selectedProjectId, setSelectedProjectId]);
+    
+    // Fall back to first available project with a warning
+    const first = projects[0];
+    setSelectedProjectId(first.id);
+    toast({
+      title: 'Project selection updated',
+      description: `Selected "${first.name}" - the default project was not found.`,
+    });
+  }, [projects, selectedProjectId, setSelectedProjectId, toast]);
+
+  const handleCreateProject = async () => {
+    const id = newProjectId.trim();
+    const name = (newProjectName.trim() || id);
+    if (!id) return;
+    
+    setCreatingProject(true);
+    try {
+      const res = await createProject({ id, name });
+      if (!res?.ok) {
+        toast({
+          title: 'Failed to create project',
+          description: res?.error || 'Unknown error',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Add new project to list and select it
+      const newProject: Project = { id, name, workspace: '' };
+      setProjects((prev) => [...prev, newProject]);
+      setSelectedProjectId(id);
+      setCreateDialogOpen(false);
+      setNewProjectId('');
+      setNewProjectName('');
+      
+      toast({ title: 'Project created', description: name });
+    } finally {
+      setCreatingProject(false);
+    }
+  };
 
   const formatWhen = (iso: string) => {
     const d = new Date(iso);
@@ -113,33 +178,29 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
       {/* Project selector at top */}
       <div className="p-3 border-b border-border">
         <div className="flex items-center gap-2">
-          <select
-            className="flex-1 h-9 rounded-md bg-secondary border border-border px-3 text-sm font-medium truncate"
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            title={selectedProject?.workspace}
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.tag === 'system' ? `★ ${p.name}` : p.name}
-              </option>
-            ))}
-          </select>
+          {projects.length === 0 ? (
+            <div className="flex-1 h-9 rounded-md bg-secondary border border-border px-3 flex items-center">
+              <span className="text-sm text-muted-foreground">Loading...</span>
+            </div>
+          ) : (
+            <select
+              className="flex-1 h-9 rounded-md bg-secondary border border-border px-3 text-sm font-medium truncate"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              title={selectedProject?.workspace}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.tag === 'system' ? `★ ${p.name}` : p.name}
+                </option>
+              ))}
+            </select>
+          )}
           <Button
             variant="outline"
             size="icon"
             className="h-9 w-9 shrink-0"
-            onClick={async () => {
-              const id = (prompt('New project id (slug)') || '').trim();
-              if (!id) return;
-              const name = (prompt('New project name') || id).trim();
-              const res = await createProject({ id, name });
-              if (!res?.ok) {
-                alert(`Failed to create project: ${res?.error || 'unknown_error'}`);
-                return;
-              }
-              window.location.reload();
-            }}
+            onClick={() => setCreateDialogOpen(true)}
             title="New project"
           >
             <Plus className="w-4 h-4" />
@@ -205,6 +266,56 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           </PopoverContent>
         </Popover>
       </div>
+
+      {/* Create Project Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project ID (slug)</label>
+              <Input
+                value={newProjectId}
+                onChange={(e) => setNewProjectId(e.target.value)}
+                placeholder="my-project"
+                disabled={creatingProject}
+              />
+              <p className="text-xs text-muted-foreground">
+                Used as an identifier. Lowercase letters, numbers, and hyphens only.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project Name</label>
+              <Input
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="My Project"
+                disabled={creatingProject}
+              />
+              <p className="text-xs text-muted-foreground">
+                Display name. Defaults to ID if empty.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateDialogOpen(false)}
+              disabled={creatingProject}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateProject}
+              disabled={creatingProject || !newProjectId.trim()}
+            >
+              {creatingProject ? 'Creating...' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 }

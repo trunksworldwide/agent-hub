@@ -186,6 +186,53 @@ export type Database = {
           },
         ]
       }
+      project_documents: {
+        Row: {
+          content_text: string | null
+          created_at: string
+          id: string
+          mime_type: string | null
+          project_id: string
+          size_bytes: number | null
+          source_type: string
+          storage_path: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content_text?: string | null
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          project_id: string
+          size_bytes?: number | null
+          source_type: string
+          storage_path?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content_text?: string | null
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          project_id?: string
+          size_bytes?: number | null
+          source_type?: string
+          storage_path?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           created_at: string

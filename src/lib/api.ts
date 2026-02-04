@@ -158,6 +158,19 @@ export interface Project {
   tag?: string;
 }
 
+export interface ProjectDocument {
+  id: string;
+  projectId: string;
+  title: string;
+  sourceType: 'upload' | 'note';
+  storagePath?: string | null;
+  contentText?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
 
 export interface Task {
@@ -1287,4 +1300,214 @@ export async function getGlobalActivity(limit = 10): Promise<GlobalActivityItem[
 export async function getChannels(): Promise<Channel[]> {
   await delay(100);
   return mockChannels;
+}
+
+// ============= Documents API =============
+
+export async function getDocuments(): Promise<ProjectDocument[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('project_documents')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data || []).map((d: any) => ({
+    id: d.id,
+    projectId: d.project_id,
+    title: d.title,
+    sourceType: d.source_type,
+    storagePath: d.storage_path,
+    contentText: d.content_text,
+    mimeType: d.mime_type,
+    sizeBytes: d.size_bytes,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  }));
+}
+
+export async function createNoteDocument(title: string, content: string): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('project_documents')
+      .insert({
+        project_id: projectId,
+        title,
+        source_type: 'note',
+        content_text: content,
+        mime_type: 'text/plain',
+        size_bytes: new Blob([content]).size,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'document_created',
+      message: `Created document: ${title}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+    });
+
+    return { ok: true, id: data?.id };
+  } catch (e: any) {
+    console.error('createNoteDocument failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function uploadDocument(
+  file: File,
+  title: string
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const docId = crypto.randomUUID();
+  const storagePath = `${projectId}/${docId}/${file.name}`;
+
+  try {
+    // Upload to storage
+    const { error: uploadError } = await supabase.storage
+      .from('clawdos-documents')
+      .upload(storagePath, file);
+
+    if (uploadError) throw uploadError;
+
+    // Create DB record
+    const { data, error: dbError } = await supabase
+      .from('project_documents')
+      .insert({
+        id: docId,
+        project_id: projectId,
+        title,
+        source_type: 'upload',
+        storage_path: storagePath,
+        mime_type: file.type || 'application/octet-stream',
+        size_bytes: file.size,
+      })
+      .select('id')
+      .single();
+
+    if (dbError) throw dbError;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'document_uploaded',
+      message: `Uploaded document: ${title}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+    });
+
+    return { ok: true, id: data?.id };
+  } catch (e: any) {
+    console.error('uploadDocument failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function deleteDocument(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    // Get the document first to check storage path
+    const { data: doc, error: fetchError } = await supabase
+      .from('project_documents')
+      .select('title, storage_path')
+      .eq('id', id)
+      .eq('project_id', projectId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    // Delete from storage if it's an upload
+    if (doc?.storage_path) {
+      await supabase.storage.from('clawdos-documents').remove([doc.storage_path]);
+    }
+
+    // Delete DB record
+    const { error: deleteError } = await supabase
+      .from('project_documents')
+      .delete()
+      .eq('id', id)
+      .eq('project_id', projectId);
+
+    if (deleteError) throw deleteError;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'document_deleted',
+      message: `Deleted document: ${doc?.title || id}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    console.error('deleteDocument failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export function getDocumentStorageUrl(storagePath: string | null | undefined): string | null {
+  if (!storagePath || !hasSupabase() || !supabase) return null;
+
+  const { data } = supabase.storage.from('clawdos-documents').getPublicUrl(storagePath);
+  return data?.publicUrl || null;
+}
+
+// ============= API Status =============
+
+export function getApiStatus(): {
+  connected: boolean;
+  baseUrl: string | null;
+  mode: 'supabase-only' | 'control-api' | 'mock';
+} {
+  if (API_BASE_URL) {
+    return {
+      connected: true,
+      baseUrl: API_BASE_URL,
+      mode: 'control-api',
+    };
+  }
+
+  if (hasSupabase()) {
+    return {
+      connected: true,
+      baseUrl: null,
+      mode: 'supabase-only',
+    };
+  }
+
+  if (ALLOW_MOCKS) {
+    return {
+      connected: false,
+      baseUrl: null,
+      mode: 'mock',
+    };
+  }
+
+  return {
+    connected: false,
+    baseUrl: null,
+    mode: 'supabase-only',
+  };
 }
