@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Clock, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { getActivity, type ActivityItem } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/datetime';
 import { useClawdOffice } from '@/lib/store';
-
 export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [limit, setLimit] = useState(200);
@@ -57,10 +57,12 @@ export function ActivityPage() {
     });
   }, [items, typeFilter, search]);
 
+  const navigate = useNavigate();
+
   const openAgent = (agentKey: string) => {
     if (!agentKey || !String(agentKey).startsWith('agent:')) return;
     setSelectedAgentId(agentKey);
-    setActiveMainTab('agents');
+    navigate('/agents');
   };
 
   return (
