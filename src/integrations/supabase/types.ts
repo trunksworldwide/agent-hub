@@ -21,6 +21,7 @@ export type Database = {
           id: string
           message: string
           project_id: string
+          summary: string | null
           task_id: string | null
           type: string
         }
@@ -30,6 +31,7 @@ export type Database = {
           id?: string
           message: string
           project_id: string
+          summary?: string | null
           task_id?: string | null
           type: string
         }
@@ -39,6 +41,7 @@ export type Database = {
           id?: string
           message?: string
           project_id?: string
+          summary?: string | null
           task_id?: string | null
           type?: string
         }
@@ -185,6 +188,93 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cron_create_requests: {
+        Row: {
+          completed_at: string | null
+          id: string
+          instructions: string | null
+          name: string
+          picked_up_at: string | null
+          project_id: string
+          requested_at: string
+          requested_by: string | null
+          result: Json | null
+          schedule_expr: string
+          schedule_kind: string | null
+          status: string
+          tz: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          instructions?: string | null
+          name: string
+          picked_up_at?: string | null
+          project_id: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          schedule_expr: string
+          schedule_kind?: string | null
+          status?: string
+          tz?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          instructions?: string | null
+          name?: string
+          picked_up_at?: string | null
+          project_id?: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          schedule_expr?: string
+          schedule_kind?: string | null
+          status?: string
+          tz?: string | null
+        }
+        Relationships: []
+      }
+      cron_job_patch_requests: {
+        Row: {
+          completed_at: string | null
+          id: string
+          job_id: string
+          patch_json: Json
+          picked_up_at: string | null
+          project_id: string
+          requested_at: string
+          requested_by: string | null
+          result: Json | null
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          job_id: string
+          patch_json: Json
+          picked_up_at?: string | null
+          project_id: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          job_id?: string
+          patch_json?: Json
+          picked_up_at?: string | null
+          project_id?: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Relationships: []
       }
       cron_mirror: {
         Row: {

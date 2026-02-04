@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
-import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId } from './project';
+import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } from './project';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
@@ -62,11 +62,13 @@ interface ClawdOfficeState {
 const initialProjectId = getSelectedProjectId();
 
 export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
-  // Project selection
+  // Project selection with validation guard
   selectedProjectId: initialProjectId,
   setSelectedProjectId: (id) => {
-    persistSelectedProjectId(id);
-    set({ selectedProjectId: id });
+    // Guard: never allow empty or invalid selection
+    const safeId = (id && typeof id === 'string' && id.trim()) ? id.trim() : DEFAULT_PROJECT_ID;
+    persistSelectedProjectId(safeId);
+    set({ selectedProjectId: safeId });
   },
 
   // View mode
