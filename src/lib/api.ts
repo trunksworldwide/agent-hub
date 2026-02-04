@@ -839,6 +839,10 @@ export async function getTools(): Promise<Tool[]> {
 }
 
 export async function getCronJobs(): Promise<CronJob[]> {
+  // Supabase-only deployments don't have cron management in the DB yet;
+  // return empty so the Dashboard can load without a Control API.
+  if (hasSupabase() && !API_BASE_URL) return [];
+
   if (USE_REMOTE) return requestJson<CronJob[]>('/api/cron');
   if (!ALLOW_MOCKS) return requestJson<CronJob[]>('/api/cron');
 
