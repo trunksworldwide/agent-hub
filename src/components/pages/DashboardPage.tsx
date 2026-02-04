@@ -901,7 +901,7 @@ export function DashboardPage() {
           </div>
 
           {/* Feed Items - Vertical Stack */}
-          <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto scrollbar-always">
+          <div className="p-4 space-y-3 max-h-[min(60vh,420px)] md:max-h-[420px] lg:max-h-[520px] overflow-y-auto scrollbar-always">
             {filteredFeed.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 {feed.length === 0 ? 'No activity yet.' : 'No matching activity.'}

@@ -1,3 +1,7 @@
+### Dashboard Live Feed: taller, responsive scroll region (mobile polish)
+- Live Feed now uses a responsive max height (`60vh` up to ~520px) instead of a hard 300px cap.
+- Makes the activity feed usable on larger screens while still behaving nicely on mobile.
+
 ### Dashboard agent list: show presence status note (agent_status.note)
 - Agents sidebar + mobile drawer now surface the current `agent_status.note` as a short secondary line.
 - Collapsed sidebar tooltips include the note as well.
