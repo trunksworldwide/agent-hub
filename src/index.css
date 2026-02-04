@@ -4,10 +4,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ClawdOS Design System - Dark Mission Control Theme */
+/* ClawdOS Design System - Clean Light Theme */
 
 @layer base {
   :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 55%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 217 91% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 55%;
+  }
+
+  .dark {
     --background: 220 20% 7%;
     --foreground: 210 20% 95%;
 
@@ -42,18 +90,6 @@
     --input: 220 15% 16%;
     --ring: 217 91% 60%;
 
-    --radius: 0.5rem;
-
-    /* Custom tokens */
-    --glow-primary: 217 91% 60%;
-    --glow-success: 142 76% 36%;
-    --glow-warning: 38 92% 50%;
-    --glow-error: 0 72% 51%;
-    
-    --editor-bg: 220 20% 6%;
-    --editor-line: 220 15% 10%;
-    --editor-gutter: 220 15% 35%;
-    
     --sidebar-background: 220 18% 9%;
     --sidebar-foreground: 210 15% 75%;
     --sidebar-primary: 217 91% 60%;
@@ -62,18 +98,6 @@
     --sidebar-accent-foreground: 210 20% 95%;
     --sidebar-border: 220 15% 15%;
     --sidebar-ring: 217 91% 60%;
-    
-    /* Syntax highlighting */
-    --syntax-keyword: 280 70% 65%;
-    --syntax-string: 142 70% 55%;
-    --syntax-comment: 215 15% 45%;
-    --syntax-heading: 38 92% 60%;
-    --syntax-link: 217 91% 65%;
-    --syntax-bold: 0 0% 100%;
-  }
-
-  .dark {
-    /* Already dark by default */
   }
 }
 
@@ -97,16 +121,6 @@
 }
 
 @layer components {
-  .dashboard-texture {
-    /* Subtle “alive” mission-control texture without any image assets. */
-    background-image:
-      radial-gradient(900px circle at 18% -10%, hsl(var(--primary) / 0.10), transparent 55%),
-      radial-gradient(750px circle at 82% 0%, hsl(var(--success) / 0.06), transparent 50%),
-      linear-gradient(to bottom, hsl(var(--background)), hsl(var(--background)), hsl(var(--muted) / 0.20));
-    background-repeat: no-repeat;
-    background-size: cover;
-  }
-
   .status-indicator {
     @apply relative flex items-center gap-2;
   }
@@ -116,43 +130,18 @@
   }
   
   .status-dot-online {
-    @apply bg-[hsl(var(--success))];
-    box-shadow: 0 0 8px hsl(var(--glow-success) / 0.6);
-    animation: status-dot-pulse 2.6s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .status-dot-online {
-      animation: none;
-    }
-  }
-
-  @keyframes status-dot-pulse {
-    0% {
-      transform: scale(1);
-      box-shadow: 0 0 6px hsl(var(--glow-success) / 0.45);
-      opacity: 0.9;
-    }
-    55% {
-      transform: scale(1.15);
-      box-shadow: 0 0 12px hsl(var(--glow-success) / 0.8);
-      opacity: 1;
-    }
-    100% {
-      transform: scale(1);
-      box-shadow: 0 0 6px hsl(var(--glow-success) / 0.45);
-      opacity: 0.9;
-    }
+    @apply bg-green-500;
+    box-shadow: 0 0 8px hsl(142 76% 36% / 0.6);
   }
   
   .status-dot-offline {
-    @apply bg-[hsl(var(--destructive))];
-    box-shadow: 0 0 8px hsl(var(--glow-error) / 0.6);
+    @apply bg-red-500;
+    box-shadow: 0 0 8px hsl(0 72% 51% / 0.6);
   }
   
   .status-dot-idle {
-    @apply bg-[hsl(var(--warning))];
-    box-shadow: 0 0 8px hsl(var(--glow-warning) / 0.6);
+    @apply bg-yellow-500;
+    box-shadow: 0 0 8px hsl(38 92% 50% / 0.6);
   }
   
   .nav-tab {
@@ -165,63 +154,16 @@
   }
   
   .agent-card {
-    @apply p-3 rounded-lg cursor-pointer transition-all;
-    @apply hover:bg-secondary/50;
+    @apply p-3 rounded-lg cursor-pointer transition-all border border-transparent;
+    @apply hover:bg-accent hover:border-border;
   }
   
   .agent-card-active {
-    @apply bg-secondary border-l-2 border-primary;
+    @apply bg-accent border-primary;
   }
 
-  /* Subtle "alive" glow for agents that are actively running */
   .agent-card-running {
     @apply relative;
-  }
-
-  .agent-card-running::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 0.5rem;
-    pointer-events: none;
-    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.0);
-    opacity: 0.55;
-    animation: agent-card-glow 2.2s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .agent-card-running::after {
-      animation: none;
-      opacity: 0.25;
-      box-shadow: 0 0 0 1px hsl(var(--primary) / 0.18);
-    }
-  }
-
-  @keyframes agent-card-glow {
-    0% {
-      opacity: 0.25;
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.05);
-    }
-    50% {
-      opacity: 0.55;
-      box-shadow: 0 0 12px 2px hsl(var(--primary) / 0.22);
-    }
-    100% {
-      opacity: 0.25;
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.05);
-    }
-  }
-  
-  .editor-container {
-    @apply bg-[hsl(var(--editor-bg))] rounded-lg border border-border overflow-hidden;
-  }
-  
-  .editor-gutter {
-    @apply text-[hsl(var(--editor-gutter))] text-right pr-4 select-none;
-  }
-  
-  .editor-line {
-    @apply leading-relaxed;
   }
   
   .badge-status {
@@ -229,83 +171,41 @@
   }
   
   .badge-online {
-    @apply bg-[hsl(var(--success)/0.15)] text-[hsl(var(--success))];
+    @apply bg-green-100 text-green-700;
   }
   
   .badge-idle {
-    @apply bg-[hsl(var(--warning)/0.15)] text-[hsl(var(--warning))];
+    @apply bg-yellow-100 text-yellow-700;
   }
   
   .badge-running {
-    @apply bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))];
+    @apply bg-blue-100 text-blue-700;
   }
   
   .badge-offline {
-    @apply bg-[hsl(var(--destructive)/0.15)] text-[hsl(var(--destructive))];
+    @apply bg-gray-100 text-gray-600;
   }
 
-  /* Presence (agent_status.state) refinements */
   .badge-blocked {
-    @apply bg-[hsl(var(--destructive)/0.12)] text-[hsl(var(--destructive))];
+    @apply bg-red-100 text-red-700;
   }
 
   .badge-sleeping {
     @apply bg-muted text-muted-foreground;
   }
-
-  .glow-button {
-    @apply relative overflow-hidden;
-  }
-  
-  .glow-button::after {
-    content: '';
-    @apply absolute inset-0 opacity-0 transition-opacity;
-    background: radial-gradient(circle at center, hsl(var(--primary) / 0.3) 0%, transparent 70%);
-  }
-  
-  .glow-button:hover::after {
-    @apply opacity-100;
-  }
 }
 
 @layer utilities {
-  .text-gradient {
-    @apply bg-gradient-to-r from-[hsl(var(--primary))] to-[hsl(280_70%_65%)] bg-clip-text text-transparent;
-  }
-  
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
   
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-.scrollbar-always {
-  scrollbar-gutter: stable;
-}
-
-.scrollbar-always::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.scrollbar-always::-webkit-scrollbar-track {
-  background: hsl(var(--muted) / 0.3);
-  border-radius: 4px;
-}
-
-.scrollbar-always::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
-}
-
-.scrollbar-always::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
-}
-  
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
