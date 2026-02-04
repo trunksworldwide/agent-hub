@@ -244,6 +244,15 @@
     @apply bg-[hsl(var(--destructive)/0.15)] text-[hsl(var(--destructive))];
   }
 
+  /* Presence (agent_status.state) refinements */
+  .badge-blocked {
+    @apply bg-[hsl(var(--destructive)/0.12)] text-[hsl(var(--destructive))];
+  }
+
+  .badge-sleeping {
+    @apply bg-muted text-muted-foreground;
+  }
+
   .glow-button {
     @apply relative overflow-hidden;
   }

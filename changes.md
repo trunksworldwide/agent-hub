@@ -686,3 +686,9 @@
 
 ### UI: subtle dashboard texture background
 - Applied the existing `dashboard-texture` background to the Dashboard root container for a light mission-control gradient/texture without changing layout.
+
+### Dashboard presence: show BLOCKED/SLEEPING badges from agent_status
+- Agent list badges now reflect `agent_status.state` for more accurate presence at a glance:
+  - `blocked` → **BLOCKED** (red)
+  - `sleeping` → **SLEEPING** (muted)
+- Keeps the high-level status colors but surfaces “why idle” without opening the profile panel.

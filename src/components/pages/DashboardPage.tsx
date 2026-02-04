@@ -526,13 +526,26 @@ export function DashboardPage() {
   };
 
   const getStatusBadge = (status: Agent['status']) => {
-    const styles = {
+    const styles: Record<Agent['status'], string> = {
       online: 'badge-online',
       idle: 'badge-idle',
       running: 'badge-running',
       offline: 'badge-offline',
     };
     return styles[status];
+  };
+
+  const presenceBadge = (agent: Agent): { className: string; label: string } => {
+    const st = (agent.statusState || '').toString().trim();
+
+    if (st === 'blocked') return { className: 'badge-blocked', label: 'BLOCKED' };
+    if (st === 'sleeping') return { className: 'badge-sleeping', label: 'SLEEPING' };
+
+    if (agent.status === 'running' || st === 'working') return { className: getStatusBadge('running'), label: 'WORKING' };
+    if (agent.status === 'online') return { className: getStatusBadge('online'), label: 'ONLINE' };
+    if (agent.status === 'offline') return { className: getStatusBadge('offline'), label: 'OFFLINE' };
+
+    return { className: getStatusBadge('idle'), label: 'IDLE' };
   };
 
   const formatTime = (date: Date) => {
@@ -623,8 +636,8 @@ export function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm truncate">{agent.name}</span>
-                      <span className={cn("badge-status text-[10px]", getStatusBadge(agent.status))}>
-                        {agent.status}
+                      <span className={cn("badge-status text-[10px]", presenceBadge(agent).className)}>
+                        {presenceBadge(agent).label}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{agent.role}</p>
@@ -742,8 +755,8 @@ export function DashboardPage() {
                         </p>
                       ) : null}
                     </div>
-                    <span className={cn("badge-status text-[10px]", getStatusBadge(agent.status))}>
-                      {agent.status === 'running' ? 'WORKING' : agent.status.toUpperCase()}
+                    <span className={cn("badge-status text-[10px]", presenceBadge(agent).className)}>
+                      {presenceBadge(agent).label}
                     </span>
                   </>
                 )}
