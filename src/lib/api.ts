@@ -17,7 +17,7 @@ export interface Agent {
   id: string;
   name: string;
   role: string;
-  status: 'online' | 'idle' | 'running' | 'offline';
+  status: 'working' | 'idle' | 'offline';
   lastActive: string;
   skillCount: number;
   avatar?: string;
@@ -185,9 +185,9 @@ export interface Task {
 
 // Mock Data
 const mockAgents: Agent[] = [
-  { id: 'trunks', name: 'Trunks', role: 'Primary Agent', status: 'online', lastActive: '2 min ago', skillCount: 12, avatar: '🤖' },
+  { id: 'trunks', name: 'Trunks', role: 'Primary Agent', status: 'idle', lastActive: '2 min ago', skillCount: 12, avatar: '🤖' },
   { id: 'research', name: 'Research', role: 'Deep Research', status: 'idle', lastActive: '15 min ago', skillCount: 8, avatar: '🔬' },
-  { id: 'coder', name: 'Coder', role: 'Code Generation', status: 'running', lastActive: 'now', skillCount: 15, avatar: '💻' },
+  { id: 'coder', name: 'Coder', role: 'Code Generation', status: 'working', lastActive: 'now', skillCount: 15, avatar: '💻' },
   { id: 'writer', name: 'Writer', role: 'Content Creation', status: 'offline', lastActive: '2 hours ago', skillCount: 6, avatar: '✍️' },
 ];
 
@@ -664,16 +664,17 @@ export async function getAgents(): Promise<Agent[]> {
       // If an agent explicitly reports sleeping, treat it as offline regardless of recency.
       if (state === 'sleeping') return 'offline';
 
-      // Guard against a "stuck" WORKING state: if we haven't seen the agent recently,
-      // degrade it so the UI doesn't show permanently-running ghosts.
+      // WORKING: agent state is working AND seen recently (within 30 min)
       if (state === 'working') {
         if (age !== null && age >= 30 * 60_000) return 'offline';
-        return 'running';
+        return 'working';
       }
 
-      if (age === null) return 'idle';
-      if (age <= 5 * 60_000) return 'online';
+      // OFFLINE: no activity for 60+ minutes or no data
+      if (age === null) return 'offline';
       if (age >= 60 * 60_000) return 'offline';
+
+      // IDLE: everything else (seen within last 60 min, not actively working)
       return 'idle';
     };
 

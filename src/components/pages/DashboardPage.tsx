@@ -216,10 +216,9 @@ export function DashboardPage() {
 
     const deriveStatusFromState = (state: string | null | undefined): Agent['status'] => {
       const s = (state || '').toLowerCase();
-      if (s === 'working') return 'running';
-      if (s === 'blocked' || s === 'sleeping') return 'idle';
-      if (s) return 'online';
-      return 'online';
+      if (s === 'working') return 'working';
+      if (s === 'blocked' || s === 'sleeping') return 'offline';
+      return 'idle';
     };
 
     const handleRealtime = (change?: { table: string; event: string; new?: any }) => {
@@ -527,9 +526,8 @@ export function DashboardPage() {
 
   const getStatusBadge = (status: Agent['status']) => {
     const styles: Record<Agent['status'], string> = {
-      online: 'badge-online',
+      working: 'badge-working',
       idle: 'badge-idle',
-      running: 'badge-running',
       offline: 'badge-offline',
     };
     return styles[status];
@@ -541,8 +539,7 @@ export function DashboardPage() {
     if (st === 'blocked') return { className: 'badge-blocked', label: 'BLOCKED' };
     if (st === 'sleeping') return { className: 'badge-sleeping', label: 'SLEEPING' };
 
-    if (agent.status === 'running' || st === 'working') return { className: getStatusBadge('running'), label: 'WORKING' };
-    if (agent.status === 'online') return { className: getStatusBadge('online'), label: 'ONLINE' };
+    if (agent.status === 'working' || st === 'working') return { className: getStatusBadge('working'), label: 'WORKING' };
     if (agent.status === 'offline') return { className: getStatusBadge('offline'), label: 'OFFLINE' };
 
     return { className: getStatusBadge('idle'), label: 'IDLE' };
@@ -580,7 +577,7 @@ export function DashboardPage() {
     return c;
   };
 
-  const activeAgentsCount = agents.filter(a => a.status === 'online' || a.status === 'running').length;
+  const activeAgentsCount = agents.filter(a => a.status === 'working').length;
   const totalTasks = tasks.length;
 
   return (
@@ -609,11 +606,9 @@ export function DashboardPage() {
                   <div
                     className={cn(
                       'w-9 h-9 rounded-lg flex items-center justify-center text-xl shrink-0 relative overflow-hidden',
-                      agent.status === 'running'
+                      agent.status === 'working'
                         ? 'ring-2 ring-primary/25 shadow-[0_0_0_6px_hsl(var(--primary)/0.10)] motion-safe:animate-pulse'
-                        : agent.status === 'online'
-                          ? 'ring-1 ring-primary/15'
-                          : ''
+                        : ''
                     )}
                     style={
                       agent.color
@@ -705,11 +700,9 @@ export function DashboardPage() {
                   className={cn(
                     'rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden',
                     agentPanelCollapsed ? 'w-8 h-8 text-lg' : 'w-9 h-9 text-xl',
-                    agent.status === 'running'
+                    agent.status === 'working'
                       ? 'ring-2 ring-primary/25 shadow-[0_0_0_6px_hsl(var(--primary)/0.10)] motion-safe:animate-pulse'
-                      : agent.status === 'online'
-                        ? 'ring-1 ring-primary/15'
-                        : ''
+                      : ''
                   )}
                   style={
                     agent.color
@@ -734,7 +727,7 @@ export function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{agent.name}</span>
-                        {agent.status === 'running' && (
+                        {agent.status === 'working' && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">
                             LEAD
                           </span>

@@ -129,14 +129,13 @@
     @apply w-2 h-2 rounded-full;
   }
   
-  .status-dot-online {
+  .status-dot-working {
     @apply bg-green-500;
     box-shadow: 0 0 8px hsl(142 76% 36% / 0.6);
   }
   
   .status-dot-offline {
-    @apply bg-red-500;
-    box-shadow: 0 0 8px hsl(0 72% 51% / 0.6);
+    @apply bg-gray-400;
   }
   
   .status-dot-idle {
@@ -156,30 +155,65 @@
   .agent-card {
     @apply p-3 rounded-lg cursor-pointer transition-all border border-transparent;
     @apply hover:bg-accent hover:border-border;
+    position: relative;
+    overflow: hidden;
   }
   
   .agent-card-active {
     @apply bg-accent border-primary;
   }
 
-  .agent-card-running {
+  /* Working agent beam animation */
+  .agent-card-working {
     @apply relative;
+  }
+
+  .agent-card-working::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(142 76% 36%) 25%,
+      hsl(142 76% 50%) 50%,
+      hsl(142 76% 36%) 75%,
+      transparent 100%
+    );
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: beam-rotate 2s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes beam-rotate {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .agent-card-working::before {
+    background-size: 200% 100%;
   }
   
   .badge-status {
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
   }
   
-  .badge-online {
+  .badge-working {
     @apply bg-green-100 text-green-700;
   }
   
   .badge-idle {
     @apply bg-yellow-100 text-yellow-700;
-  }
-  
-  .badge-running {
-    @apply bg-blue-100 text-blue-700;
   }
   
   .badge-offline {

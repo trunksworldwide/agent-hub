@@ -200,10 +200,10 @@ export function AgentProfilePanel({
 
       const derivedStatus: Agent['status'] =
         nextState === 'working'
-          ? 'running'
+          ? 'working'
           : nextState === 'blocked' || nextState === 'sleeping'
-            ? 'idle'
-            : 'online';
+            ? 'offline'
+            : 'idle';
 
       onAgentPatched?.(agent.id, {
         status: derivedStatus,
@@ -249,8 +249,7 @@ export function AgentProfilePanel({
 
   const getStatusColor = (status: Agent['status']) => {
     switch (status) {
-      case 'online':
-      case 'running':
+      case 'working':
         return 'bg-green-500';
       case 'idle':
         return 'bg-amber-500';
@@ -261,10 +260,8 @@ export function AgentProfilePanel({
 
   const getStatusLabel = (status: Agent['status']) => {
     switch (status) {
-      case 'running':
+      case 'working':
         return 'WORKING';
-      case 'online':
-        return 'ONLINE';
       case 'idle':
         return 'IDLE';
       case 'offline':
@@ -543,7 +540,7 @@ export function AgentProfilePanel({
               variant="outline"
               className={cn(
                 'gap-2 px-3 py-1.5 text-sm font-medium border-0',
-                agent.status === 'running' || agent.status === 'online'
+                agent.status === 'working'
                   ? 'bg-green-500/10 text-green-500'
                   : agent.status === 'idle'
                     ? 'bg-amber-500/10 text-amber-500'
