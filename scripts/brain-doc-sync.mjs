@@ -62,6 +62,28 @@ async function upsertDoc(doc_type, content, updated_by) {
     },
     { onConflict: 'project_id,agent_key,doc_type' }
   );
+
+  // If the canonical source is a local file edit, also write an activity row so
+  // ClawdOS dashboards see brain-doc edits even when the editor is outside the UI.
+  if (updated_by === 'local_file') {
+    try {
+      const labelByType = {
+        soul: 'SOUL.md',
+        agents: 'AGENTS.md',
+        user: 'USER.md',
+        memory_long: 'MEMORY.md',
+      };
+
+      await sb.from('activities').insert({
+        project_id: PROJECT_ID,
+        type: 'brain_doc_updated',
+        message: `Updated ${labelByType[doc_type] || doc_type} (local file sync)`,
+        actor_agent_key: 'agent:sync:brain-doc',
+      });
+    } catch {
+      // best effort
+    }
+  }
 }
 
 async function getRemoteDoc(doc_type) {

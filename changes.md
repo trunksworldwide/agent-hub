@@ -1,3 +1,7 @@
+### brain-doc-sync: write Supabase activities for local brain doc edits (brain-doc sync)
+- When `scripts/brain-doc-sync.mjs` detects a local file change and upserts it to Supabase, it now also inserts a `brain_doc_updated` activity row.
+- Keeps the Live Feed consistent even when edits happen outside the dashboard UI.
+
 ### TopBar: auto-recover when selected project id is missing (projects scoping)
 - If `localStorage` (or a deep-link) points at a project id that isn't in the current projects list, we now auto-select the first available project.
 - Prevents a controlled `<select>` from rendering with an empty/invalid value in flaky-load scenarios.
