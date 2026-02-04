@@ -130,17 +130,17 @@
   }
   
   .status-dot-working {
-    @apply bg-green-500;
-    box-shadow: 0 0 8px hsl(142 76% 36% / 0.6);
+    background-color: hsl(var(--success));
+    box-shadow: 0 0 10px hsl(var(--success) / 0.55);
   }
   
   .status-dot-offline {
-    @apply bg-gray-400;
+    background-color: hsl(var(--muted-foreground));
   }
   
   .status-dot-idle {
-    @apply bg-yellow-500;
-    box-shadow: 0 0 8px hsl(38 92% 50% / 0.6);
+    background-color: hsl(var(--warning));
+    box-shadow: 0 0 10px hsl(var(--warning) / 0.55);
   }
   
   .nav-tab {
@@ -177,9 +177,9 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(142 76% 36%) 25%,
-      hsl(142 76% 50%) 50%,
-      hsl(142 76% 36%) 75%,
+      hsl(var(--success) / 0.45) 25%,
+      hsl(var(--success) / 0.90) 50%,
+      hsl(var(--success) / 0.45) 75%,
       transparent 100%
     );
     -webkit-mask: 
