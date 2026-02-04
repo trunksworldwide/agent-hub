@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, HelpCircle } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { StatusTooltip } from '@/components/ui/StatusTooltip';
 import { AgentDetail } from '@/components/AgentDetail';
 
 export function AgentsPage() {
@@ -113,11 +115,36 @@ export function AgentsPage() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="text-sm text-muted-foreground">
-            {agents.length} agent{agents.length !== 1 ? 's' : ''} in this project
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h1 className="text-lg font-semibold">Agents</h1>
+            <p className="text-sm text-muted-foreground">
+              {agents.length} agent{agents.length !== 1 ? 's' : ''} in this project
+            </p>
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-muted cursor-help"
+                aria-label="Status info"
+              >
+                <HelpCircle className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-xs">
+              <div className="space-y-1">
+                <p><strong>Status indicators:</strong></p>
+                <p>🟢 <strong>ONLINE</strong>: Seen within 5 minutes</p>
+                <p>🟢 <strong>WORKING</strong>: Currently executing a task</p>
+                <p>🟡 <strong>IDLE</strong>: Available but not active</p>
+                <p>🔴 <strong>OFFLINE</strong>: No activity for 60+ minutes</p>
+                <p className="text-muted-foreground mt-2">
+                  Hover over any status badge for details.
+                </p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
         </div>
         <Button
           variant="ghost"
@@ -154,9 +181,16 @@ export function AgentsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate">{agent.name}</span>
-                    <span className={cn('badge-status', getStatusBadge(agent.status))}>
-                      {agent.status}
-                    </span>
+                    <StatusTooltip
+                      status={agent.status}
+                      statusState={agent.statusState}
+                      lastActivityAt={agent.lastActivityAt}
+                      lastHeartbeatAt={agent.lastHeartbeatAt}
+                    >
+                      <span className={cn('badge-status cursor-help', getStatusBadge(agent.status))}>
+                        {agent.status}
+                      </span>
+                    </StatusTooltip>
                   </div>
                   <p className="text-sm text-muted-foreground truncate mt-0.5">
                     {agent.role || 'Agent'}

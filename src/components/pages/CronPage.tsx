@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil } from 'lucide-react';
+import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { getCronJobs, toggleCronJob, editCronJob, runCronJob, getCronRuns, type CronJob, type CronRunEntry } from '@/lib/api';
+import { getCronJobs, toggleCronJob, editCronJob, runCronJob, getCronRuns, getApiStatus, type CronJob, type CronRunEntry } from '@/lib/api';
 import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -15,6 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { Card, CardContent } from '@/components/ui/card';
 
 export function CronPage() {
   const { focusCronJobId, setFocusCronJobId } = useClawdOffice();
@@ -32,6 +33,9 @@ export function CronPage() {
   const [editSchedule, setEditSchedule] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const apiStatus = useMemo(() => getApiStatus(), []);
 
   const { toast } = useToast();
 
@@ -47,14 +51,17 @@ export function CronPage() {
   const loadJobs = async () => {
     if (loadingJobs) return;
     setLoadingJobs(true);
+    setLastError(null);
     try {
       const next = await getCronJobs();
       setJobs(next);
       setLastRefreshedAt(Date.now());
     } catch (err: any) {
+      const message = String(err?.message || err);
+      setLastError(message);
       toast({
         title: 'Failed to load cron jobs',
-        description: String(err?.message || err),
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -179,6 +186,7 @@ export function CronPage() {
   return (
     <div className="flex-1 p-6 overflow-auto scrollbar-thin">
       <div className="max-w-4xl mx-auto">
+        {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
@@ -201,6 +209,91 @@ export function CronPage() {
           </Button>
         </div>
 
+        {/* Connection Status Panel */}
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {apiStatus.mode === 'control-api' ? (
+                  <Wifi className="w-5 h-5 text-success" />
+                ) : (
+                  <WifiOff className="w-5 h-5 text-muted-foreground" />
+                )}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'w-2 h-2 rounded-full',
+                      apiStatus.mode === 'control-api' ? 'bg-success' : 'bg-muted-foreground'
+                    )} />
+                    <span className="text-sm font-medium">
+                      {apiStatus.mode === 'control-api' ? 'Control API Connected' : 'Control API Not Connected'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {apiStatus.mode === 'control-api' 
+                      ? `Connected to ${apiStatus.baseUrl}`
+                      : 'Cron jobs require VITE_API_BASE_URL to be configured'
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              {apiStatus.mode === 'supabase-only' && (
+                <div className="text-xs text-muted-foreground text-right">
+                  Supabase: Connected
+                </div>
+              )}
+            </div>
+
+            {lastError && (
+              <div className="mt-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm text-destructive font-medium">Connection Error</p>
+                    <p className="text-xs text-destructive/80 mt-0.5">{lastError}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={loadJobs} disabled={loadingJobs}>
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Empty States */}
+        {!loadingJobs && jobs.length === 0 && apiStatus.mode !== 'control-api' && !lastError && (
+          <Card className="mb-6">
+            <CardContent className="p-8 text-center">
+              <WifiOff className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
+              <h3 className="text-lg font-medium">No Control API configured</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Cron jobs require a running ClawdBot Control API.
+              </p>
+              <p className="text-xs text-muted-foreground mt-3">
+                Set <code className="bg-muted px-1 py-0.5 rounded">VITE_API_BASE_URL</code> to connect.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!loadingJobs && jobs.length === 0 && apiStatus.mode === 'control-api' && !lastError && (
+          <Card className="mb-6">
+            <CardContent className="p-8 text-center">
+              <Clock className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
+              <h3 className="text-lg font-medium">No cron jobs found</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                There are no scheduled jobs in this workspace.
+              </p>
+              <p className="text-xs text-muted-foreground mt-3">
+                Create cron jobs through ClawdBot's cron configuration.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Job List */}
         <div className="space-y-3">
           {jobs.map((job) => (
             <Collapsible

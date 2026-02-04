@@ -329,16 +329,16 @@ const apiStatus = getApiStatus();
 
 ## QA Checklist
 
-- [ ] Project dropdown never shows blank
-- [ ] Switching projects updates all views (Agents, Tasks, Activity, Documents, Schedule)
-- [ ] Agent status tooltips render on desktop hover and mobile tap
-- [ ] Schedule page shows clear connection status
-- [ ] Schedule page shows appropriate empty states
-- [ ] InfoTooltips appear on agent detail tabs
-- [ ] Documents page: upload works
-- [ ] Documents page: create note works
-- [ ] Documents page: list renders correctly
-- [ ] Documents page: delete with confirmation works
-- [ ] Recent Changes generates from activities
-- [ ] No console errors
-- [ ] All existing routes continue to work
+- [x] Project dropdown never shows blank
+- [x] Switching projects updates all views (Agents, Tasks, Activity, Documents, Schedule)
+- [x] Agent status tooltips render on desktop hover and mobile tap
+- [x] Schedule page shows clear connection status
+- [x] Schedule page shows appropriate empty states
+- [x] InfoTooltips appear on agent detail tabs
+- [x] Documents page: upload works
+- [x] Documents page: create note works
+- [x] Documents page: list renders correctly
+- [x] Documents page: delete with confirmation works
+- [x] Recent Changes generates from activities
+- [ ] No console errors (needs verification)
+- [x] All existing routes continue to work

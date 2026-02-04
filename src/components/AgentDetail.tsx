@@ -4,6 +4,8 @@ import { useClawdOffice, type AgentTab } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getAgents, type Agent } from '@/lib/api';
+import { InfoTooltip } from '@/components/ui/InfoTooltip';
+import { StatusTooltip } from '@/components/ui/StatusTooltip';
 import { SoulEditor } from './agent-tabs/SoulEditor';
 import { UserEditor } from './agent-tabs/UserEditor';
 import { MemoryEditor } from './agent-tabs/MemoryEditor';
@@ -11,13 +13,13 @@ import { ToolsView } from './agent-tabs/ToolsView';
 import { SkillsView } from './agent-tabs/SkillsView';
 import { SessionsView } from './agent-tabs/SessionsView';
 
-const agentTabs: { id: AgentTab; label: string; icon: string }[] = [
-  { id: 'soul', label: 'Soul', icon: '✨' },
-  { id: 'user', label: 'User', icon: '👤' },
-  { id: 'memory', label: 'Memory', icon: '🧠' },
-  { id: 'tools', label: 'Tools', icon: '🔧' },
-  { id: 'skills', label: 'Skills', icon: '🎯' },
-  { id: 'sessions', label: 'Sessions', icon: '💬' },
+const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[] = [
+  { id: 'soul', label: 'Soul', icon: '✨', tooltip: "Defines the agent's personality, behavior rules, and core truths." },
+  { id: 'user', label: 'User', icon: '👤', tooltip: 'Who the user is: preferences, permissions, and profile.' },
+  { id: 'memory', label: 'Memory', icon: '🧠', tooltip: 'Long-term notes and daily logs for continuity. Keep curated.' },
+  { id: 'tools', label: 'Tools', icon: '🔧', tooltip: 'Environment-specific settings: devices, SSH, preferences.' },
+  { id: 'skills', label: 'Skills', icon: '🎯', tooltip: 'Installed capabilities that affect what the agent can do.' },
+  { id: 'sessions', label: 'Sessions', icon: '💬', tooltip: 'Active and previous sessions for status and messaging.' },
 ];
 
 export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
@@ -174,9 +176,16 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
 
           <div className="flex items-center gap-2 shrink-0">
             {agent?.status ? (
-              <span className={cn('badge-status', getStatusBadge(agent.status))}>
-                {agent.status}
-              </span>
+              <StatusTooltip
+                status={agent.status}
+                statusState={agent.statusState}
+                lastActivityAt={agent.lastActivityAt}
+                lastHeartbeatAt={agent.lastHeartbeatAt}
+              >
+                <span className={cn('badge-status cursor-help', getStatusBadge(agent.status))}>
+                  {agent.status}
+                </span>
+              </StatusTooltip>
             ) : null}
           </div>
         </div>
@@ -199,6 +208,7 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
             >
               <span>{tab.icon}</span>
               <span>{tab.label}</span>
+              <InfoTooltip text={tab.tooltip} className="ml-0.5" />
               {tabIsDirty && (
                 <span className="w-2 h-2 rounded-full bg-warning absolute -top-0.5 -right-0.5" />
               )}
