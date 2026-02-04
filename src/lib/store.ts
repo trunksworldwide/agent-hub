@@ -38,6 +38,10 @@ interface ClawdOfficeState {
   activeAgentTab: AgentTab;
   setActiveAgentTab: (tab: AgentTab) => void;
 
+  // Task selection (for detail sheet)
+  selectedTaskId: string | null;
+  setSelectedTaskId: (id: string | null) => void;
+
   // System status
   status: SystemStatus | null;
   setStatus: (status: SystemStatus) => void;
@@ -90,6 +94,11 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   
   activeAgentTab: 'soul',
   setActiveAgentTab: (tab) => set({ activeAgentTab: tab }),
+
+  // Task selection (for detail sheet)
+  selectedTaskId: null,
+  setSelectedTaskId: (id) => set({ selectedTaskId: id }),
+  
   
   // System status
   status: null,

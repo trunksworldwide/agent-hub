@@ -215,6 +215,22 @@ export interface Task {
   assigneeAgentKey?: string;
   createdAt: string;
   updatedAt: string;
+  // Workflow fields
+  isProposed?: boolean;
+  rejectedAt?: string | null;
+  rejectedReason?: string | null;
+  blockedReason?: string | null;
+  blockedAt?: string | null;
+}
+
+// Task comments interface
+export interface TaskComment {
+  id: string;
+  projectId: string;
+  taskId: string;
+  authorAgentKey: string | null;
+  content: string;
+  createdAt: string;
 }
 
 // Mock Data
@@ -1375,7 +1391,7 @@ export async function getTasks(): Promise<Task[]> {
     const projectId = getProjectId();
     const { data, error } = await supabase
       .from('tasks')
-      .select('id,title,description,status,assignee_agent_key,created_at,updated_at')
+      .select('id,title,description,status,assignee_agent_key,created_at,updated_at,is_proposed,rejected_at,rejected_reason,blocked_reason,blocked_at')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false });
 
@@ -1389,6 +1405,11 @@ export async function getTasks(): Promise<Task[]> {
       assigneeAgentKey: t.assignee_agent_key || undefined,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
+      isProposed: t.is_proposed ?? false,
+      rejectedAt: t.rejected_at ?? null,
+      rejectedReason: t.rejected_reason ?? null,
+      blockedReason: t.blocked_reason ?? null,
+      blockedAt: t.blocked_at ?? null,
     }));
   }
 
@@ -1399,14 +1420,22 @@ export async function getTasks(): Promise<Task[]> {
   return [];
 }
 
-export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'status' | 'assigneeAgentKey' | 'title' | 'description'>>): Promise<{ ok: boolean }> {
+export async function updateTask(
+  taskId: string,
+  patch: Partial<Pick<Task, 'status' | 'assigneeAgentKey' | 'title' | 'description' | 'isProposed' | 'rejectedAt' | 'rejectedReason' | 'blockedReason' | 'blockedAt'>>
+): Promise<{ ok: boolean }> {
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
     const update: any = {};
-    if (patch.status) update.status = patch.status;
+    if (patch.status !== undefined) update.status = patch.status;
     if (patch.title !== undefined) update.title = patch.title;
     if (patch.description !== undefined) update.description = patch.description;
     if (patch.assigneeAgentKey !== undefined) update.assignee_agent_key = patch.assigneeAgentKey;
+    if (patch.isProposed !== undefined) update.is_proposed = patch.isProposed;
+    if (patch.rejectedAt !== undefined) update.rejected_at = patch.rejectedAt;
+    if (patch.rejectedReason !== undefined) update.rejected_reason = patch.rejectedReason;
+    if (patch.blockedReason !== undefined) update.blocked_reason = patch.blockedReason;
+    if (patch.blockedAt !== undefined) update.blocked_at = patch.blockedAt;
 
     const { error } = await supabase
       .from('tasks')
@@ -1432,12 +1461,12 @@ export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'stat
         // ignore
       }
 
-      const label = title ? `“${title}”` : taskId;
+      const label = title ? `"${title}"` : taskId;
       await supabase.from('activities').insert({
         project_id: projectId,
         type: 'task_moved',
         message: `Moved ${label} → ${patch.status}`,
-        actor_agent_key: 'agent:main:main',
+        actor_agent_key: DASHBOARD_ACTOR_KEY,
         task_id: taskId,
       });
     }
@@ -1522,6 +1551,97 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
 
   await delay(80);
   return { ok: true };
+}
+
+// ============= Task Comments API =============
+
+export async function getTaskComments(taskId: string): Promise<TaskComment[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('task_comments')
+    .select('id,project_id,task_id,author_agent_key,content,created_at')
+    .eq('project_id', projectId)
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    projectId: c.project_id,
+    taskId: c.task_id,
+    authorAgentKey: c.author_agent_key ?? null,
+    content: c.content,
+    createdAt: c.created_at,
+  }));
+}
+
+export async function createTaskComment(input: {
+  taskId: string;
+  content: string;
+  authorAgentKey?: string;
+}): Promise<{ ok: boolean; comment?: TaskComment; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const authorKey = input.authorAgentKey || DASHBOARD_ACTOR_KEY;
+
+  try {
+    const { data, error } = await supabase
+      .from('task_comments')
+      .insert({
+        project_id: projectId,
+        task_id: input.taskId,
+        author_agent_key: authorKey,
+        content: input.content,
+      })
+      .select('id,project_id,task_id,author_agent_key,content,created_at')
+      .single();
+
+    if (error) throw error;
+
+    // Get task title for activity
+    let taskTitle: string | null = null;
+    try {
+      const { data: taskData } = await supabase
+        .from('tasks')
+        .select('title')
+        .eq('id', input.taskId)
+        .maybeSingle();
+      taskTitle = (taskData as any)?.title ?? null;
+    } catch {
+      // ignore
+    }
+
+    // Log activity
+    const truncatedContent = input.content.length > 80 ? input.content.substring(0, 80) + '...' : input.content;
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_comment',
+      message: `Commented on "${taskTitle || input.taskId}": ${truncatedContent}`,
+      actor_agent_key: authorKey,
+      task_id: input.taskId,
+    });
+
+    return {
+      ok: true,
+      comment: {
+        id: data.id,
+        projectId: data.project_id,
+        taskId: data.task_id,
+        authorAgentKey: data.author_agent_key ?? null,
+        content: data.content,
+        createdAt: data.created_at,
+      },
+    };
+  } catch (e: any) {
+    console.error('createTaskComment failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
 }
 
 export async function createActivity(input: CreateActivityInput): Promise<{ ok: boolean }> {

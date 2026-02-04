@@ -574,30 +574,45 @@ export type Database = {
       tasks: {
         Row: {
           assignee_agent_key: string | null
+          blocked_at: string | null
+          blocked_reason: string | null
           created_at: string
           description: string | null
           id: string
+          is_proposed: boolean | null
           project_id: string
+          rejected_at: string | null
+          rejected_reason: string | null
           status: string
           title: string
           updated_at: string
         }
         Insert: {
           assignee_agent_key?: string | null
+          blocked_at?: string | null
+          blocked_reason?: string | null
           created_at?: string
           description?: string | null
           id?: string
+          is_proposed?: boolean | null
           project_id: string
+          rejected_at?: string | null
+          rejected_reason?: string | null
           status?: string
           title: string
           updated_at?: string
         }
         Update: {
           assignee_agent_key?: string | null
+          blocked_at?: string | null
+          blocked_reason?: string | null
           created_at?: string
           description?: string | null
           id?: string
+          is_proposed?: boolean | null
           project_id?: string
+          rejected_at?: string | null
+          rejected_reason?: string | null
           status?: string
           title?: string
           updated_at?: string
