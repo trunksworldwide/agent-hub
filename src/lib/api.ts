@@ -923,7 +923,7 @@ export async function getProjects(): Promise<Project[]> {
   if (hasSupabase() && supabase) {
     const { data, error } = await supabase
       .from('projects')
-      .select('id,name,workspace_path,tag,created_at')
+      .select('id,name,workspace_path,created_at')
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -932,7 +932,8 @@ export async function getProjects(): Promise<Project[]> {
       id: p.id,
       name: p.name,
       workspace: p.workspace_path || '',
-      tag: p.tag || (p.id === 'front-office' ? 'system' : undefined),
+      // Tag is derived client-side since the column doesn't exist in DB
+      tag: p.id === 'front-office' ? 'system' : undefined,
     }));
   }
 
@@ -945,7 +946,7 @@ export async function getProjects(): Promise<Project[]> {
   ];
 }
 
-export async function createProject(input: { id: string; name: string; tag?: string }): Promise<{ ok: boolean; project?: Project; error?: string }> {
+export async function createProject(input: { id: string; name: string }): Promise<{ ok: boolean; project?: Project; error?: string }> {
   // Prefer Supabase projects if configured.
   // NOTE: In Supabase-only builds we may not have a Control API to create a workspace folder on disk.
   // This path creates the DB row so the UI can proceed; workspace_path can be set later by the Control API.
@@ -953,7 +954,6 @@ export async function createProject(input: { id: string; name: string; tag?: str
     const id = (input.id || '').trim();
     if (!id) return { ok: false, error: 'missing_id' };
     const name = (input.name || id).trim() || id;
-    const tag = input.tag?.trim() || null;
 
     try {
       const { error } = await supabase.from('projects').upsert(
@@ -961,8 +961,7 @@ export async function createProject(input: { id: string; name: string; tag?: str
           id,
           name,
           workspace_path: null,
-          tag,
-        } as any,
+        },
         { onConflict: 'id' }
       );
       if (error) throw error;
@@ -980,7 +979,7 @@ export async function createProject(input: { id: string; name: string; tag?: str
         // ignore
       }
 
-      return { ok: true, project: { id, name, workspace: '', tag: tag || undefined } };
+      return { ok: true, project: { id, name, workspace: '' } };
     } catch (e: any) {
       console.error('createProject (supabase) failed:', e);
       return { ok: false, error: String(e?.message || e) };
