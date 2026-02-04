@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Save, RotateCcw, FileText, ArrowUp } from 'lucide-react';
+import { Save, RotateCcw, RefreshCw, FileText, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useClawdOffice } from '@/lib/store';
@@ -69,6 +69,40 @@ export function MemoryEditor() {
     }
   };
 
+  const handleReload = async () => {
+    if (!selectedAgentId) return;
+
+    const anyDirty = Boolean(longState?.isDirty || todayState?.isDirty);
+    if (anyDirty) {
+      const ok = window.confirm('Discard unsaved changes in Memory docs and reload from server?');
+      if (!ok) return;
+    }
+
+    setFileSaving(currentKey, true);
+    try {
+      const [longData, todayData] = await Promise.all([
+        getAgentFile(selectedAgentId, 'memory_long'),
+        getAgentFile(selectedAgentId, 'memory_today'),
+      ]);
+
+      setFileOriginal(longKey, longData.content);
+      setFileOriginal(todayKey, todayData.content);
+
+      toast({
+        title: 'Reloaded',
+        description: 'Memory docs reloaded from server.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Error',
+        description: String(e?.message || e || 'Failed to reload files.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setFileSaving(currentKey, false);
+    }
+  };
+
   const handleApply = async () => {
     if (!selectedAgentId) return;
     try {
@@ -124,6 +158,17 @@ export function MemoryEditor() {
             </TabsList>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleReload()}
+              disabled={Boolean(currentState?.isSaving)}
+              className="gap-2"
+              title="Reload from server"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reload
+            </Button>
             <Button
               variant="outline"
               size="sm"

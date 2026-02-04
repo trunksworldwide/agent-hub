@@ -1,3 +1,8 @@
+### Manage → Agents: reload brain docs from server (sync-friendly)
+- Added a **Reload** button to SOUL/USER/MEMORY editors.
+- If you have unsaved changes, we confirm before discarding.
+- Makes it easy to pull fresh Supabase/remote edits without a full page refresh.
+
 ### Dashboard: realtime patches for activity + presence (Supabase)
 - `subscribeToProjectRealtime()` now forwards realtime event details instead of just “something changed”.
 - Dashboard applies **activity INSERTs** + **agent_status updates** incrementally for snappier UI, while still falling back to a debounced full refresh for everything else.

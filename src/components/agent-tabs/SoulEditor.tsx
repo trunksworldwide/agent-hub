@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Save, RotateCcw, FileText } from 'lucide-react';
+import { Save, RotateCcw, RefreshCw, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
@@ -56,6 +56,32 @@ export function SoulEditor() {
     }
   };
 
+  const handleReload = async () => {
+    if (!selectedAgentId) return;
+    if (fileState?.isDirty) {
+      const ok = window.confirm('Discard unsaved changes and reload from server?');
+      if (!ok) return;
+    }
+
+    setFileSaving(fileKey, true);
+    try {
+      const data = await getAgentFile(selectedAgentId, 'soul');
+      setFileOriginal(fileKey, data.content);
+      toast({
+        title: 'Reloaded',
+        description: 'SOUL.md reloaded from server.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Error',
+        description: String(e?.message || e || 'Failed to reload file.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setFileSaving(fileKey, false);
+    }
+  };
+
   const handleApply = async () => {
     if (!selectedAgentId) return;
     try {
@@ -105,6 +131,17 @@ export function SoulEditor() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleReload()}
+            disabled={fileState.isSaving}
+            className="gap-2"
+            title="Reload from server"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reload
+          </Button>
           <Button
             variant="outline"
             size="sm"
