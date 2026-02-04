@@ -7,6 +7,7 @@ import { CronPage } from '@/components/pages/CronPage';
 import { ConfigPage } from '@/components/pages/ConfigPage';
 import { DashboardPage } from '@/components/pages/DashboardPage';
 import { useClawdOffice } from '@/lib/store';
+import { cn } from '@/lib/utils';
 
 const Index = () => {
   const { activeMainTab, viewMode } = useClawdOffice();
@@ -31,7 +32,7 @@ const Index = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className={cn('flex flex-col h-screen bg-background', viewMode === 'dashboard' && 'dashboard-texture')}>
       <TopBar />
       <main className="flex-1 overflow-hidden">
         {viewMode === 'dashboard' ? <DashboardPage /> : renderManagePage()}

@@ -1,3 +1,7 @@
+### Dashboard: subtle textured gradient background (mobile polish)
+- Applied the existing `.dashboard-texture` CSS to the Dashboard view wrapper.
+- Gives the main screen a slightly more “alive” mission-control feel without adding any image assets.
+
 ### Server: bump agent_status.last_activity_at when logging Supabase activities (presence)
 - `POST /api/activity` → server-side `logSupabaseActivity()` now best-effort updates `agent_status.last_activity_at` for real agent actors.
 - Helps prevent agents from looking stale in Supabase-first deployments where presence is driven mostly by activity events.
