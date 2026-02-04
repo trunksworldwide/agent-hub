@@ -8,7 +8,6 @@ import { AppShell } from "./components/layout/AppShell";
 import { ActivityPage } from "./components/pages/ActivityPage";
 import { TasksPage } from "./components/pages/TasksPage";
 import { AgentsPage } from "./components/pages/AgentsPage";
-import { BriefPage } from "./components/pages/BriefPage";
 import { SchedulePage } from "./components/pages/SchedulePage";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { DocumentsPage } from "./components/pages/DocumentsPage";
@@ -26,7 +25,6 @@ function AppRoutes() {
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
-        <Route path="/brief" element={<BriefPage />} />
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
