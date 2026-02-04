@@ -399,6 +399,68 @@ export type Database = {
         }
         Relationships: []
       }
+      project_chat_messages: {
+        Row: {
+          author: string
+          created_at: string
+          id: string
+          message: string
+          project_id: string
+          target_agent_key: string | null
+          thread_id: string | null
+        }
+        Insert: {
+          author: string
+          created_at?: string
+          id?: string
+          message: string
+          project_id: string
+          target_agent_key?: string | null
+          thread_id?: string | null
+        }
+        Update: {
+          author?: string
+          created_at?: string
+          id?: string
+          message?: string
+          project_id?: string
+          target_agent_key?: string | null
+          thread_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_chat_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "project_chat_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_chat_threads: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       project_documents: {
         Row: {
           content_text: string | null

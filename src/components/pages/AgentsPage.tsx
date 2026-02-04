@@ -1,22 +1,70 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, HelpCircle } from 'lucide-react';
+import { RefreshCw, HelpCircle, Plus } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
-import { getAgents, type Agent } from '@/lib/api';
+import { getAgents, createAgent, type Agent } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusTooltip } from '@/components/ui/StatusTooltip';
 import { AgentDetail } from '@/components/AgentDetail';
+import { useToast } from '@/hooks/use-toast';
+
+// Auto-suggest emoji based on name/purpose
+function suggestEmoji(name: string, purpose?: string): string {
+  const text = (purpose || name).toLowerCase();
+  if (text.includes('research')) return '🔬';
+  if (text.includes('code') || text.includes('dev') || text.includes('engineer')) return '💻';
+  if (text.includes('write') || text.includes('content') || text.includes('copy')) return '✍️';
+  if (text.includes('data') || text.includes('analys')) return '📊';
+  if (text.includes('design')) return '🎨';
+  if (text.includes('support') || text.includes('help')) return '🤝';
+  if (text.includes('sales') || text.includes('marketing')) return '📈';
+  if (text.includes('test') || text.includes('qa')) return '🧪';
+  if (text.includes('ops') || text.includes('devops')) return '⚙️';
+  if (text.includes('security')) return '🔒';
+  return '🤖';
+}
+
+// Generate agent key from name
+function generateAgentKey(name: string, existingKeys: string[]): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'agent';
+  
+  let base = `agent:${slug}:main`;
+  let candidate = base;
+  let suffix = 2;
+  
+  while (existingKeys.includes(candidate)) {
+    candidate = `agent:${slug}-${suffix}:main`;
+    suffix++;
+  }
+  
+  return candidate;
+}
 
 export function AgentsPage() {
+  const { toast } = useToast();
   const { selectedAgentId, setSelectedAgentId, selectedProjectId } = useClawdOffice();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [detailOpen, setDetailOpen] = useState(false);
   const refreshDebounceRef = useRef<number | null>(null);
+
+  // Create agent dialog state
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentPurpose, setNewAgentPurpose] = useState('');
+  const [newAgentEmoji, setNewAgentEmoji] = useState('🤖');
+  const [newAgentColor, setNewAgentColor] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   // Keep time ticking for "last seen" labels
   useEffect(() => {
@@ -96,18 +144,63 @@ export function AgentsPage() {
     return `${d}d ago`;
   };
 
-  const getStatusBadge = (status: Agent['status']) => {
-    const styles: Record<string, string> = {
-      working: 'badge-working',
-      idle: 'badge-idle',
-      offline: 'badge-offline',
-    };
-    return styles[status] || 'badge-offline';
-  };
-
   const handleAgentClick = (agent: Agent) => {
     setSelectedAgentId(agent.id);
     setDetailOpen(true);
+  };
+
+  // Auto-update emoji when name or purpose changes
+  useEffect(() => {
+    if (newAgentName || newAgentPurpose) {
+      setNewAgentEmoji(suggestEmoji(newAgentName, newAgentPurpose));
+    }
+  }, [newAgentName, newAgentPurpose]);
+
+  const handleCreateAgent = async () => {
+    if (!newAgentName.trim() || !newAgentPurpose.trim()) return;
+
+    setIsCreating(true);
+    try {
+      const existingKeys = agents.map(a => a.id);
+      const agentKey = generateAgentKey(newAgentName, existingKeys);
+
+      const result = await createAgent({
+        agentKey,
+        name: newAgentName.trim(),
+        role: newAgentPurpose.trim(),
+        emoji: newAgentEmoji,
+        color: newAgentColor || undefined,
+      });
+
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to create agent');
+      }
+
+      toast({
+        title: 'Agent created',
+        description: `${newAgentEmoji} ${newAgentName} is ready to go!`,
+      });
+
+      // Reset form and close dialog
+      setNewAgentName('');
+      setNewAgentPurpose('');
+      setNewAgentEmoji('🤖');
+      setNewAgentColor('');
+      setCreateDialogOpen(false);
+
+      // Refresh and select the new agent
+      await refresh();
+      setSelectedAgentId(agentKey);
+      setDetailOpen(true);
+    } catch (e: any) {
+      toast({
+        title: 'Failed to create agent',
+        description: String(e?.message || e),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -144,14 +237,24 @@ export function AgentsPage() {
             </TooltipContent>
           </Tooltip>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={refresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={refresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setCreateDialogOpen(true)}
+            className="gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New Agent
+          </Button>
+        </div>
       </div>
 
       {/* Agent grid */}
@@ -206,8 +309,17 @@ export function AgentsPage() {
         </div>
 
         {agents.length === 0 && !isRefreshing && (
-          <div className="flex items-center justify-center h-40 text-muted-foreground">
-            No agents found in this project.
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+            <p>No agents found in this project.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 gap-2"
+              onClick={() => setCreateDialogOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Create your first agent
+            </Button>
           </div>
         )}
       </div>
@@ -218,6 +330,76 @@ export function AgentsPage() {
           <AgentDetail onOpenSidebar={() => setDetailOpen(false)} />
         </SheetContent>
       </Sheet>
+
+      {/* Create Agent Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Agent</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Name *</label>
+              <Input
+                value={newAgentName}
+                onChange={(e) => setNewAgentName(e.target.value)}
+                placeholder="e.g., Research, Coder, Writer"
+                disabled={isCreating}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Purpose *</label>
+              <Input
+                value={newAgentPurpose}
+                onChange={(e) => setNewAgentPurpose(e.target.value)}
+                placeholder="e.g., Deep research and analysis"
+                disabled={isCreating}
+              />
+              <p className="text-xs text-muted-foreground">
+                What this agent specializes in
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <div className="space-y-2 flex-1">
+                <label className="text-sm font-medium">Emoji</label>
+                <Input
+                  value={newAgentEmoji}
+                  onChange={(e) => setNewAgentEmoji(e.target.value)}
+                  placeholder="🤖"
+                  className="text-center text-2xl"
+                  maxLength={4}
+                  disabled={isCreating}
+                />
+              </div>
+              <div className="space-y-2 flex-1">
+                <label className="text-sm font-medium">Color (optional)</label>
+                <Input
+                  type="color"
+                  value={newAgentColor || '#6366f1'}
+                  onChange={(e) => setNewAgentColor(e.target.value)}
+                  className="h-10 p-1"
+                  disabled={isCreating}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateDialogOpen(false)}
+              disabled={isCreating}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateAgent}
+              disabled={!newAgentName.trim() || !newAgentPurpose.trim() || isCreating}
+            >
+              {isCreating ? 'Creating...' : 'Create Agent'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

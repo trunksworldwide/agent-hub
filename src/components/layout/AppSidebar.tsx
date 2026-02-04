@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell, Brain } from 'lucide-react';
+import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell, Brain, MessageSquare } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -28,6 +28,7 @@ const navItems = [
   { to: '/activity', label: 'Activity', icon: Activity },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/agents', label: 'Agents', icon: Bot },
+  { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/documents', label: 'Knowledge', icon: Brain },
   { to: '/brief', label: 'Brief', icon: FileText },
   { to: '/schedule', label: 'Schedule', icon: Clock },

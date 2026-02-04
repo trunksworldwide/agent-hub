@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PanelLeft } from 'lucide-react';
+import { PanelLeft, Plus } from 'lucide-react';
 import { useClawdOffice, type AgentTab } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { MemoryEditor } from './agent-tabs/MemoryEditor';
 import { ToolsView } from './agent-tabs/ToolsView';
 import { SkillsView } from './agent-tabs/SkillsView';
 import { SessionsView } from './agent-tabs/SessionsView';
+import { NewTaskDialog } from './dialogs/NewTaskDialog';
 
 const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[] = [
   { id: 'soul', label: 'Soul', icon: '✨', tooltip: "Defines the agent's personality, behavior rules, and core truths." },
@@ -25,6 +26,8 @@ const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[
 export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
   const { selectedAgentId, activeAgentTab, setActiveAgentTab, files, selectedProjectId } = useClawdOffice();
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [showNewTask, setShowNewTask] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -36,9 +39,10 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
       }
 
       try {
-        const agents = await getAgents();
+        const agentsData = await getAgents();
         if (!alive) return;
-        setAgent(agents.find((a) => a.id === selectedAgentId) || null);
+        setAgents(agentsData);
+        setAgent(agentsData.find((a) => a.id === selectedAgentId) || null);
       } catch (e) {
         // Fail soft – editing agent files should still work even if roster fetch fails.
         console.warn('Failed to load agent header info:', e);
@@ -165,6 +169,16 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => setShowNewTask(true)}
+            >
+              <Plus className="w-4 h-4" />
+              New Task
+            </Button>
+
             {agent?.status ? (
               <StatusTooltip
                 status={agent.status}
@@ -219,6 +233,14 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
       <div className="flex-1 overflow-hidden">
         {renderTabContent()}
       </div>
+
+      {/* New Task Dialog */}
+      <NewTaskDialog
+        open={showNewTask}
+        onOpenChange={setShowNewTask}
+        agents={agents}
+        defaultAssignee={agent?.id}
+      />
     </div>
   );
 }
