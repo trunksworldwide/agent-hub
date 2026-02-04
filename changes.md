@@ -652,3 +652,9 @@
 ### Presence: allow clearing agent_status.state ("auto" mode)
 - Fixed `updateAgentStatus()` so passing `state: null` clears the `agent_status.state` field instead of forcing it to `idle`.
 - This makes the AgentProfilePanel “(auto)” presence state actually work.
+
+### Supabase-only presence: bump agent_status on local logActivity() writes
+- `src/lib/supabase-data.ts` `logActivity()` now:
+  - defaults the actor to `VITE_DASHBOARD_PRESENCE_AGENT_KEY` when `actor_agent_key` isn't provided
+  - best-effort upserts `agent_status.last_activity_at` for agent actors (normalized) after inserting the activity
+- Keeps presence accurate even when the app is using the lightweight Supabase data helpers (tasks CRUD etc).

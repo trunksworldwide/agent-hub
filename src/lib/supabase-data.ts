@@ -257,17 +257,43 @@ export async function logActivity(input: {
 }): Promise<void> {
   const projectId = getProjectId();
 
+  const dashboardActor = (import.meta as any)?.env?.VITE_DASHBOARD_PRESENCE_AGENT_KEY as string | undefined;
+  const actor = (input.actor_agent_key || dashboardActor || null) as string | null;
+
   const { error } = await supabase
     .from('activities')
     .insert({
       project_id: projectId,
       type: input.type,
       message: input.message,
-      actor_agent_key: input.actor_agent_key || null,
+      actor_agent_key: actor,
       task_id: input.task_id || null,
     });
 
   if (error) {
     console.error('Error logging activity:', error);
+    return;
+  }
+
+  // Best-effort presence bump so Supabase-only builds still reflect activity.
+  const normalizeAgentKey = (raw: string) => {
+    const parts = String(raw || '').split(':');
+    if (parts[0] === 'agent' && parts.length >= 3) return parts.slice(0, 3).join(':');
+    return String(raw || '').trim();
+  };
+
+  if (actor && actor.startsWith('agent:')) {
+    try {
+      await supabase.from('agent_status').upsert(
+        {
+          project_id: projectId,
+          agent_key: normalizeAgentKey(actor),
+          last_activity_at: new Date().toISOString(),
+        },
+        { onConflict: 'project_id,agent_key' }
+      );
+    } catch {
+      // fail soft
+    }
   }
 }
