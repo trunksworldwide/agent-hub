@@ -1,3 +1,7 @@
+### Server: bump agent_status.last_activity_at when logging Supabase activities (presence)
+- `POST /api/activity` → server-side `logSupabaseActivity()` now best-effort updates `agent_status.last_activity_at` for real agent actors.
+- Helps prevent agents from looking stale in Supabase-first deployments where presence is driven mostly by activity events.
+
 ### AgentProfilePanel: Presence “Last seen” shows relative + absolute time
 - Presence section now includes a **Last seen** row that combines a relative timestamp (e.g. "5m ago") with the absolute datetime.
 - Makes it easier to sanity-check presence freshness at a glance.

@@ -29,6 +29,47 @@ function getSupabase() {
   return _supabase;
 }
 
+async function bumpSupabaseAgentLastActivity({ projectId, agentKey, whenIso }) {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    // Best-effort: try update first so we don't accidentally clobber state/note.
+    const { data: updated, error: updErr } = await supabase
+      .from('agent_status')
+      .update({ last_activity_at: whenIso })
+      .eq('project_id', projectId)
+      .eq('agent_key', agentKey)
+      .select('agent_key');
+
+    if (updErr) {
+      console.error('Supabase agent_status update (last_activity_at) failed:', updErr);
+      return;
+    }
+
+    if ((updated || []).length > 0) return;
+
+    // If the row doesn't exist yet, insert a minimal presence row.
+    // NOTE: `state` is included for safety in case the DB has a NOT NULL constraint.
+    const { error: upsertErr } = await supabase.from('agent_status').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        state: 'idle',
+        last_heartbeat_at: whenIso,
+        last_activity_at: whenIso,
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+
+    if (upsertErr) {
+      console.error('Supabase agent_status upsert (seed last_activity_at) failed:', upsertErr);
+    }
+  } catch (e) {
+    console.error('Supabase agent_status bump threw:', e);
+  }
+}
+
 async function logSupabaseActivity({ projectId, type, message, actor }) {
   try {
     const supabase = getSupabase();
@@ -43,6 +84,17 @@ async function logSupabaseActivity({ projectId, type, message, actor }) {
 
     if (error) {
       console.error('Supabase activity insert failed:', error);
+      return;
+    }
+
+    // Keep presence fresh in Supabase-first builds when agents emit activity events.
+    const agentKey = normalizeAgentKey(actor);
+    if (agentKey) {
+      await bumpSupabaseAgentLastActivity({
+        projectId,
+        agentKey,
+        whenIso: new Date().toISOString(),
+      });
     }
   } catch (e) {
     console.error('Supabase activity insert threw:', e);
