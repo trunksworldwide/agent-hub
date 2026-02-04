@@ -644,3 +644,7 @@
 ### Dashboard: cron feed deep-links now focus the job
 - Clicking a cron (or cron_run_requested) item in the Dashboard “Live Feed” now opens **Manage → Cron** and auto-focuses the referenced job id when available.
 - The feed details modal’s “Open Cron manager” button now does the same.
+
+### Dashboard: mobile-friendly Live Feed controls
+- Live Feed filter controls (type/agent/search/refresh) now wrap on small screens, with a full-width search field.
+- Keeps the dashboard usable on phones without horizontal overflow.

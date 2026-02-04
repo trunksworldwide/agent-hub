@@ -844,55 +844,58 @@ export function DashboardPage() {
                 ))}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Select value={feedTypeFilter} onValueChange={setFeedTypeFilter}>
-                  <SelectTrigger className="h-7 w-[150px] text-xs" aria-label="Filter feed type">
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFeedTypes.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t === 'all' ? 'All types' : t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
+                <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                  <Select value={feedTypeFilter} onValueChange={setFeedTypeFilter}>
+                    <SelectTrigger className="h-7 w-[140px] sm:w-[150px] text-xs" aria-label="Filter feed type">
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFeedTypes.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t === 'all' ? 'All types' : t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                <Select value={feedAgentFilter} onValueChange={setFeedAgentFilter}>
-                  <SelectTrigger className="h-7 w-[170px] text-xs" aria-label="Filter feed agent">
-                    <SelectValue placeholder="All agents" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFeedAgents.map((a) => (
-                      <SelectItem key={a.key} value={a.key}>
-                        {a.key === 'all' ? a.label : `${a.avatar || ''} ${a.label}`.trim()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Select value={feedAgentFilter} onValueChange={setFeedAgentFilter}>
+                    <SelectTrigger className="h-7 w-[160px] sm:w-[170px] text-xs" aria-label="Filter feed agent">
+                      <SelectValue placeholder="All agents" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFeedAgents.map((a) => (
+                        <SelectItem key={a.key} value={a.key}>
+                          {a.key === 'all' ? a.label : `${a.avatar || ''} ${a.label}`.trim()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                <Input
-                  value={feedSearch}
-                  onChange={(e) => setFeedSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="h-7 w-[200px] text-xs"
-                />
+                  <Input
+                    value={feedSearch}
+                    onChange={(e) => setFeedSearch(e.target.value)}
+                    placeholder="Search…"
+                    className="h-7 w-full sm:w-[220px] md:w-[200px] text-xs"
+                  />
 
-                <span className="text-[11px] text-muted-foreground">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={refresh}
+                    disabled={isRefreshing}
+                    title="Refresh"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', isRefreshing ? 'animate-spin' : '')} />
+                  </Button>
+                </div>
+
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                   {lastRefreshedAt
                     ? `Updated ${Math.max(0, Math.floor((currentTime.getTime() - lastRefreshedAt.getTime()) / 1000))}s ago`
                     : 'Not yet updated'}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={refresh}
-                  disabled={isRefreshing}
-                  title="Refresh"
-                >
-                  <RefreshCw className={cn('w-4 h-4', isRefreshing ? 'animate-spin' : '')} />
-                </Button>
               </div>
             </div>
           </div>
