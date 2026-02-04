@@ -1,103 +1,34 @@
 
-# ClawdOS Multi-Feature Improvement Plan
+
+# Schedule Page UI Cleanup + Delete Functionality Plan
 
 ## Overview
 
-This plan implements four major improvements to ClawdOS additively, without breaking existing functionality:
-
-- A) Task assignee flow with project-scoped agent selection
-- B) Human-friendly summaries for the Activity feed
-- C) Schedule page toggle/create queue support (extending existing cron mirror)
-- D) Robust project dropdown default behavior
+This plan improves the Schedule/Cron page with a cleaner, more modern UI layout and adds proper delete functionality via the Supabase queue pattern (since `cron_mirror` is a read-only mirror of the Mac mini executor).
 
 ---
 
-## A) Tasks: Add Project-Scoped Assignee Flow
+## Current State Analysis
 
-### Current State
-- `TasksPage.tsx` has a "New Task" dialog with only title and description fields
-- Backend already supports `tasks.assignee_agent_key` column
-- `createTask()` in `api.ts` already accepts `assigneeAgentKey` parameter
-- `getAgents()` returns project-scoped agents via `selectedProjectId`
-- Task cards show assignee if set but offer no way to change it
+Looking at the screenshot and code, the current UI has several issues:
 
-### Implementation
-
-**1. Update "New Task" Dialog (TasksPage.tsx)**
-- Add state for `newTaskAssignee` (string | null)
-- Add an Assignee dropdown below description:
-  - First option: "Unassigned" (value: null)
-  - Remaining options: agents from current project (emoji + name)
-- Pass `assigneeAgentKey` to `createTask()` when set
-
-**2. Task Cards: Add Quick Reassign**
-- Add a second dropdown/select on each task card for reassignment
-- Options: Unassigned + all project agents
-- On change, call `updateTask(taskId, { assigneeAgentKey })` 
-- Optimistic UI update
-
-**3. File Changes**
-- `src/components/pages/TasksPage.tsx`: Add assignee select to dialog and task cards
+1. **Awkward spacing** - Refresh and New Job buttons are separated with odd gaps
+2. **Prominent connection status panel** - Takes up too much visual space for normal operation
+3. **Dense job cards** - Schedule badge (e.g., "Daily at 8:00 AM America/New_York") is cramped
+4. **Missing delete** - No way to remove jobs (and deleting from `cron_mirror` directly won't work since the source of truth is on Mac mini)
+5. **Floating "Last run: ok"** - The checkmark status is presentable but could be cleaner
 
 ---
 
-## B) Human-Friendly Summaries for Activity Feed
+## Phase 1: Database Schema - Add `cron_delete_requests` Table
 
-### Current State
-- `activities` table has: `id`, `type`, `message`, `actor_agent_key`, `task_id`, `created_at`
-- Activity feed shows raw `message` directly
-- Messages are developer-focused (e.g., "Moved task to in_progress")
+### Table Definition
 
-### Implementation
-
-**1. Add `summary` Column to activities Table**
-- Add nullable `summary` text column via migration
-- This stores the human-friendly version when available
-
-**2. Create Client-Side Template Mapper**
-- Add `generateActivitySummary()` function in new file `src/lib/activity-summary.ts`
-- Map known activity types to friendly templates:
-  - `task_created` -> "Created a new task: {title}"
-  - `task_moved` -> "Moved task to {status}"
-  - `agent_created` -> "Added a new team member: {name}"
-  - `brain_doc_updated` -> "Updated {doc} documentation"
-  - `cron_run_requested` -> "Scheduled {job} to run"
-  - Default fallback: return original message
-
-**3. Update Activity UI**
-- Show `summary` if present, otherwise generate one client-side from `message` + `type`
-- Keep raw message accessible via "Details" expand or tooltip
-
-**4. Database Migration**
 ```sql
-ALTER TABLE public.activities 
-ADD COLUMN IF NOT EXISTS summary text;
-```
-
-**5. File Changes**
-- New file: `src/lib/activity-summary.ts`
-- `src/components/pages/ActivityPage.tsx`: Use summary generation, add expandable details
-- `src/lib/api.ts`: Update `ActivityItem` interface to include optional `summary`
-
----
-
-## C) Schedule: Toggle and Create Queue Support
-
-### Current State
-- `cron_mirror` table exists (job metadata from Mac mini)
-- `cron_run_requests` table exists (run queue)
-- Toggle switches are disabled when Control API not connected
-- No ability to create new cron jobs from UI when offline
-
-### Implementation
-
-**1. Add `cron_job_patch_requests` Table**
-```sql
-CREATE TABLE public.cron_job_patch_requests (
+CREATE TABLE public.cron_delete_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id text NOT NULL,
   job_id text NOT NULL,
-  patch_json jsonb NOT NULL,  -- { "enabled": true/false, "name": "...", etc. }
   requested_at timestamptz NOT NULL DEFAULT now(),
   requested_by text,  -- "ui" or agent key
   status text NOT NULL DEFAULT 'queued',  -- queued/running/done/error
@@ -106,243 +37,294 @@ CREATE TABLE public.cron_job_patch_requests (
   completed_at timestamptz
 );
 
-CREATE INDEX cron_job_patch_requests_project_time_idx 
-  ON public.cron_job_patch_requests(project_id, requested_at DESC);
+CREATE INDEX cron_delete_requests_project_time_idx 
+  ON public.cron_delete_requests(project_id, requested_at DESC);
 
-ALTER TABLE public.cron_job_patch_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cron_delete_requests ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "cron_job_patch_requests_select_anon" ON public.cron_job_patch_requests
+CREATE POLICY "cron_delete_requests_select_anon" ON public.cron_delete_requests
   FOR SELECT USING (true);
-CREATE POLICY "cron_job_patch_requests_insert_anon" ON public.cron_job_patch_requests
+CREATE POLICY "cron_delete_requests_insert_anon" ON public.cron_delete_requests
   FOR INSERT WITH CHECK (true);
-CREATE POLICY "cron_job_patch_requests_update_anon" ON public.cron_job_patch_requests
+CREATE POLICY "cron_delete_requests_update_anon" ON public.cron_delete_requests
   FOR UPDATE USING (true) WITH CHECK (true);
 ```
-
-**2. Add `cron_create_requests` Table**
-```sql
-CREATE TABLE public.cron_create_requests (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id text NOT NULL,
-  name text NOT NULL,
-  schedule_kind text,  -- "cron" or "every"
-  schedule_expr text NOT NULL,  -- cron expression or ms value
-  tz text,
-  instructions text,
-  requested_at timestamptz NOT NULL DEFAULT now(),
-  requested_by text,
-  status text NOT NULL DEFAULT 'queued',
-  result jsonb,
-  picked_up_at timestamptz,
-  completed_at timestamptz
-);
-
-CREATE INDEX cron_create_requests_project_time_idx 
-  ON public.cron_create_requests(project_id, requested_at DESC);
-
-ALTER TABLE public.cron_create_requests ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "cron_create_requests_select_anon" ON public.cron_create_requests
-  FOR SELECT USING (true);
-CREATE POLICY "cron_create_requests_insert_anon" ON public.cron_create_requests
-  FOR INSERT WITH CHECK (true);
-CREATE POLICY "cron_create_requests_update_anon" ON public.cron_create_requests
-  FOR UPDATE USING (true) WITH CHECK (true);
-```
-
-**3. Update API Layer (api.ts)**
-- Add `queueCronPatchRequest(jobId, patch)` function
-- Add `queueCronCreateRequest(job)` function
-- Add interfaces for the new request types
-
-**4. Update CronPage.tsx**
-
-Toggle behavior:
-- If Control API connected: call `toggleCronJob()` directly (unchanged)
-- If Control API NOT connected:
-  - Queue patch request with `{ enabled: !current }`
-  - Show toast: "Queued toggle. Will apply when Mac mini worker is online."
-  - Optimistic UI: show "Pending..." indicator on switch
-
-Schedule frequency display:
-- Parse `schedule_kind` + `schedule_expr` into human-readable format:
-  - `every` + `900000` -> "Every 15 minutes"
-  - `cron` + `0 9 * * *` + tz -> "Daily at 9:00 AM ET"
-- Add helper function `formatSchedule(kind, expr, tz)`
-
-Last status cleanup:
-- Replace floating checkmark with inline text: "Last run: OK" or "Last run: Error"
-- Move to expanded details section if needed
-
-Add "+ New Scheduled Task" button:
-- Opens dialog with name, schedule, timezone, instructions
-- When Control API connected: create directly
-- When offline: queue create request
-
-**5. Update Realtime Subscriptions (supabase.ts)**
-- Add subscriptions for `cron_job_patch_requests` and `cron_create_requests`
-
-**6. File Changes**
-- `src/lib/api.ts`: Add new queue functions and interfaces
-- `src/lib/supabase.ts`: Add realtime subscriptions for new tables
-- `src/components/pages/CronPage.tsx`: Update toggle logic, add create dialog, improve schedule display
 
 ---
 
-## D) Project Dropdown: Robust Default Behavior
+## Phase 2: API Layer Updates
 
-### Current State
-- `AppSidebar.tsx` already has logic to fall back to `front-office` or first project
-- Uses `DEFAULT_PROJECT_ID` from `project.ts`
-- Shows toast when falling back
+### File: `src/lib/api.ts`
 
-### Current Issue
-- The create project flow might temporarily leave selection in a weird state
-- Edge case: if `projects` array is empty during creation, selection could blank
+1. **Add interface:**
+   ```typescript
+   export interface CronDeleteRequest {
+     id: string;
+     projectId: string;
+     jobId: string;
+     requestedBy?: string | null;
+     requestedAt: string;
+     status: 'queued' | 'running' | 'done' | 'error';
+     pickedUpAt?: string | null;
+     completedAt?: string | null;
+     result?: any;
+   }
+   ```
 
-### Implementation
+2. **Add function:**
+   ```typescript
+   export async function queueCronDeleteRequest(jobId: string): Promise<{ ok: boolean; requestId?: string; error?: string }>
+   ```
 
-**1. Strengthen Validation in AppSidebar.tsx**
-- Ensure `selectedProjectId` is never empty string or undefined
-- During project creation, do NOT clear current selection
-- After creation, explicitly set to new project ID only after success
+3. **Add getter:**
+   ```typescript
+   export async function getCronDeleteRequests(limit?: number): Promise<CronDeleteRequest[]>
+   ```
 
-**2. Add Guard in Store (store.ts)**
-- `setSelectedProjectId` should validate input is non-empty
-- If empty/invalid passed, fall back to `DEFAULT_PROJECT_ID`
+---
 
-**3. File Changes**
-- `src/lib/store.ts`: Add validation to `setSelectedProjectId`
-- `src/components/layout/AppSidebar.tsx`: Minor refinements to ensure no blank state
+## Phase 3: Realtime Subscriptions
+
+### File: `src/lib/supabase.ts`
+
+Extend `subscribeToProjectRealtime()` to include `cron_delete_requests`:
+
+```typescript
+.on(
+  'postgres_changes',
+  { event: '*', schema: 'public', table: 'cron_delete_requests', filter: `project_id=eq.${projectId}` },
+  (payload) => onChange({ table: 'cron_delete_requests', ... })
+)
+```
+
+---
+
+## Phase 4: UI/UX Overhaul
+
+### File: `src/components/pages/CronPage.tsx`
+
+### 4.1 Header Layout Cleanup
+
+**Before:**
+```
+Scheduled Jobs                    [Refresh]    [+ New Job]
+Manage cron jobs...
+Updated: just now
+```
+
+**After:**
+```
+Scheduled Jobs                           🔄  [+ New Job]
+Manage cron jobs and scheduled tasks.
+```
+
+- Move "Updated: X ago" to a subtle inline indicator or footer
+- Combine Refresh into an icon-only button next to "+ New Job"
+- Use consistent button grouping with proper gap
+
+### 4.2 Connection Status - Move to Footer
+
+**Before:** Prominent card at top with both Supabase and Control API status
+
+**After:**
+- Move to a subtle footer bar at the bottom of the page
+- Show as a single line: "⬤ Supabase connected • ○ Control API offline"
+- Only show error banners prominently (at top) when something fails
+- Keep the error retry functionality but move normal status to footer
+
+### 4.3 Job Card Redesign
+
+**Current structure:**
+```
+[Toggle] Name [Schedule Badge]
+         Next: — • Last: Feb 3, 8:00 AM    ✓ Last run: ok  [Edit] [Run] [⌄]
+```
+
+**New structure:**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ [Toggle] Job Name                              [▶ Run]  [🗑]  [⌄]       │
+│          Every 15 minutes                      Last: ok • Feb 3         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+Key changes:
+- **Schedule** on second line, no badge wrapper (cleaner)
+- **Last status + date** combined in one line on the right
+- **Actions** simplified: Run, Trash (delete), Expand
+- **Edit** moved into expanded details section (less common action)
+- Remove the separate schedule badge styling for a cleaner look
+
+### 4.4 Schedule Display Improvements
+
+Current `formatSchedule()` already handles most cases well, but:
+- Truncate long timezone names in the collapsed view
+- Show full timezone in expanded details
+- Use tooltip for overflow
+
+**Examples:**
+| Raw | Display |
+|-----|---------|
+| `every` + `900000` | Every 15 minutes |
+| `cron` + `0 9 * * *` + `America/New_York` | Daily at 9:00 AM ET |
+| `cron` + `0 8 * * *` + `America/New_York` | Daily at 8:00 AM ET |
+
+Note: Abbreviate `America/New_York` → `ET` in compact view
+
+### 4.5 Delete Button + Confirmation
+
+Add trash icon button to each job row with confirmation dialog:
+
+```typescript
+// State
+const [deletingJob, setDeletingJob] = useState<CronMirrorJob | null>(null);
+const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+
+// Confirmation dialog
+<AlertDialog open={Boolean(deletingJob)} onOpenChange={(open) => { if (!open) setDeletingJob(null); }}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Delete scheduled job?</AlertDialogTitle>
+      <AlertDialogDescription>
+        This will remove "{deletingJob?.name}" from the executor. This action cannot be undone.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Cancel</AlertDialogCancel>
+      <AlertDialogAction onClick={handleDelete} className="bg-destructive">
+        Delete
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+### 4.6 Delete Handler Logic
+
+```typescript
+const handleDelete = async () => {
+  if (!deletingJob) return;
+  
+  const job = deletingJob;
+  setDeletingJob(null);
+  setPendingDeletes((prev) => new Set(prev).add(job.jobId));
+  
+  try {
+    if (controlApiConnected) {
+      // Direct delete via Control API (when implemented)
+      // await deleteCronJob(job.jobId);
+      toast({ title: 'Job deleted', description: `${job.name} has been removed.` });
+    } else {
+      // Queue delete request
+      const result = await queueCronDeleteRequest(job.jobId);
+      if (result.ok) {
+        toast({
+          title: 'Delete queued',
+          description: `${job.name} will be removed when the Mac mini executor picks up the request.`,
+        });
+      } else {
+        throw new Error(result.error || 'Failed to queue delete');
+      }
+    }
+  } catch (err: any) {
+    toast({ title: 'Failed to delete job', description: String(err?.message || err), variant: 'destructive' });
+    setPendingDeletes((prev) => { const next = new Set(prev); next.delete(job.jobId); return next; });
+  }
+};
+```
+
+### 4.7 Visual Indicator for Pending Delete
+
+Jobs with a pending delete request show a subtle badge and are slightly faded:
+
+```tsx
+{pendingDeletes.has(job.jobId) && (
+  <Badge variant="secondary" className="text-[10px] bg-destructive/10 text-destructive">
+    Deletion pending
+  </Badge>
+)}
+```
+
+### 4.8 Requests Section - Combine All Request Types
+
+Current: Only shows "Recent Run Requests"
+
+New: Show a unified "Pending Requests" section that includes:
+- Run requests (status: queued/running)
+- Toggle (patch) requests (status: queued/running)
+- Delete requests (status: queued/running)
+- Completed requests in a separate collapsible "History" section
+
+---
+
+## Phase 5: Footer Status Bar Component
+
+Create a new sub-component for the connection status footer:
+
+```tsx
+interface ConnectionStatusFooterProps {
+  supabaseConnected: boolean;
+  controlApiConnected: boolean;
+}
+
+function ConnectionStatusFooter({ supabaseConnected, controlApiConnected }: ConnectionStatusFooterProps) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur px-4 py-2 text-xs text-muted-foreground">
+      <div className="max-w-4xl mx-auto flex items-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <span className={cn('w-1.5 h-1.5 rounded-full', supabaseConnected ? 'bg-success' : 'bg-muted-foreground')} />
+          <span>Supabase</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={cn('w-1.5 h-1.5 rounded-full', controlApiConnected ? 'bg-success' : 'bg-muted-foreground')} />
+          <span>Control API</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
 
 ---
 
 ## Implementation Order
 
-1. **Database migrations** (3 changes):
-   - Add `summary` column to `activities`
-   - Create `cron_job_patch_requests` table
-   - Create `cron_create_requests` table
-
-2. **API layer updates** (`src/lib/api.ts`):
-   - Add summary to ActivityItem interface
-   - Add patch/create queue functions for cron
-
-3. **New helper file** (`src/lib/activity-summary.ts`):
-   - Template-based summary generator
-
-4. **Realtime updates** (`src/lib/supabase.ts`):
-   - Add subscriptions for new cron tables
-
-5. **Store validation** (`src/lib/store.ts`):
-   - Guard against empty project selection
-
-6. **UI updates** (in order):
-   - `TasksPage.tsx`: Assignee dropdown in dialog + task cards
-   - `ActivityPage.tsx`: Summary display with expand for details
-   - `CronPage.tsx`: Toggle queue, schedule formatting, create dialog
-   - `AppSidebar.tsx`: Minor selection guard refinements
+1. **Database migration**: Create `cron_delete_requests` table with RLS
+2. **API layer**: Add `queueCronDeleteRequest()` and `getCronDeleteRequests()` 
+3. **Realtime**: Subscribe to `cron_delete_requests` changes
+4. **CronPage UI**:
+   - Refactor header layout (compact actions)
+   - Move connection status to footer
+   - Add delete button + confirmation dialog
+   - Add pending delete visual state
+   - Combine requests section to show run/toggle/delete
+5. **Polish**: Responsive tweaks, mobile testing
 
 ---
 
-## Technical Details
+## File Changes Summary
 
-### Activity Summary Templates
-
-```typescript
-// src/lib/activity-summary.ts
-const TEMPLATES: Record<string, (msg: string, type: string) => string> = {
-  task_created: (msg) => `Created a new task: "${msg}"`,
-  task_moved: (msg) => {
-    const match = msg.match(/Moved (.+) → (.+)/);
-    if (match) return `Moved task to ${match[2]}`;
-    return msg;
-  },
-  agent_created: (msg) => {
-    const match = msg.match(/Created agent (.+)/);
-    if (match) return `Added team member: ${match[1]}`;
-    return msg;
-  },
-  brain_doc_updated: (msg) => {
-    const match = msg.match(/Updated (.+)/);
-    if (match) return `Updated ${match[1]} documentation`;
-    return msg;
-  },
-  cron_run_requested: (msg) => {
-    const match = msg.match(/Requested cron run:\s*(.+)/);
-    if (match) return `Scheduled "${match[1]}" to run`;
-    return msg;
-  },
-};
-
-export function generateActivitySummary(type: string, message: string): string {
-  const template = TEMPLATES[type];
-  if (template) return template(message, type);
-  return message;
-}
-```
-
-### Schedule Formatting Helper
-
-```typescript
-// In CronPage.tsx or new utility file
-function formatSchedule(kind: string | null, expr: string | null, tz?: string | null): string {
-  if (!expr) return '—';
-  
-  if (kind === 'every' || !kind) {
-    const ms = parseInt(expr, 10);
-    if (!isNaN(ms)) {
-      if (ms < 60000) return `Every ${Math.round(ms / 1000)}s`;
-      if (ms < 3600000) return `Every ${Math.round(ms / 60000)} minutes`;
-      return `Every ${Math.round(ms / 3600000)} hours`;
-    }
-  }
-  
-  // Cron expression parsing (simplified)
-  if (kind === 'cron') {
-    const parts = expr.split(' ');
-    if (parts.length === 5) {
-      const [min, hour, dom, mon, dow] = parts;
-      if (dom === '*' && mon === '*' && dow === '*') {
-        return `Daily at ${hour}:${min.padStart(2, '0')}${tz ? ` ${tz}` : ''}`;
-      }
-      // Add more patterns as needed
-    }
-    return `Cron: ${expr}${tz ? ` (${tz})` : ''}`;
-  }
-  
-  return expr;
-}
-```
+| File | Changes |
+|------|---------|
+| `supabase/migrations/xxx.sql` | Create `cron_delete_requests` table |
+| `src/lib/api.ts` | Add `CronDeleteRequest` interface, `queueCronDeleteRequest()`, `getCronDeleteRequests()` |
+| `src/lib/supabase.ts` | Add realtime subscription for `cron_delete_requests` |
+| `src/components/pages/CronPage.tsx` | UI overhaul: header, footer status, job cards, delete functionality |
 
 ---
 
 ## QA Checklist
 
-### Tasks
-- [ ] New Task dialog shows Assignee dropdown with project agents
-- [ ] Creating task with assignee saves correctly
-- [ ] Task cards show assignee (emoji + name) when set
-- [ ] Quick reassign dropdown works on task cards
-- [ ] Reassignment updates optimistically
+- [ ] Header layout is clean with Refresh icon + New Job button aligned right
+- [ ] Connection status moved to subtle footer (not prominent card)
+- [ ] Error banners still show prominently when something fails
+- [ ] Job cards are cleaner with schedule on second line
+- [ ] Delete button shows on each job row
+- [ ] Delete confirmation dialog appears before deletion
+- [ ] Delete queues request when Control API is offline
+- [ ] "Deletion pending" badge shows while waiting for executor
+- [ ] Jobs with pending deletes are visually indicated
+- [ ] Realtime updates work for delete requests
+- [ ] Mobile responsive layout works
+- [ ] No breaking changes to existing functionality
 
-### Activity
-- [ ] Activity items show friendly summaries
-- [ ] Raw message accessible via expand/details
-- [ ] New summary column added to database
-- [ ] Template mapper handles known types
-
-### Schedule
-- [ ] Toggle works via queue when Control API offline
-- [ ] Toast confirms "Queued toggle" behavior
-- [ ] Schedule shows human-readable format (Every 15 min, Daily at 9 AM)
-- [ ] Last status shows as text, not floating icon
-- [ ] "+ New Scheduled Task" button opens create dialog
-- [ ] Create queues request when offline
-- [ ] Realtime updates for new tables work
-
-### Project Dropdown
-- [ ] Never shows blank/empty selection
-- [ ] Defaults to front-office when invalid
-- [ ] Create project flow doesn't break selection
-- [ ] Toast shows when falling back to different project
