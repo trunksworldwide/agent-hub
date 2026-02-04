@@ -1876,3 +1876,177 @@ export function getApiStatus(): {
     mode: 'supabase-only',
   };
 }
+
+// ============= Chat =============
+
+export interface ChatThread {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  projectId: string;
+  threadId: string | null;
+  author: string;
+  targetAgentKey: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export async function getChatThreads(): Promise<ChatThread[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('project_chat_threads')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      projectId: row.project_id,
+      title: row.title || 'General',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  } catch (e) {
+    console.error('getChatThreads failed:', e);
+    return [];
+  }
+}
+
+export async function getOrCreateDefaultThread(): Promise<ChatThread> {
+  if (!hasSupabase() || !supabase) {
+    throw new Error('supabase_not_configured');
+  }
+
+  const projectId = getProjectId();
+
+  // Try to find existing default thread
+  const { data: existing } = await supabase
+    .from('project_chat_threads')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('title', 'General')
+    .limit(1)
+    .single();
+
+  if (existing) {
+    return {
+      id: existing.id,
+      projectId: existing.project_id,
+      title: existing.title || 'General',
+      createdAt: existing.created_at,
+      updatedAt: existing.updated_at,
+    };
+  }
+
+  // Create new default thread
+  const { data, error } = await supabase
+    .from('project_chat_threads')
+    .insert({
+      project_id: projectId,
+      title: 'General',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    projectId: data.project_id,
+    title: data.title || 'General',
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function getChatMessages(threadId?: string, limit = 100): Promise<ChatMessage[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+
+  try {
+    let query = supabase
+      .from('project_chat_messages')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (threadId) {
+      query = query.eq('thread_id', threadId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      projectId: row.project_id,
+      threadId: row.thread_id,
+      author: row.author,
+      targetAgentKey: row.target_agent_key,
+      message: row.message,
+      createdAt: row.created_at,
+    }));
+  } catch (e) {
+    console.error('getChatMessages failed:', e);
+    return [];
+  }
+}
+
+export async function sendChatMessage(input: {
+  threadId?: string;
+  message: string;
+  targetAgentKey?: string;
+}): Promise<{ ok: boolean; message?: ChatMessage; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('project_chat_messages')
+      .insert({
+        project_id: projectId,
+        thread_id: input.threadId || null,
+        author: 'ui',
+        target_agent_key: input.targetAgentKey || null,
+        message: input.message,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      ok: true,
+      message: {
+        id: data.id,
+        projectId: data.project_id,
+        threadId: data.thread_id,
+        author: data.author,
+        targetAgentKey: data.target_agent_key,
+        message: data.message,
+        createdAt: data.created_at,
+      },
+    };
+  } catch (e: any) {
+    console.error('sendChatMessage failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
