@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil, AlertCircle, Database, Wifi, WifiOff, Search, Filter, Plus } from 'lucide-react';
+import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil, AlertCircle, Search, Filter, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   getCronJobs,
   toggleCronJob,
@@ -17,10 +27,13 @@ import {
   getCronRunRequests,
   queueCronPatchRequest,
   queueCronCreateRequest,
+  queueCronDeleteRequest,
+  getCronDeleteRequests,
   type CronJob,
   type CronRunEntry,
   type CronMirrorJob,
   type CronRunRequest,
+  type CronDeleteRequest,
 } from '@/lib/api';
 import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
@@ -42,14 +55,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 // ============= Helpers =============
+
+/** Abbreviate common timezone names for compact display */
+function abbreviateTz(tz: string | null | undefined): string {
+  if (!tz) return '';
+  const abbrevMap: Record<string, string> = {
+    'America/New_York': 'ET',
+    'America/Chicago': 'CT',
+    'America/Denver': 'MT',
+    'America/Los_Angeles': 'PT',
+    'America/Phoenix': 'AZ',
+    'Europe/London': 'GMT',
+    'Europe/Paris': 'CET',
+    'Asia/Tokyo': 'JST',
+    'UTC': 'UTC',
+  };
+  return abbrevMap[tz] || tz;
+}
 
 /**
  * Format schedule expression into human-readable text
  */
-function formatSchedule(kind: string | null | undefined, expr: string | null | undefined, tz?: string | null): string {
+function formatSchedule(kind: string | null | undefined, expr: string | null | undefined, tz?: string | null, compact = true): string {
   if (!expr) return '—';
+  
+  const tzLabel = compact ? abbreviateTz(tz) : tz;
   
   // Handle "every" type (milliseconds)
   if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
@@ -78,7 +115,7 @@ function formatSchedule(kind: string | null | undefined, expr: string | null | u
         const ampm = hourNum >= 12 ? 'PM' : 'AM';
         const hour12 = hourNum === 0 ? 12 : hourNum > 12 ? hourNum - 12 : hourNum;
         const timeStr = `${hour12}:${String(minNum).padStart(2, '0')} ${ampm}`;
-        return `Daily at ${timeStr}${tz ? ` ${tz}` : ''}`;
+        return `Daily at ${timeStr}${tzLabel ? ` ${tzLabel}` : ''}`;
       }
       
       // Every N minutes
@@ -94,7 +131,7 @@ function formatSchedule(kind: string | null | undefined, expr: string | null | u
     }
     
     // Fallback: show cron expression
-    return `Cron: ${expr}${tz ? ` (${tz})` : ''}`;
+    return `Cron: ${expr}${tzLabel ? ` (${tzLabel})` : ''}`;
   }
   
   return expr;
@@ -102,106 +139,44 @@ function formatSchedule(kind: string | null | undefined, expr: string | null | u
 
 // ============= Sub-components =============
 
-interface ConnectionStatusPanelProps {
+interface ConnectionStatusFooterProps {
   supabaseConnected: boolean;
   controlApiConnected: boolean;
-  controlApiUrl: string | null;
-  lastError: string | null;
-  onRetry: () => void;
-  loading: boolean;
 }
 
-function ConnectionStatusPanel({
-  supabaseConnected,
-  controlApiConnected,
-  controlApiUrl,
-  lastError,
-  onRetry,
-  loading,
-}: ConnectionStatusPanelProps) {
+function ConnectionStatusFooter({ supabaseConnected, controlApiConnected }: ConnectionStatusFooterProps) {
   return (
-    <Card className="mb-6">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            {/* Supabase Status */}
-            <div className="flex items-center gap-2">
-              <Database className={cn('w-4 h-4', supabaseConnected ? 'text-success' : 'text-muted-foreground')} />
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    'w-2 h-2 rounded-full',
-                    supabaseConnected ? 'bg-success' : 'bg-muted-foreground'
-                  )} />
-                  <span className="text-sm font-medium">
-                    Supabase: {supabaseConnected ? 'Connected' : 'Not Connected'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Control API Status */}
-            <div className="flex items-center gap-2">
-              {controlApiConnected ? (
-                <Wifi className="w-4 h-4 text-success" />
-              ) : (
-                <WifiOff className="w-4 h-4 text-muted-foreground" />
-              )}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    'w-2 h-2 rounded-full',
-                    controlApiConnected ? 'bg-success' : 'bg-muted-foreground'
-                  )} />
-                  <span className="text-sm font-medium">
-                    Control API: {controlApiConnected ? 'Connected' : 'Not Configured'}
-                  </span>
-                </div>
-                {controlApiConnected && controlApiUrl && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {controlApiUrl}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+    <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur px-4 py-2 text-xs text-muted-foreground z-10">
+      <div className="max-w-4xl mx-auto flex items-center gap-6">
+        <div className="flex items-center gap-1.5">
+          <span className={cn('w-1.5 h-1.5 rounded-full', supabaseConnected ? 'bg-success' : 'bg-muted-foreground')} />
+          <span>Supabase</span>
         </div>
-
-        {lastError && (
-          <div className="mt-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-destructive font-medium">Connection Error</p>
-                <p className="text-xs text-destructive/80 mt-0.5">{lastError}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={onRetry} disabled={loading}>
-                Retry
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <div className="flex items-center gap-1.5">
+          <span className={cn('w-1.5 h-1.5 rounded-full', controlApiConnected ? 'bg-success' : 'bg-muted-foreground')} />
+          <span>Control API</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-interface RunRequestsBadgeProps {
-  status: CronRunRequest['status'];
+interface RequestStatusBadgeProps {
+  status: 'queued' | 'running' | 'done' | 'error';
 }
 
-function RunRequestsBadge({ status }: RunRequestsBadgeProps) {
+function RequestStatusBadge({ status }: RequestStatusBadgeProps) {
   switch (status) {
     case 'queued':
-      return <Badge variant="secondary" className="bg-warning/15 text-warning border-warning/30">Queued</Badge>;
+      return <Badge variant="secondary" className="bg-warning/15 text-warning border-warning/30 text-[10px]">Queued</Badge>;
     case 'running':
-      return <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/30 animate-pulse">Running</Badge>;
+      return <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/30 animate-pulse text-[10px]">Running</Badge>;
     case 'done':
-      return <Badge variant="secondary" className="bg-success/15 text-success border-success/30">Done</Badge>;
+      return <Badge variant="secondary" className="bg-success/15 text-success border-success/30 text-[10px]">Done</Badge>;
     case 'error':
-      return <Badge variant="destructive">Error</Badge>;
+      return <Badge variant="destructive" className="text-[10px]">Error</Badge>;
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
   }
 }
 
@@ -211,10 +186,12 @@ interface CronJobRowProps {
   onToggleExpand: () => void;
   onRun: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   onToggleEnabled: () => void;
   running: boolean;
   controlApiConnected: boolean;
   pendingToggle: boolean;
+  pendingDelete: boolean;
   runHistory: CronRunEntry[];
   loadingRuns: boolean;
   onRefreshRuns: () => void;
@@ -226,10 +203,12 @@ function CronJobRow({
   onToggleExpand,
   onRun,
   onEdit,
+  onDelete,
   onToggleEnabled,
   running,
   controlApiConnected,
   pendingToggle,
+  pendingDelete,
   runHistory,
   loadingRuns,
   onRefreshRuns,
@@ -238,100 +217,149 @@ function CronJobRow({
     switch (status) {
       case 'ok':
       case 'success':
-        return <Check className="w-4 h-4 text-success" />;
+        return <Check className="w-3 h-3 text-success" />;
       case 'error':
       case 'failed':
-        return <X className="w-4 h-4 text-destructive" />;
+        return <X className="w-3 h-3 text-destructive" />;
       case 'pending':
-        return <Clock className="w-4 h-4 text-warning animate-pulse" />;
+        return <Clock className="w-3 h-3 text-warning animate-pulse" />;
       default:
-        return <span className="w-4 h-4 text-muted-foreground">—</span>;
+        return null;
     }
   };
 
-  const formatNextRun = (nextRunAt: string | null | undefined) => {
-    if (!nextRunAt) return '—';
-    return formatDateTime(new Date(nextRunAt).getTime());
-  };
-
   const formatLastRun = (lastRunAt: string | null | undefined) => {
-    if (!lastRunAt) return 'Never';
+    if (!lastRunAt) return null;
     return formatDateTime(new Date(lastRunAt).getTime());
   };
 
+  const lastRunLabel = formatLastRun(job.lastRunAt);
+
   return (
     <Collapsible open={expanded} onOpenChange={onToggleExpand}>
-      <div id={`cron-job-${job.jobId}`} className="rounded-lg border border-border bg-card overflow-hidden">
+      <div 
+        id={`cron-job-${job.jobId}`} 
+        className={cn(
+          "rounded-lg border border-border bg-card overflow-hidden transition-opacity",
+          pendingDelete && "opacity-60"
+        )}
+      >
         <div className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
+          {/* Main row - two lines */}
+          <div className="flex items-start justify-between gap-4">
+            {/* Left side: Toggle + Name/Schedule */}
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="flex items-center gap-2 pt-0.5">
                 <Switch
                   checked={job.enabled}
                   onCheckedChange={onToggleEnabled}
-                  disabled={pendingToggle}
+                  disabled={pendingToggle || pendingDelete}
                   title={controlApiConnected ? undefined : 'Will queue toggle for when executor is online'}
                 />
                 {pendingToggle && (
                   <Badge variant="secondary" className="text-[10px]">Pending</Badge>
                 )}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium">{job.name}</h3>
-                  <Badge variant="outline" className="text-xs font-mono">
-                    {formatSchedule(job.scheduleKind, job.scheduleExpr, job.tz)}
-                  </Badge>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-medium truncate">{job.name}</h3>
+                  {pendingDelete && (
+                    <Badge variant="secondary" className="text-[10px] bg-destructive/10 text-destructive">
+                      Deletion pending
+                    </Badge>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Next: {formatNextRun(job.nextRunAt)} • Last: {formatLastRun(job.lastRunAt)}
-                </p>
+                {/* Schedule on second line - cleaner look */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                      {formatSchedule(job.scheduleKind, job.scheduleExpr, job.tz, true)}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{formatSchedule(job.scheduleKind, job.scheduleExpr, job.tz, false)}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              {/* Last status as text instead of floating icon */}
-              <div className="flex items-center gap-1.5 text-sm">
-                {getStatusIcon(job.lastStatus)}
-                <span className="text-muted-foreground">
-                  {job.lastStatus ? `Last run: ${job.lastStatus}` : 'Never run'}
-                </span>
-              </div>
-              {controlApiConnected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onEdit}
-                  className="gap-2"
-                >
-                  <Pencil className="w-4 h-4" />
-                  Edit
-                </Button>
+
+            {/* Right side: Status + Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Last run status - compact */}
+              {job.lastStatus && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {getStatusIcon(job.lastStatus)}
+                  <span className="hidden sm:inline">
+                    {job.lastStatus === 'ok' ? 'OK' : job.lastStatus}
+                  </span>
+                  {lastRunLabel && (
+                    <span className="hidden md:inline">• {lastRunLabel}</span>
+                  )}
+                </div>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onRun}
-                disabled={running}
-                className="gap-2"
-                title={controlApiConnected ? 'Run now via Control API' : 'Queue run request'}
-              >
-                <Play className={cn("w-4 h-4", running && "animate-pulse")} />
-                Run
-              </Button>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" aria-label={expanded ? 'Collapse' : 'Expand'}>
-                  <ChevronDown className={cn(
-                    "w-4 h-4 transition-transform",
-                    expanded && "rotate-180"
-                  )} />
-                </Button>
-              </CollapsibleTrigger>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={onRun}
+                      disabled={running || pendingDelete}
+                      title={controlApiConnected ? 'Run now' : 'Queue run request'}
+                    >
+                      <Play className={cn("w-4 h-4", running && "animate-pulse")} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {controlApiConnected ? 'Run now' : 'Queue run request'}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                      onClick={onDelete}
+                      disabled={pendingDelete}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete job</TooltipContent>
+                </Tooltip>
+
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={expanded ? 'Collapse' : 'Expand'}>
+                    <ChevronDown className={cn(
+                      "w-4 h-4 transition-transform",
+                      expanded && "rotate-180"
+                    )} />
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Expanded details */}
         <CollapsibleContent>
           <div className="px-4 pb-4 pt-0 border-t border-border mt-2">
-            <div className="mt-4">
+            {/* Edit button in expanded section */}
+            {controlApiConnected && (
+              <div className="mt-3 mb-4">
+                <Button variant="outline" size="sm" onClick={onEdit} className="gap-2">
+                  <Pencil className="w-3 h-3" />
+                  Edit
+                </Button>
+              </div>
+            )}
+
+            <div className="mt-3">
               <h4 className="text-sm font-medium text-muted-foreground mb-2">Instructions</h4>
               <div className="p-3 rounded-lg bg-muted/50 font-mono text-sm whitespace-pre-wrap">
                 {job.instructions || '(No instructions)'}
@@ -340,7 +368,11 @@ function CronJobRow({
 
             <div className="mt-4 text-xs text-muted-foreground space-y-1">
               <div>Job ID: <code className="bg-muted px-1 py-0.5 rounded">{job.jobId}</code></div>
+              <div>Schedule: <code className="bg-muted px-1 py-0.5 rounded">{job.scheduleKind || 'cron'}: {job.scheduleExpr}</code></div>
+              {job.tz && <div>Timezone: {job.tz}</div>}
               <div>Last synced: {formatDateTime(new Date(job.updatedAt).getTime())}</div>
+              {job.lastRunAt && <div>Last run: {formatDateTime(new Date(job.lastRunAt).getTime())}</div>}
+              {job.lastDurationMs != null && <div>Duration: {Math.round(job.lastDurationMs / 1000)}s</div>}
             </div>
 
             {controlApiConnected && (
@@ -354,8 +386,8 @@ function CronJobRow({
                     disabled={loadingRuns}
                     className="gap-2"
                   >
-                    <RefreshCw className={cn('w-4 h-4', loadingRuns && 'animate-spin')} />
-                    Refresh runs
+                    <RefreshCw className={cn('w-3 h-3', loadingRuns && 'animate-spin')} />
+                    Refresh
                   </Button>
                 </div>
 
@@ -416,6 +448,7 @@ export function CronPage() {
   // State
   const [mirrorJobs, setMirrorJobs] = useState<CronMirrorJob[]>([]);
   const [runRequests, setRunRequests] = useState<CronRunRequest[]>([]);
+  const [deleteRequests, setDeleteRequests] = useState<CronDeleteRequest[]>([]);
   const [runningJob, setRunningJob] = useState<string | null>(null);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [runsByJob, setRunsByJob] = useState<Record<string, CronRunEntry[]>>({});
@@ -440,6 +473,10 @@ export function CronPage() {
   const [createInstructions, setCreateInstructions] = useState('');
   const [savingCreate, setSavingCreate] = useState(false);
 
+  // Delete dialog state
+  const [deletingJob, setDeletingJob] = useState<CronMirrorJob | null>(null);
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+
   // Pending toggle requests (for offline mode)
   const [pendingToggles, setPendingToggles] = useState<Set<string>>(new Set());
 
@@ -450,14 +487,15 @@ export function CronPage() {
   const supabaseConnected = hasSupabase();
   const controlApiConnected = apiStatus.mode === 'control-api';
 
-  const lastRefreshedLabel = useMemo(() => {
-    if (!lastRefreshedAt) return '—';
-    const ms = Date.now() - lastRefreshedAt;
-    if (ms < 3_000) return 'just now';
-    if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s ago`;
-    if (ms < 60 * 60_000) return `${Math.max(1, Math.round(ms / 60_000))}m ago`;
-    return formatDateTime(lastRefreshedAt);
-  }, [lastRefreshedAt]);
+  // Compute pending deletes from delete requests
+  useEffect(() => {
+    const pendingJobIds = new Set(
+      deleteRequests
+        .filter(r => r.status === 'queued' || r.status === 'running')
+        .map(r => r.jobId)
+    );
+    setPendingDeletes(pendingJobIds);
+  }, [deleteRequests]);
 
   // Filter jobs
   const filteredJobs = useMemo(() => {
@@ -484,12 +522,14 @@ export function CronPage() {
     setLoadingJobs(true);
     setLastError(null);
     try {
-      const [jobs, requests] = await Promise.all([
+      const [jobs, requests, delRequests] = await Promise.all([
         getCronMirrorJobs(),
         getCronRunRequests(20),
+        getCronDeleteRequests(20),
       ]);
       setMirrorJobs(jobs);
       setRunRequests(requests);
+      setDeleteRequests(delRequests);
       setLastRefreshedAt(Date.now());
     } catch (err: any) {
       const message = String(err?.message || err);
@@ -516,7 +556,13 @@ export function CronPage() {
 
     const projectId = getSelectedProjectId();
     const unsubscribe = subscribeToProjectRealtime(projectId, (change) => {
-      if (change?.table === 'cron_mirror' || change?.table === 'cron_run_requests') {
+      if (
+        change?.table === 'cron_mirror' || 
+        change?.table === 'cron_run_requests' ||
+        change?.table === 'cron_delete_requests' ||
+        change?.table === 'cron_job_patch_requests' ||
+        change?.table === 'cron_create_requests'
+      ) {
         // Reload data on any cron-related change
         loadJobs();
       }
@@ -612,6 +658,35 @@ export function CronPage() {
           return next;
         });
       }
+    }
+  };
+
+  // Delete job handler
+  const handleDelete = async () => {
+    if (!deletingJob) return;
+    
+    const job = deletingJob;
+    setDeletingJob(null);
+    
+    try {
+      // Always queue delete request (even with Control API, we use the queue pattern)
+      const result = await queueCronDeleteRequest(job.jobId);
+      if (result.ok) {
+        toast({
+          title: 'Delete queued',
+          description: `${job.name} will be removed when the Mac mini executor picks up the request.`,
+        });
+        // Reload to show pending state
+        await loadJobs();
+      } else {
+        throw new Error(result.error || 'Failed to queue delete');
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Failed to delete job',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -739,49 +814,101 @@ export function CronPage() {
     }
   };
 
+  // Combine all pending requests for display
+  const pendingRequests = useMemo(() => {
+    const pending: Array<{
+      id: string;
+      type: 'run' | 'delete';
+      jobId: string;
+      jobName: string;
+      status: 'queued' | 'running' | 'done' | 'error';
+      requestedAt: string;
+    }> = [];
+
+    runRequests
+      .filter(r => r.status === 'queued' || r.status === 'running')
+      .forEach(r => {
+        const job = mirrorJobs.find(j => j.jobId === r.jobId);
+        pending.push({
+          id: r.id,
+          type: 'run',
+          jobId: r.jobId,
+          jobName: job?.name || r.jobId,
+          status: r.status,
+          requestedAt: r.requestedAt,
+        });
+      });
+
+    deleteRequests
+      .filter(r => r.status === 'queued' || r.status === 'running')
+      .forEach(r => {
+        const job = mirrorJobs.find(j => j.jobId === r.jobId);
+        pending.push({
+          id: r.id,
+          type: 'delete',
+          jobId: r.jobId,
+          jobName: job?.name || r.jobId,
+          status: r.status,
+          requestedAt: r.requestedAt,
+        });
+      });
+
+    return pending.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  }, [runRequests, deleteRequests, mirrorJobs]);
+
   return (
-    <div className="flex-1 p-6 overflow-auto scrollbar-thin">
+    <div className="flex-1 p-6 pb-16 overflow-auto scrollbar-thin">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
-            <p className="text-muted-foreground">
-              Manage cron jobs and scheduled tasks.
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Updated: {lastRefreshedLabel}
-            </p>
+        {/* Header - Compact layout */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Manage cron jobs and scheduled tasks.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={loadJobs}
+                    disabled={loadingJobs}
+                  >
+                    <RefreshCw className={cn('w-4 h-4', loadingJobs && 'animate-spin')} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Refresh</TooltipContent>
+              </Tooltip>
+              <Button
+                size="sm"
+                onClick={() => setShowCreateDialog(true)}
+                className="gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                New Job
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadJobs}
-            disabled={loadingJobs}
-            className="gap-2"
-          >
-            <RefreshCw className={cn('w-4 h-4', loadingJobs && 'animate-spin')} />
-            Refresh
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setShowCreateDialog(true)}
-            className="gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Job
-          </Button>
         </div>
 
-        {/* Connection Status Panel */}
-        <ConnectionStatusPanel
-          supabaseConnected={supabaseConnected}
-          controlApiConnected={controlApiConnected}
-          controlApiUrl={apiStatus.baseUrl}
-          lastError={lastError}
-          onRetry={loadJobs}
-          loading={loadingJobs}
-        />
+        {/* Error banner (prominent when there's an error) */}
+        {lastError && (
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm text-destructive font-medium">Connection Error</p>
+                <p className="text-xs text-destructive/80 mt-0.5">{lastError}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadJobs} disabled={loadingJobs}>
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Search and Filter */}
         {mirrorJobs.length > 0 && (
@@ -814,13 +941,17 @@ export function CronPage() {
           <Card className="mb-6">
             <CardContent className="p-8 text-center">
               <Clock className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
-              <h3 className="text-lg font-medium">No cron jobs mirrored yet</h3>
+              <h3 className="text-lg font-medium">No scheduled jobs yet</h3>
               <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
                 Cron jobs live on the Mac mini executor. This UI shows a mirrored list from Supabase.
               </p>
-              <p className="text-xs text-muted-foreground mt-3">
-                If you just set this up, the Mac mini sync worker hasn't published jobs yet.
-              </p>
+              <Button 
+                className="mt-4" 
+                onClick={() => setShowCreateDialog(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create First Job
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -841,10 +972,12 @@ export function CronPage() {
               }}
               onRun={() => handleRunNow(job)}
               onEdit={() => openEdit(job)}
+              onDelete={() => setDeletingJob(job)}
               onToggleEnabled={() => handleToggle(job)}
               running={runningJob === job.jobId}
               controlApiConnected={controlApiConnected}
               pendingToggle={pendingToggles.has(job.jobId)}
+              pendingDelete={pendingDeletes.has(job.jobId)}
               runHistory={runsByJob[job.jobId] || []}
               loadingRuns={Boolean(loadingRuns[job.jobId])}
               onRefreshRuns={() => loadRuns(job.jobId, { force: true })}
@@ -876,49 +1009,114 @@ export function CronPage() {
           </Card>
         )}
 
-        {/* Run Requests Section */}
-        {runRequests.length > 0 && (
+        {/* Pending Requests Section */}
+        {pendingRequests.length > 0 && (
           <Card className="mt-6">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg font-medium flex items-center gap-2">
-                <Play className="w-4 h-4" />
-                Recent Run Requests
+                <Clock className="w-4 h-4" />
+                Pending Requests
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-2">
-                {runRequests.slice(0, 10).map((req) => {
-                  const job = mirrorJobs.find(j => j.jobId === req.jobId);
-                  return (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-background/50"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium truncate">
-                            {job?.name || req.jobId}
-                          </span>
-                          <RunRequestsBadge status={req.status} />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Requested: {formatDateTime(new Date(req.requestedAt).getTime())}
-                          {req.requestedBy && ` by ${req.requestedBy}`}
-                        </p>
+                {pendingRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-background/50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px]">
+                          {req.type === 'run' ? 'Run' : 'Delete'}
+                        </Badge>
+                        <span className="font-medium truncate">{req.jobName}</span>
+                        <RequestStatusBadge status={req.status} />
                       </div>
-                      {req.completedAt && (
-                        <div className="text-xs text-muted-foreground text-right">
-                          Completed: {formatDateTime(new Date(req.completedAt).getTime())}
-                        </div>
-                      )}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Requested: {formatDateTime(new Date(req.requestedAt).getTime())}
+                      </p>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Recent Completed Requests (collapsed by default) */}
+        {runRequests.filter(r => r.status === 'done' || r.status === 'error').length > 0 && (
+          <Collapsible className="mt-4">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+                <ChevronDown className="w-4 h-4" />
+                Recent History ({runRequests.filter(r => r.status === 'done' || r.status === 'error').length})
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Card className="mt-2">
+                <CardContent className="pt-4">
+                  <div className="space-y-2">
+                    {runRequests
+                      .filter(r => r.status === 'done' || r.status === 'error')
+                      .slice(0, 10)
+                      .map((req) => {
+                        const job = mirrorJobs.find(j => j.jobId === req.jobId);
+                        return (
+                          <div
+                            key={req.id}
+                            className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-background/50"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium truncate">
+                                  {job?.name || req.jobId}
+                                </span>
+                                <RequestStatusBadge status={req.status} />
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {formatDateTime(new Date(req.requestedAt).getTime())}
+                              </p>
+                            </div>
+                            {req.completedAt && (
+                              <div className="text-xs text-muted-foreground text-right">
+                                Completed: {formatDateTime(new Date(req.completedAt).getTime())}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
+
+      {/* Connection Status Footer */}
+      <ConnectionStatusFooter
+        supabaseConnected={supabaseConnected}
+        controlApiConnected={controlApiConnected}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={Boolean(deletingJob)} onOpenChange={(open) => { if (!open) setDeletingJob(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete scheduled job?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove "{deletingJob?.name}" from the executor. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit Dialog */}
       <Dialog open={Boolean(editingJob)} onOpenChange={(open) => { if (!open) setEditingJob(null); }}>

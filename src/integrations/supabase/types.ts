@@ -237,6 +237,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cron_delete_requests: {
+        Row: {
+          completed_at: string | null
+          id: string
+          job_id: string
+          picked_up_at: string | null
+          project_id: string
+          requested_at: string
+          requested_by: string | null
+          result: Json | null
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          job_id: string
+          picked_up_at?: string | null
+          project_id: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          job_id?: string
+          picked_up_at?: string | null
+          project_id?: string
+          requested_at?: string
+          requested_by?: string | null
+          result?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
       cron_job_patch_requests: {
         Row: {
           completed_at: string | null
