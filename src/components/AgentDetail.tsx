@@ -128,20 +128,7 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
               <PanelLeft className="w-4 h-4" />
             </Button>
 
-            <div className="relative">
-              <span
-                className={cn(
-                  'absolute -left-1 -top-1 ring-2 ring-background rounded-full status-dot h-3 w-3',
-                  agent.status === 'working'
-                    ? 'status-dot-working'
-                    : agent.status === 'idle'
-                      ? 'status-dot-idle'
-                      : 'status-dot-offline'
-                )}
-                aria-hidden
-              />
-              <span className="text-3xl">{agent?.avatar || '🤖'}</span>
-            </div>
+            <span className="text-3xl">{agent?.avatar || '🤖'}</span>
 
             <div className="min-w-0">
               <h1 className="text-xl font-semibold truncate">
@@ -185,9 +172,17 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
                 lastActivityAt={agent.lastActivityAt}
                 lastHeartbeatAt={agent.lastHeartbeatAt}
               >
-                <span className={cn('badge-status cursor-help', getStatusBadge(agent.status))}>
-                  {agent.status}
-                </span>
+                <span
+                  className={cn(
+                    'w-3 h-3 rounded-full cursor-help',
+                    agent.status === 'working'
+                      ? 'status-dot-working'
+                      : agent.status === 'idle'
+                        ? 'status-dot-idle'
+                        : 'status-dot-offline'
+                  )}
+                  aria-label={agent.status}
+                />
               </StatusTooltip>
             ) : null}
           </div>

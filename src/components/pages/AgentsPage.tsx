@@ -168,28 +168,8 @@ export function AgentsPage() {
                 agent.status === 'working' && 'agent-card-working'
               )}
             >
-              {agent.color ? (
-                <span
-                  className="absolute inset-x-0 top-0 h-1"
-                  style={{ backgroundColor: agent.color }}
-                  aria-hidden
-                />
-              ) : null}
               <div className="flex items-start gap-3">
-                <div className="relative">
-                  <span
-                    className={cn(
-                      'absolute -left-1 -top-1 ring-2 ring-background rounded-full status-dot h-3 w-3',
-                      agent.status === 'working'
-                        ? 'status-dot-working'
-                        : agent.status === 'idle'
-                          ? 'status-dot-idle'
-                          : 'status-dot-offline'
-                    )}
-                    aria-hidden
-                  />
-                  <span className="text-3xl">{agent.avatar || '🤖'}</span>
-                </div>
+                <span className="text-3xl">{agent.avatar || '🤖'}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate">{agent.name}</span>
@@ -199,9 +179,17 @@ export function AgentsPage() {
                       lastActivityAt={agent.lastActivityAt}
                       lastHeartbeatAt={agent.lastHeartbeatAt}
                     >
-                      <span className={cn('badge-status cursor-help', getStatusBadge(agent.status))}>
-                        {agent.status}
-                      </span>
+                      <span
+                        className={cn(
+                          'w-2.5 h-2.5 rounded-full cursor-help shrink-0',
+                          agent.status === 'working'
+                            ? 'status-dot-working'
+                            : agent.status === 'idle'
+                              ? 'status-dot-idle'
+                              : 'status-dot-offline'
+                        )}
+                        aria-label={agent.status}
+                      />
                     </StatusTooltip>
                   </div>
                   <p className="text-sm text-muted-foreground truncate mt-0.5">
