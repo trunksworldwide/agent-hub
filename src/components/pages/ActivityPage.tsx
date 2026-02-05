@@ -63,6 +63,7 @@ export function ActivityPage() {
 
   const { selectedProjectId } = useClawdOffice();
   const refreshDebounceRef = useRef<number | null>(null);
+  const summarizingIdsRef = useRef<Set<string>>(new Set());
 
   // Update "now" every minute for relative times
   useEffect(() => {
@@ -76,17 +77,17 @@ export function ActivityPage() {
     if (showSpinner) setIsRefreshing(true);
     setLoadError(null);
     try {
-      const [act, agentList] = await Promise.all([
-        getActivity(limit),
-        getAgents(),
-      ]);
+      const [act, agentList] = await Promise.all([getActivity(limit), getAgents()]);
       setItems(act);
       setAgents(agentList);
-      
-      // Identify items that need AI summaries
-      const needsSummary = act.filter(i => !i.summary);
+
+      // Never block the UI on AI summarization—render immediately with fallbacks,
+      // then fill summaries in the background.
+      setIsLoading(false);
+
+      const needsSummary = act.filter((i) => !i.summary && !summarizingIdsRef.current.has(i.hash));
       if (needsSummary.length > 0) {
-        await generateSummaries(needsSummary);
+        void generateSummaries(needsSummary);
       }
     } catch (e: any) {
       console.error('Activity refresh failed', e);
@@ -99,7 +100,7 @@ export function ActivityPage() {
 
   const generateSummaries = async (activitiesToSummarize: ActivityItem[]) => {
     if (activitiesToSummarize.length === 0) return;
-    
+
     setIsSummarizing(true);
     try {
       // Batch in groups of 20
@@ -109,7 +110,11 @@ export function ActivityPage() {
       }
 
       for (const batch of batches) {
-        const payload = batch.map(a => ({
+        const batchIds = batch.map((a) => a.hash);
+        batchIds.forEach((id) => summarizingIdsRef.current.add(id));
+
+        const payload = batch.map((a) => ({
+          // ActivityItem.hash is the canonical id for the feed (Supabase activities.id when present)
           id: a.hash,
           type: a.type || 'activity',
           message: a.message || '',
@@ -122,22 +127,27 @@ export function ActivityPage() {
 
         if (error) {
           console.error('Summarize error:', error);
-          // Fall back to client-side templates
+          // Allow retry on next refresh.
+          batchIds.forEach((id) => summarizingIdsRef.current.delete(id));
           continue;
         }
 
         if (data?.summaries) {
           // Update local state with new summaries
-          setItems(prev => prev.map(item => {
-            if (data.summaries[item.hash]) {
-              return { ...item, summary: data.summaries[item.hash] };
-            }
-            return item;
-          }));
+          setItems((prev) =>
+            prev.map((item) => {
+              if (data.summaries[item.hash]) {
+                return { ...item, summary: data.summaries[item.hash] };
+              }
+              return item;
+            })
+          );
         }
       }
     } catch (e: any) {
       console.error('Summary generation failed:', e);
+      // Allow retry on next refresh.
+      activitiesToSummarize.forEach((a) => summarizingIdsRef.current.delete(a.hash));
       if (e?.message?.includes('429')) {
         toast.error('Rate limit reached. Using fallback summaries.');
       }
