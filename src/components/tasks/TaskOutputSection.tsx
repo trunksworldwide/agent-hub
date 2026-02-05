@@ -25,17 +25,19 @@ const OUTPUT_LABELS: Record<string, string> = {
 
 interface TaskOutputSectionProps {
   outputs: TaskOutput[];
-  onAddOutput: () => void;
-  onOutputDeleted: () => void;
+  onAddOutput?: () => void;
+  onOutputDeleted?: () => void;
   isLoading?: boolean;
+  readOnly?: boolean;
 }
 
-export function TaskOutputSection({ outputs, onAddOutput, onOutputDeleted, isLoading }: TaskOutputSectionProps) {
+export function TaskOutputSection({ outputs, onAddOutput, onOutputDeleted, isLoading, readOnly }: TaskOutputSectionProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (output: TaskOutput) => {
+    if (readOnly || !onOutputDeleted) return;
     setDeletingId(output.id);
     try {
       const result = await deleteTaskOutput(output.id);
@@ -78,15 +80,17 @@ export function TaskOutputSection({ outputs, onAddOutput, onOutputDeleted, isLoa
             )}
           </button>
         </CollapsibleTrigger>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onAddOutput}
-          className="h-7 px-2 text-xs"
-        >
-          <Plus className="w-3 h-3 mr-1" />
-          Add
-        </Button>
+        {!readOnly && onAddOutput && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddOutput}
+            className="h-7 px-2 text-xs"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add
+          </Button>
+        )}
       </div>
 
       <CollapsibleContent>
@@ -138,15 +142,17 @@ export function TaskOutputSection({ outputs, onAddOutput, onOutputDeleted, isLoa
                         <ExternalLink className="w-3 h-3" />
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(output)}
-                      disabled={deletingId === output.id}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    {!readOnly && onOutputDeleted && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(output)}
+                        disabled={deletingId === output.id}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    )}
                   </div>
                 </div>
 

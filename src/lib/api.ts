@@ -1410,6 +1410,35 @@ export async function createProject(input: { id: string; name: string }): Promis
   return { ok: true };
 }
 
+export async function getTaskById(taskId: string): Promise<Task | null> {
+  if (!hasSupabase() || !supabase) return null;
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('id,title,description,status,assignee_agent_key,created_at,updated_at,is_proposed,rejected_at,rejected_reason,blocked_reason,blocked_at')
+    .eq('id', taskId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description || '',
+    status: data.status as TaskStatus,
+    assigneeAgentKey: data.assignee_agent_key || undefined,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    isProposed: data.is_proposed ?? false,
+    rejectedAt: data.rejected_at ?? null,
+    rejectedReason: data.rejected_reason ?? null,
+    blockedReason: data.blocked_reason ?? null,
+    blockedAt: data.blocked_at ?? null,
+  };
+}
+
 export async function getTasks(): Promise<Task[]> {
   // Prefer Supabase tasks if configured.
   if (hasSupabase() && supabase) {

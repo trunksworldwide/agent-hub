@@ -1,3 +1,10 @@
+### Activity → Task Output Viewer: click task-linked activities to preview outputs
+- Activity items with a linked task now show a chevron indicator and are clickable.
+- Clicking opens a lightweight **TaskOutputPreview** sheet showing task title, status badge, and outputs (read-only).
+- "View Full Task" button navigates to the Tasks page.
+- Added `getTaskById(taskId)` API function for fetching single tasks.
+- TaskOutputSection now supports `readOnly` prop to hide add/delete buttons.
+
 ### Task Outputs: capture structured deliverables for completed tasks
 - Added `task_outputs` table to store summaries, files, links, and auto-generated log summaries per task.
 - New **Outputs** collapsible section in TaskDetailSheet between description and thread.
