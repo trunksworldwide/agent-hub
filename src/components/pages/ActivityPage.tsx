@@ -53,7 +53,8 @@ function resolveAgent(authorKey: string | undefined, lookup: AgentLookup): { nam
 export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState(75);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);

@@ -1746,15 +1746,15 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
   return { ok: true };
 }
 
-export async function getActivity(limit = 50): Promise<ActivityItem[]> {
-  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+export async function getActivity(limit = 75): Promise<ActivityItem[]> {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 75));
 
   // Prefer Supabase activities if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
     const { data, error } = await supabase
       .from('activities')
-      .select('id,type,message,actor_agent_key,task_id,created_at')
+      .select('id,type,message,actor_agent_key,task_id,summary,created_at')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(safeLimit);
@@ -1784,6 +1784,7 @@ export async function getActivity(limit = 50): Promise<ActivityItem[]> {
       authorLabel: toAuthorLabel(a.actor_agent_key),
       date: a.created_at,
       message: a.message,
+      summary: a.summary || null,
       type: a.type,
       taskId: a.task_id,
     }));
