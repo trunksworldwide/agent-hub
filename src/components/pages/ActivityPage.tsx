@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, RefreshCw, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronRight, Clock, RefreshCw, Sparkles } from 'lucide-react';
 import { getActivity, getAgents, type ActivityItem, type Agent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +13,7 @@ import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { supabase } from '@/integrations/supabase/client';
 import { generateActivitySummary } from '@/lib/activity-summary';
 import { toast } from 'sonner';
+import { TaskOutputPreview } from '@/components/activity/TaskOutputPreview';
 
 // Build agent lookup map
 type AgentLookup = Map<string, { name: string; emoji: string }>;
@@ -51,6 +53,7 @@ function resolveAgent(authorKey: string | undefined, lookup: AgentLookup): { nam
 }
 
 export function ActivityPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [limit, setLimit] = useState(75);
@@ -61,6 +64,10 @@ export function ActivityPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>('');
   const [now, setNow] = useState(() => new Date());
+
+  // Task preview state
+  const [previewTaskId, setPreviewTaskId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const { selectedProjectId } = useClawdOffice();
   const refreshDebounceRef = useRef<number | null>(null);
@@ -267,14 +274,32 @@ export function ActivityPage() {
               const summary = i.summary || generateActivitySummary(i.type || '', i.message || '');
               const agent = resolveAgent(i.author, agentLookup);
               const relativeTime = formatRelativeTime(i.date, now);
+              const hasTask = Boolean(i.taskId);
 
               return (
-                <div key={i.hash} className="p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
+                <div
+                  key={i.hash}
+                  onClick={() => {
+                    if (hasTask && i.taskId) {
+                      setPreviewTaskId(i.taskId);
+                      setShowPreview(true);
+                    }
+                  }}
+                  className={cn(
+                    'p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors',
+                    hasTask && 'cursor-pointer'
+                  )}
+                >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="text-sm font-medium">{summary}</div>
-                    <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1" title={new Date(i.date).toLocaleString()}>
-                      <Clock className="w-3 h-3" />
-                      <span>{relativeTime}</span>
+                    <div className="text-sm font-medium flex-1">{summary}</div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1" title={new Date(i.date).toLocaleString()}>
+                        <Clock className="w-3 h-3" />
+                        <span>{relativeTime}</span>
+                      </div>
+                      {hasTask && (
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      )}
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
@@ -295,6 +320,19 @@ export function ActivityPage() {
           ) : null}
         </div>
       </ScrollArea>
+
+      {/* Task Output Preview Sheet */}
+      {previewTaskId && (
+        <TaskOutputPreview
+          taskId={previewTaskId}
+          open={showPreview}
+          onOpenChange={setShowPreview}
+          onViewFullTask={() => {
+            setShowPreview(false);
+            navigate('/tasks');
+          }}
+        />
+      )}
     </div>
   );
 }
