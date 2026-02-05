@@ -1,51 +1,157 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { getActivity, type ActivityItem } from '@/lib/api';
+import { Clock, RefreshCw, Sparkles } from 'lucide-react';
+import { getActivity, getAgents, type ActivityItem, type Agent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { formatTime } from '@/lib/datetime';
+import { formatRelativeTime } from '@/lib/datetime';
 import { useClawdOffice } from '@/lib/store';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
-import { generateActivitySummary, getActivityCategory } from '@/lib/activity-summary';
+import { supabase } from '@/integrations/supabase/client';
+import { generateActivitySummary } from '@/lib/activity-summary';
+import { toast } from 'sonner';
+
+// Build agent lookup map
+type AgentLookup = Map<string, { name: string; emoji: string }>;
+
+function buildAgentLookup(agents: Agent[]): AgentLookup {
+  const map = new Map<string, { name: string; emoji: string }>();
+  for (const agent of agents) {
+    // The actor_agent_key in activities is usually just the agent_key
+    map.set(agent.id, { name: agent.name, emoji: agent.avatar || '🤖' });
+  }
+  return map;
+}
+
+function resolveAgent(authorKey: string | undefined, lookup: AgentLookup): { name: string; emoji: string } {
+  if (!authorKey) return { name: 'System', emoji: '⚙️' };
+  
+  // Handle "agent:project:key" format
+  if (authorKey.startsWith('agent:')) {
+    const parts = authorKey.split(':');
+    const key = parts[parts.length - 1];
+    const found = lookup.get(key) || lookup.get(authorKey);
+    if (found) return found;
+    // Capitalize the key as fallback
+    return { name: key.charAt(0).toUpperCase() + key.slice(1), emoji: '🤖' };
+  }
+  
+  // Special cases
+  if (authorKey === 'ui' || authorKey === 'dashboard') {
+    return { name: 'You', emoji: '👤' };
+  }
+  
+  // Direct lookup
+  const found = lookup.get(authorKey);
+  if (found) return found;
+  
+  return { name: authorKey, emoji: '🤖' };
+}
 
 export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
-  const [limit, setLimit] = useState(200);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [limit, setLimit] = useState(100);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-
-  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
+  const [now, setNow] = useState(() => new Date());
 
-  const { selectedProjectId, setSelectedAgentId } = useClawdOffice();
+  const { selectedProjectId } = useClawdOffice();
   const refreshDebounceRef = useRef<number | null>(null);
 
-  const refresh = async () => {
-    setIsRefreshing(true);
+  // Update "now" every minute for relative times
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const agentLookup = useMemo(() => buildAgentLookup(agents), [agents]);
+
+  const refresh = async (showSpinner = true) => {
+    if (showSpinner) setIsRefreshing(true);
     setLoadError(null);
     try {
-      const act = await getActivity(limit);
+      const [act, agentList] = await Promise.all([
+        getActivity(limit),
+        getAgents(),
+      ]);
       setItems(act);
+      setAgents(agentList);
+      
+      // Identify items that need AI summaries
+      const needsSummary = act.filter(i => !i.summary);
+      if (needsSummary.length > 0) {
+        await generateSummaries(needsSummary);
+      }
     } catch (e: any) {
       console.error('Activity refresh failed', e);
       setLoadError(String(e?.message || e));
     } finally {
+      setIsLoading(false);
       setIsRefreshing(false);
     }
   };
 
+  const generateSummaries = async (activitiesToSummarize: ActivityItem[]) => {
+    if (activitiesToSummarize.length === 0) return;
+    
+    setIsSummarizing(true);
+    try {
+      // Batch in groups of 20
+      const batches: ActivityItem[][] = [];
+      for (let i = 0; i < activitiesToSummarize.length; i += 20) {
+        batches.push(activitiesToSummarize.slice(i, i + 20));
+      }
+
+      for (const batch of batches) {
+        const payload = batch.map(a => ({
+          id: a.hash,
+          type: a.type || 'activity',
+          message: a.message || '',
+          actor: a.author,
+        }));
+
+        const { data, error } = await supabase.functions.invoke('summarize-activity', {
+          body: { activities: payload, persist: true },
+        });
+
+        if (error) {
+          console.error('Summarize error:', error);
+          // Fall back to client-side templates
+          continue;
+        }
+
+        if (data?.summaries) {
+          // Update local state with new summaries
+          setItems(prev => prev.map(item => {
+            if (data.summaries[item.hash]) {
+              return { ...item, summary: data.summaries[item.hash] };
+            }
+            return item;
+          }));
+        }
+      }
+    } catch (e: any) {
+      console.error('Summary generation failed:', e);
+      if (e?.message?.includes('429')) {
+        toast.error('Rate limit reached. Using fallback summaries.');
+      }
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   useEffect(() => {
-    void refresh();
+    void refresh(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 
-  // Supabase realtime: refresh quickly on new activity without hammering.
+  // Supabase realtime subscription
   useEffect(() => {
     if (!hasSupabase()) return;
     if (!selectedProjectId) return;
@@ -54,7 +160,7 @@ export function ActivityPage() {
       if (refreshDebounceRef.current) window.clearTimeout(refreshDebounceRef.current);
       refreshDebounceRef.current = window.setTimeout(() => {
         refreshDebounceRef.current = null;
-        void refresh();
+        void refresh(false);
       }, 500);
     };
 
@@ -70,79 +176,64 @@ export function ActivityPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId, limit]);
 
-  const knownTypes = useMemo(() => {
-    const set = new Set<string>();
-    for (const i of items) {
-      if (i.type) set.add(i.type);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    if (!needle) return items;
     return items.filter((i) => {
-      if (typeFilter !== 'all' && i.type !== typeFilter) return false;
-      if (!needle) return true;
-      const hay = `${i.message || ''}\n${i.author || ''}\n${i.authorLabel || ''}\n${i.hash || ''}\n${i.type || ''}`.toLowerCase();
+      const summary = i.summary || generateActivitySummary(i.type || '', i.message || '');
+      const agent = resolveAgent(i.author, agentLookup);
+      const hay = `${summary}\n${agent.name}\n${i.message || ''}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [items, typeFilter, search]);
+  }, [items, search, agentLookup]);
 
-  const navigate = useNavigate();
-
-  const openAgent = (agentKey: string) => {
-    if (!agentKey || !String(agentKey).startsWith('agent:')) return;
-    setSelectedAgentId(agentKey);
-    navigate('/agents');
-  };
-
-  const toggleExpanded = (hash: string) => {
-    setExpandedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(hash)) {
-        next.delete(hash);
-      } else {
-        next.add(hash);
-      }
-      return next;
-    });
-  };
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-4 border-b border-border">
+          <div className="text-sm font-semibold">Activity</div>
+          <div className="text-xs text-muted-foreground">What's been happening</div>
+        </div>
+        <div className="p-4 space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="p-3 rounded-lg border border-border bg-card">
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-3 w-1/4" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 border-b border-border flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold">Activity</div>
-          <div className="text-xs text-muted-foreground">Project-scoped activity feed</div>
+          <div className="text-sm font-semibold flex items-center gap-2">
+            Activity
+            {isSummarizing && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Sparkles className="w-3 h-3 animate-pulse" />
+                Summarizing...
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">What's been happening</div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="h-8 w-[160px] text-xs">
-              <SelectValue placeholder="All types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {knownTypes.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search…"
-            className="h-8 w-[220px] text-xs"
+            className="h-8 w-[200px] text-xs"
           />
-
           <Button
             variant="ghost"
             size="sm"
             className="h-8 px-2"
-            onClick={refresh}
+            onClick={() => refresh()}
             disabled={isRefreshing}
             title="Refresh"
           >
@@ -156,88 +247,28 @@ export function ActivityPage() {
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
           {filtered.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No activity yet.</div>
+            <div className="text-sm text-muted-foreground py-8 text-center">
+              No activity yet.
+            </div>
           ) : (
             filtered.map((i) => {
-              const d = new Date(i.date);
-              const timeLabel = Number.isNaN(d.getTime())
-                ? i.date
-                : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatTime(d)}`;
-
-              const canOpen = Boolean(i.author && String(i.author).startsWith('agent:'));
-              const isExpanded = expandedItems.has(i.hash);
-              
-              // Use summary from DB if available, otherwise generate client-side
-              const displaySummary = i.summary || generateActivitySummary(i.type || '', i.message || '');
-              const hasRawDetails = displaySummary !== i.message;
-              const category = getActivityCategory(i.type || '');
+              // Use stored summary or generate client-side fallback
+              const summary = i.summary || generateActivitySummary(i.type || '', i.message || '');
+              const agent = resolveAgent(i.author, agentLookup);
+              const relativeTime = formatRelativeTime(i.date, now);
 
               return (
-                <div key={i.hash} className="p-3 rounded-lg border border-border bg-card">
+                <div key={i.hash} className="p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      {/* Human-friendly summary */}
-                      <div className="text-sm font-medium break-words">{displaySummary}</div>
-                      
-                      {/* Category badge and metadata */}
-                      <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center">
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {category}
-                        </Badge>
-                        <span className="font-mono text-[10px]">{i.type}</span>
-                        {i.authorLabel ? (
-                          <>
-                            <span>·</span>
-                            {canOpen ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-5 px-1 text-xs font-mono underline underline-offset-2"
-                                onClick={() => openAgent(i.author)}
-                                title={`Open ${i.author} in Manage → Agents`}
-                              >
-                                {i.authorLabel}
-                              </Button>
-                            ) : (
-                              <span className="font-mono">{i.authorLabel}</span>
-                            )}
-                          </>
-                        ) : null}
-                      </div>
-
-                      {/* Expandable raw details */}
-                      {hasRawDetails && (
-                        <div className="mt-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs text-muted-foreground"
-                            onClick={() => toggleExpanded(i.hash)}
-                          >
-                            {isExpanded ? (
-                              <>
-                                <ChevronUp className="w-3 h-3 mr-1" />
-                                Hide details
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-3 h-3 mr-1" />
-                                Show details
-                              </>
-                            )}
-                          </Button>
-                          {isExpanded && (
-                            <div className="mt-2 p-2 rounded bg-muted/50 font-mono text-xs text-muted-foreground break-all">
-                              {i.message}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1" title={timeLabel}>
+                    <div className="text-sm font-medium">{summary}</div>
+                    <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1" title={new Date(i.date).toLocaleString()}>
                       <Clock className="w-3 h-3" />
-                      <span className="cursor-help">{timeLabel}</span>
+                      <span>{relativeTime}</span>
                     </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <span>{agent.emoji}</span>
+                    <span>{agent.name}</span>
                   </div>
                 </div>
               );
@@ -246,7 +277,7 @@ export function ActivityPage() {
 
           {items.length === limit ? (
             <div className="pt-2">
-              <Button variant="secondary" size="sm" className="w-full" onClick={() => setLimit((l) => l + 200)}>
+              <Button variant="secondary" size="sm" className="w-full" onClick={() => setLimit((l) => l + 100)}>
                 Load more
               </Button>
             </div>

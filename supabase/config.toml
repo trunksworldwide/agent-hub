@@ -1,1 +1,4 @@
 project_id = "bsqeddnaiojvvckpdvcu"
+
+[functions.summarize-activity]
+verify_jwt = false
