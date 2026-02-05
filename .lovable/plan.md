@@ -1,210 +1,204 @@
 
 
-# Task Outputs: Capture What Got Done
+# Activity → Task Output Viewer
 
 ## Overview
 
-Add structured task output capture so every completed task shows what happened—whether it's a file, a screenshot, a summary, or just a confirmation message.
+When you click on an activity item that's linked to a task, it should show the task's outputs in a lightweight preview — without navigating away from the Activity page. This keeps the feed readable while letting you quickly inspect what was delivered.
 
 ---
 
-## Database Changes
+## Current State
 
-### New Table: `task_outputs`
-
-Stores one or more outputs per task (some tasks produce multiple artifacts).
-
-```sql
-CREATE TABLE task_outputs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id TEXT NOT NULL REFERENCES projects(id),
-  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  
-  -- What kind of output
-  output_type TEXT NOT NULL CHECK (output_type IN (
-    'summary',      -- AI-generated or manual text summary
-    'file',         -- Uploaded artifact (image, doc, etc.)
-    'link',         -- External URL (deployed site, PR, etc.)
-    'message',      -- Simple confirmation text
-    'log_summary'   -- Auto-summarized from activity logs
-  )),
-  
-  -- Content based on type
-  title TEXT,                    -- Display name ("Final Design", "Build Log")
-  content_text TEXT,             -- For summary/message/log_summary types
-  storage_path TEXT,             -- For file type (bucket path)
-  link_url TEXT,                 -- For link type
-  mime_type TEXT,                -- For file type
-  
-  -- Who/when
-  created_by TEXT,               -- agent_key or 'ui'
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Index for fetching outputs by task
-CREATE INDEX idx_task_outputs_task ON task_outputs(task_id);
-
--- RLS
-ALTER TABLE task_outputs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can view outputs for their projects" 
-  ON task_outputs FOR SELECT 
-  USING (project_id IN (SELECT id FROM projects));
-CREATE POLICY "Users can insert outputs for their projects" 
-  ON task_outputs FOR INSERT 
-  WITH CHECK (project_id IN (SELECT id FROM projects));
-```
+- **ActivityItem** has a `taskId` field (nullable) linking activities to tasks
+- **TaskDetailSheet** already loads and displays outputs via `getTaskOutputs(taskId)`
+- **Activity feed** currently has no click behavior — items are display-only
 
 ---
 
-## Storage Convention
+## Proposed Solution
 
-Reuse the existing `clawdos-documents` bucket with this path structure:
+### Approach: Lightweight Task Preview Sheet
 
-```
-clawdos-documents/
-  {projectId}/
-    {docId}/            ← existing documents
-      file.pdf
-    tasks/
-      {taskId}/         ← NEW: task outputs
-        screenshot.png
-        final-design.fig
-```
+Instead of re-rendering the full `TaskDetailSheet` (which loads comments, has editing UI, etc.), we'll create a **lightweight read-only preview** specifically for the Activity page that:
 
-**Why one bucket?**
-- Simpler RLS (project-scoped paths already work)
-- Single backup/cleanup target
-- No bucket proliferation as projects scale
+1. Shows task title + status badge
+2. Shows outputs (reusing `TaskOutputSection` in read-only mode)
+3. Optionally links to the full task detail (opens Tasks page)
+
+This avoids loading comments/thread data we don't need on Activity page.
+
+---
+
+## Why Not Just Use TaskDetailSheet?
+
+- **TaskDetailSheet** is 600+ lines with editing, comments, status changes
+- Loading it for every activity click would fetch unnecessary data
+- Activity page context is different: you want to see "what happened" not manage the task
+
+---
+
+## Database Consideration
+
+Currently, outputs are fetched per-task via `getTaskOutputs(taskId)`. Two options:
+
+**Option A: Fetch on Click (simpler, recommended)**
+- When user clicks an activity with a `taskId`, fetch that task's outputs
+- Pros: No schema change, works immediately
+- Cons: One extra fetch per click
+
+**Option B: Pre-fetch with Activity (more complex)**
+- Join `task_outputs` when fetching activities
+- Pros: No fetch on click
+- Cons: Heavier initial load, complex query, not all activities have tasks
+
+**Recommendation:** Start with Option A. If performance becomes an issue, we can add caching or pre-fetching later.
 
 ---
 
 ## UI Changes
 
-### 1. Task Detail Sheet: Outputs Section
-
-Add a collapsible "Outputs" section to the task detail sheet:
+### 1. Make Activity Items Clickable (when task-linked)
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ Fix login bug                           ✓ Done  │
-├─────────────────────────────────────────────────┤
-│ Description: Users can't log in with SSO...    │
+│ 📝 Fixed login bug — updated callback URL      → │  ← clickable when has taskId
+│ 🤖 Trunks • 2 min ago                           │
+└─────────────────────────────────────────────────┘
+```
+
+Visual cues for clickable items:
+- Subtle hover effect (already exists)
+- Right chevron icon when `taskId` is present
+- Cursor: pointer
+
+### 2. Task Output Preview Sheet
+
+A new lightweight sheet that opens when clicking a task-linked activity:
+
+```
+┌─────────────────────────────────────────────────┐
+│ Task: Fix login bug                     ✓ Done  │
 ├─────────────────────────────────────────────────┤
 │ ▼ Outputs (2)                                   │
 │   📝 Summary                                    │
-│      "Fixed SSO redirect by updating the       │
-│       callback URL in auth config."            │
+│      "Fixed SSO redirect by updating..."       │
 │                                                 │
 │   🔗 Pull Request                               │
 │      github.com/acme/app/pull/142              │
 ├─────────────────────────────────────────────────┤
-│ Discussion (3 comments)                         │
+│ [View Full Task →]                              │
 └─────────────────────────────────────────────────┘
 ```
 
-### 2. Add Output Dialog
+Features:
+- Task title + status badge (read-only)
+- Outputs section (reusing existing `TaskOutputSection` in read-only mode)
+- "View Full Task" link that navigates to Tasks page with that task selected
 
-When completing a task, prompt for outputs:
+### 3. API Addition
 
-- **Summary** (text area) — what was done
-- **Add file** — upload artifact
-- **Add link** — paste URL
-- **Auto-summarize** — generate from related activities
-
-### 3. Completion Checklist (Optional Enhancement)
-
-Before marking done, require:
-- At least one output OR explicit "no output needed" checkbox
-- Prevents empty completions
-
----
-
-## Action Task Handling: Log Summarization
-
-For tasks that are "actions" (run a script, send an email, etc.):
-
-1. **Related Activities**: Query `activities` where `task_id` matches
-2. **Summarize**: Send to existing `summarize-activity` edge function
-3. **Store as `log_summary`**: Auto-create a task output with the AI summary
+Need a function to fetch a single task by ID (currently only `getTasks()` exists):
 
 ```typescript
-// When task moves to "done" and has related activities
-const relatedActivities = await getActivitiesForTask(taskId);
-if (relatedActivities.length > 0) {
-  const summary = await summarizeActivities(relatedActivities);
-  await createTaskOutput({
-    taskId,
-    outputType: 'log_summary',
-    title: 'Activity Log',
-    contentText: summary,
-  });
-}
+export async function getTaskById(taskId: string): Promise<Task | null>
 ```
 
 ---
 
-## File Changes Summary
+## File Changes
 
 | File | Action | Description |
 |------|--------|-------------|
-| `supabase/migrations/...` | Create | Add `task_outputs` table |
-| `src/lib/api.ts` | Edit | Add CRUD for task outputs |
-| `src/components/tasks/TaskDetailSheet.tsx` | Edit | Add Outputs section |
-| `src/components/tasks/TaskOutputSection.tsx` | Create | Outputs display/add UI |
-| `src/components/tasks/AddOutputDialog.tsx` | Create | Dialog for adding outputs |
+| `src/lib/api.ts` | Edit | Add `getTaskById(taskId)` function |
+| `src/components/activity/TaskOutputPreview.tsx` | Create | Lightweight sheet for viewing task outputs |
+| `src/components/pages/ActivityPage.tsx` | Edit | Add click handler for task-linked activities, show preview sheet |
+| `src/components/tasks/TaskOutputSection.tsx` | Edit | Add optional `readOnly` prop to hide add/delete buttons |
 | `changes.md` | Edit | Document the feature |
 
 ---
 
-## API Functions to Add
+## Technical Details
+
+### New API Function
 
 ```typescript
-interface TaskOutput {
-  id: string;
-  taskId: string;
-  projectId: string;
-  outputType: 'summary' | 'file' | 'link' | 'message' | 'log_summary';
-  title?: string;
-  contentText?: string;
-  storagePath?: string;
-  linkUrl?: string;
-  mimeType?: string;
-  createdBy?: string;
-  createdAt: string;
+export async function getTaskById(taskId: string): Promise<Task | null> {
+  if (!hasSupabase() || !supabase) return null;
+  
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('id', taskId)
+    .maybeSingle();
+    
+  if (error || !data) return null;
+  
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description,
+    status: data.status,
+    assigneeAgentKey: data.assignee_agent_key,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    isProposed: data.is_proposed,
+    rejectedAt: data.rejected_at,
+    rejectedReason: data.rejected_reason,
+    blockedReason: data.blocked_reason,
+    blockedAt: data.blocked_at,
+  };
 }
+```
 
-// Get all outputs for a task
-getTaskOutputs(taskId: string): Promise<TaskOutput[]>
+### TaskOutputPreview Component
 
-// Add an output
-createTaskOutput(input: CreateTaskOutputInput): Promise<{ ok: boolean; id?: string }>
+```typescript
+interface TaskOutputPreviewProps {
+  taskId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onViewFullTask: () => void;  // Navigate to Tasks page
+}
+```
 
-// Upload file as output
-uploadTaskOutput(taskId: string, file: File, title: string): Promise<{ ok: boolean; id?: string }>
+State:
+- `task: Task | null` — fetched on open
+- `outputs: TaskOutput[]` — fetched on open
+- `isLoading: boolean`
 
-// Delete an output
-deleteTaskOutput(outputId: string): Promise<{ ok: boolean }>
+### ActivityPage Click Handler
 
-// Auto-generate log summary for a task
-generateTaskLogSummary(taskId: string): Promise<{ ok: boolean; summary?: string }>
+```typescript
+const handleActivityClick = (item: ActivityItem) => {
+  if (item.taskId) {
+    setPreviewTaskId(item.taskId);
+    setShowPreview(true);
+  }
+};
+
+const handleViewFullTask = () => {
+  // Navigate to Tasks page with task selected
+  navigate('/tasks');
+  setSelectedTaskId(previewTaskId);
+  setShowPreview(false);
+};
 ```
 
 ---
 
 ## Edge Cases
 
-1. **No activities for action task**: Skip auto-summary, allow manual entry
-2. **Large files**: Same limits as documents (handled by Supabase storage)
-3. **Task deleted**: Cascade delete outputs + storage cleanup
-4. **Multiple outputs**: Support array (some tasks produce several artifacts)
-5. **Viewing outputs**: Reuse `DocumentViewer` component for files
+1. **Task deleted**: Show "Task not found" message in preview
+2. **No outputs**: Show empty state "No outputs recorded"
+3. **Activity without taskId**: No click behavior (or show tooltip "No linked task")
+4. **Loading state**: Show skeleton in preview while fetching
 
 ---
 
 ## Future Enhancements
 
-- **Pinned comments as outputs**: Mark specific comments as "artifact"
-- **Output templates**: Pre-fill output types based on task labels
-- **Agent enforcement**: Require outputs before agents can mark done
-- **Output gallery**: Visual grid of all task artifacts across project
+- **Inline preview**: Show first output directly in activity item (expandable)
+- **Activity grouping**: Group activities by task for cleaner view
+- **Quick actions**: Add output directly from preview without opening full task
 
