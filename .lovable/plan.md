@@ -1,143 +1,144 @@
 
 
-# Activity Page Rework: Clean, AI-Summarized Activity Feed
+# Task Outputs: Capture What Got Done
 
 ## Overview
 
-Rework the Activity page to show quick, clean, non-technical summaries of completed work. Each activity will display:
-- **What** happened (human-friendly summary)
-- **When** it happened (relative time)
-- **Who** did it (agent name with emoji)
-
-AI summaries will be generated via OpenAI's API through a Supabase edge function, and the API key will be stored securely as a Supabase secret for platform-wide use.
+Add structured task output capture so every completed task shows what happened—whether it's a file, a screenshot, a summary, or just a confirmation message.
 
 ---
 
-## Changes Summary
+## Database Changes
 
-### 1. Store OpenAI API Key as Supabase Secret
+### New Table: `task_outputs`
 
-The OpenAI API key will be stored as a Supabase secret named `OPENAI_API_KEY`. This makes it:
-- Secure (not in codebase)
-- Available to all edge functions
-- Reusable across the platform for text generation, summarization, and other AI features
+Stores one or more outputs per task (some tasks produce multiple artifacts).
 
-### 2. Create Edge Function: `summarize-activity`
+```sql
+CREATE TABLE task_outputs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  
+  -- What kind of output
+  output_type TEXT NOT NULL CHECK (output_type IN (
+    'summary',      -- AI-generated or manual text summary
+    'file',         -- Uploaded artifact (image, doc, etc.)
+    'link',         -- External URL (deployed site, PR, etc.)
+    'message',      -- Simple confirmation text
+    'log_summary'   -- Auto-summarized from activity logs
+  )),
+  
+  -- Content based on type
+  title TEXT,                    -- Display name ("Final Design", "Build Log")
+  content_text TEXT,             -- For summary/message/log_summary types
+  storage_path TEXT,             -- For file type (bucket path)
+  link_url TEXT,                 -- For link type
+  mime_type TEXT,                -- For file type
+  
+  -- Who/when
+  created_by TEXT,               -- agent_key or 'ui'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-A new edge function that takes raw activity messages and returns human-friendly summaries using OpenAI's API.
+-- Index for fetching outputs by task
+CREATE INDEX idx_task_outputs_task ON task_outputs(task_id);
 
-**Location:** `supabase/functions/summarize-activity/index.ts`
-
-**Behavior:**
-- Accepts an array of activity items (id, type, message, actor)
-- Sends them to OpenAI with a prompt asking for simple, non-technical summaries
-- Returns the summaries keyed by activity ID
-- Handles rate limits (429) and payment errors (402) gracefully
-
-**Prompt Strategy:**
+-- RLS
+ALTER TABLE task_outputs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view outputs for their projects" 
+  ON task_outputs FOR SELECT 
+  USING (project_id IN (SELECT id FROM projects));
+CREATE POLICY "Users can insert outputs for their projects" 
+  ON task_outputs FOR INSERT 
+  WITH CHECK (project_id IN (SELECT id FROM projects));
 ```
-You are summarizing system activity for a non-technical user.
-Convert technical activity logs into simple, friendly summaries.
-Examples:
-- "task_moved: Moved 'Fix login bug' → in_progress" → "Started working on 'Fix login bug'"
-- "cron_run_requested: Requested cron run: daily-summary" → "Ran the daily summary job"
-- "agent_created: Created agent researcher" → "Added a new team member: Researcher"
-Keep summaries under 15 words. Be casual and clear.
-```
-
-### 3. Simplify ActivityPage UI
-
-**File:** `src/components/pages/ActivityPage.tsx`
-
-**Changes:**
-- Remove the type filter dropdown and type badge (too technical)
-- Remove the "Show details" expandable section (not needed for clean view)
-- Keep only: summary, agent name/emoji, and relative time
-- Add AI summary generation on load (batch unsummarized items)
-- Cache generated summaries locally to avoid re-generating
-
-**New UI Layout (per activity card):**
-```
-+-----------------------------------------------+
-| Started working on "Fix login bug"      2m ago |
-| 🤖 Trunks                                      |
-+-----------------------------------------------+
-```
-
-### 4. Agent Name Resolution
-
-Activities show `actor_agent_key` like `agent:main:main`. We need to resolve this to the agent's display name and emoji.
-
-**Approach:**
-- Fetch agents list on page load
-- Build a lookup map: `agent_key → { name, emoji }`
-- Display: `{emoji} {name}` for each activity's author
-
-### 5. Optional: Persist AI Summaries to Database
-
-For efficiency, after generating summaries, we could update the `activities.summary` column in the database. This avoids regenerating summaries on every page load.
-
-**Implementation:**
-- After AI generates summaries, upsert them to the `activities` table
-- On next load, activities with `summary` column populated skip AI generation
 
 ---
 
-## Technical Implementation
+## Storage Convention
 
-### Phase 1: API Key Setup
+Reuse the existing `clawdos-documents` bucket with this path structure:
 
-Store the OpenAI API key as a Supabase secret:
-- Secret name: `OPENAI_API_KEY`
-- Value: The key provided by the user
-
-### Phase 2: Edge Function
-
-**File:** `supabase/functions/summarize-activity/index.ts`
-
-```typescript
-// Accepts: { activities: [{ id, type, message, actor }] }
-// Returns: { summaries: { [id]: "Human-friendly summary" } }
-
-// Uses OPENAI_API_KEY from environment
-// Model: gpt-4o-mini (fast, cheap, good for summarization)
-// Batches up to 20 activities per request
+```
+clawdos-documents/
+  {projectId}/
+    {docId}/            ← existing documents
+      file.pdf
+    tasks/
+      {taskId}/         ← NEW: task outputs
+        screenshot.png
+        final-design.fig
 ```
 
-### Phase 3: Frontend Changes
+**Why one bucket?**
+- Simpler RLS (project-scoped paths already work)
+- Single backup/cleanup target
+- No bucket proliferation as projects scale
 
-**File:** `src/components/pages/ActivityPage.tsx`
+---
 
-1. Add state for agents map (for name/emoji lookup)
-2. Add state for AI-generated summaries
-3. On load, fetch activities and agents in parallel
-4. Identify activities without summaries
-5. Call edge function to generate summaries (batched)
-6. Render clean cards with summary, time, and agent info
+## UI Changes
 
-**New Card Structure:**
-```tsx
-<div className="p-3 rounded-lg border bg-card">
-  <div className="flex items-start justify-between">
-    <div className="text-sm">{summary}</div>
-    <div className="text-xs text-muted-foreground">{relativeTime}</div>
-  </div>
-  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-    <span>{agentEmoji}</span>
-    <span>{agentName}</span>
-  </div>
-</div>
+### 1. Task Detail Sheet: Outputs Section
+
+Add a collapsible "Outputs" section to the task detail sheet:
+
+```
+┌─────────────────────────────────────────────────┐
+│ Fix login bug                           ✓ Done  │
+├─────────────────────────────────────────────────┤
+│ Description: Users can't log in with SSO...    │
+├─────────────────────────────────────────────────┤
+│ ▼ Outputs (2)                                   │
+│   📝 Summary                                    │
+│      "Fixed SSO redirect by updating the       │
+│       callback URL in auth config."            │
+│                                                 │
+│   🔗 Pull Request                               │
+│      github.com/acme/app/pull/142              │
+├─────────────────────────────────────────────────┤
+│ Discussion (3 comments)                         │
+└─────────────────────────────────────────────────┘
 ```
 
-### Phase 4: Summary Persistence (Optional Enhancement)
+### 2. Add Output Dialog
 
-After generating summaries, update the database:
+When completing a task, prompt for outputs:
+
+- **Summary** (text area) — what was done
+- **Add file** — upload artifact
+- **Add link** — paste URL
+- **Auto-summarize** — generate from related activities
+
+### 3. Completion Checklist (Optional Enhancement)
+
+Before marking done, require:
+- At least one output OR explicit "no output needed" checkbox
+- Prevents empty completions
+
+---
+
+## Action Task Handling: Log Summarization
+
+For tasks that are "actions" (run a script, send an email, etc.):
+
+1. **Related Activities**: Query `activities` where `task_id` matches
+2. **Summarize**: Send to existing `summarize-activity` edge function
+3. **Store as `log_summary`**: Auto-create a task output with the AI summary
+
 ```typescript
-// In edge function or client-side
-await supabase
-  .from('activities')
-  .update({ summary: generatedSummary })
-  .eq('id', activityId);
+// When task moves to "done" and has related activities
+const relatedActivities = await getActivitiesForTask(taskId);
+if (relatedActivities.length > 0) {
+  const summary = await summarizeActivities(relatedActivities);
+  await createTaskOutput({
+    taskId,
+    outputType: 'log_summary',
+    title: 'Activity Log',
+    contentText: summary,
+  });
+}
 ```
 
 ---
@@ -146,44 +147,64 @@ await supabase
 
 | File | Action | Description |
 |------|--------|-------------|
-| (Supabase Secret) | Add | `OPENAI_API_KEY` secret |
-| `supabase/functions/summarize-activity/index.ts` | Create | Edge function for AI summarization |
-| `src/components/pages/ActivityPage.tsx` | Edit | Simplify UI, add agent resolution, call AI summaries |
-| `src/lib/activity-summary.ts` | Edit | Add fallback templates for when AI is unavailable |
-| `supabase/config.toml` | Edit | Register new edge function |
+| `supabase/migrations/...` | Create | Add `task_outputs` table |
+| `src/lib/api.ts` | Edit | Add CRUD for task outputs |
+| `src/components/tasks/TaskDetailSheet.tsx` | Edit | Add Outputs section |
+| `src/components/tasks/TaskOutputSection.tsx` | Create | Outputs display/add UI |
+| `src/components/tasks/AddOutputDialog.tsx` | Create | Dialog for adding outputs |
+| `changes.md` | Edit | Document the feature |
 
 ---
 
-## UI Before vs After
+## API Functions to Add
 
-**Before:**
-- Shows technical type badges (task_moved, cron_run_requested)
-- Shows raw messages with expandable details
-- Complex filter dropdowns
-- Author shown as technical key (main, ui)
+```typescript
+interface TaskOutput {
+  id: string;
+  taskId: string;
+  projectId: string;
+  outputType: 'summary' | 'file' | 'link' | 'message' | 'log_summary';
+  title?: string;
+  contentText?: string;
+  storagePath?: string;
+  linkUrl?: string;
+  mimeType?: string;
+  createdBy?: string;
+  createdAt: string;
+}
 
-**After:**
-- Clean, simple summaries ("Started working on 'Fix login bug'")
-- Agent shown with emoji and name (🤖 Trunks)
-- Just a search box for filtering
-- Relative time (2m ago, 1h ago)
-- No technical jargon visible
+// Get all outputs for a task
+getTaskOutputs(taskId: string): Promise<TaskOutput[]>
+
+// Add an output
+createTaskOutput(input: CreateTaskOutputInput): Promise<{ ok: boolean; id?: string }>
+
+// Upload file as output
+uploadTaskOutput(taskId: string, file: File, title: string): Promise<{ ok: boolean; id?: string }>
+
+// Delete an output
+deleteTaskOutput(outputId: string): Promise<{ ok: boolean }>
+
+// Auto-generate log summary for a task
+generateTaskLogSummary(taskId: string): Promise<{ ok: boolean; summary?: string }>
+```
 
 ---
 
-## Edge Cases Handled
+## Edge Cases
 
-1. **AI unavailable:** Fall back to existing template-based summaries
-2. **Rate limits (429):** Show toast, use fallback summaries
-3. **No agents configured:** Show "Unknown" for author
-4. **Empty activity feed:** Show "No activity yet" message
-5. **Loading state:** Show skeleton cards while fetching
+1. **No activities for action task**: Skip auto-summary, allow manual entry
+2. **Large files**: Same limits as documents (handled by Supabase storage)
+3. **Task deleted**: Cascade delete outputs + storage cleanup
+4. **Multiple outputs**: Support array (some tasks produce several artifacts)
+5. **Viewing outputs**: Reuse `DocumentViewer` component for files
 
 ---
 
-## Security Notes
+## Future Enhancements
 
-- OpenAI API key stored as Supabase secret (never exposed to client)
-- Edge function authenticates with Supabase's built-in auth
-- Activity data stays within the project scope (RLS enforced)
+- **Pinned comments as outputs**: Mark specific comments as "artifact"
+- **Output templates**: Pre-fill output types based on task labels
+- **Agent enforcement**: Require outputs before agents can mark done
+- **Output gallery**: Visual grid of all task artifacts across project
 
