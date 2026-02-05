@@ -1,3 +1,10 @@
+### Task Outputs: capture structured deliverables for completed tasks
+- Added `task_outputs` table to store summaries, files, links, and auto-generated log summaries per task.
+- New **Outputs** collapsible section in TaskDetailSheet between description and thread.
+- **Add Output** dialog with tabs: Summary (text), Link (URL), File (upload), and Auto (AI summarization from task activities).
+- Files stored in `clawdos-documents/{projectId}/tasks/{taskId}/` path convention.
+- `generateTaskLogSummary()` queries task-related activities and calls `summarize-activity` edge function.
+
 ### Manage: realtime refresh for Agents + Activity (presence + feed)
 - **Agents** and **Activity** pages now listen to Supabase realtime (`activities`, `agents`, `agent_status`) and refresh within ~500ms.
 - Debounced to avoid hammering when many events fire.

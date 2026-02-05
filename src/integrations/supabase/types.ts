@@ -571,6 +571,63 @@ export type Database = {
           },
         ]
       }
+      task_outputs: {
+        Row: {
+          content_text: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          link_url: string | null
+          mime_type: string | null
+          output_type: string
+          project_id: string
+          storage_path: string | null
+          task_id: string
+          title: string | null
+        }
+        Insert: {
+          content_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          link_url?: string | null
+          mime_type?: string | null
+          output_type: string
+          project_id: string
+          storage_path?: string | null
+          task_id: string
+          title?: string | null
+        }
+        Update: {
+          content_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          link_url?: string | null
+          mime_type?: string | null
+          output_type?: string
+          project_id?: string
+          storage_path?: string | null
+          task_id?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_outputs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_outputs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_agent_key: string | null
