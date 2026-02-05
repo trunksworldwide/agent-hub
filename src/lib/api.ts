@@ -233,6 +233,31 @@ export interface TaskComment {
   createdAt: string;
 }
 
+// Task outputs interface
+export type TaskOutputType = 'summary' | 'file' | 'link' | 'message' | 'log_summary';
+
+export interface TaskOutput {
+  id: string;
+  taskId: string;
+  projectId: string;
+  outputType: TaskOutputType;
+  title?: string;
+  contentText?: string;
+  storagePath?: string;
+  linkUrl?: string;
+  mimeType?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface CreateTaskOutputInput {
+  taskId: string;
+  outputType: TaskOutputType;
+  title?: string;
+  contentText?: string;
+  linkUrl?: string;
+}
+
 // Mock Data
 const mockAgents: Agent[] = [
   { id: 'trunks', name: 'Trunks', role: 'Primary Agent', status: 'idle', lastActive: '2 min ago', skillCount: 12, avatar: '🤖' },
@@ -2167,6 +2192,254 @@ export async function sendChatMessage(input: {
     };
   } catch (e: any) {
     console.error('sendChatMessage failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ============= Task Outputs =============
+
+export async function getTaskOutputs(taskId: string): Promise<TaskOutput[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('task_outputs')
+      .select('*')
+      .eq('task_id', taskId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      taskId: row.task_id,
+      projectId: row.project_id,
+      outputType: row.output_type,
+      title: row.title,
+      contentText: row.content_text,
+      storagePath: row.storage_path,
+      linkUrl: row.link_url,
+      mimeType: row.mime_type,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+    }));
+  } catch (e) {
+    console.error('getTaskOutputs failed:', e);
+    return [];
+  }
+}
+
+export async function createTaskOutput(input: CreateTaskOutputInput): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('task_outputs')
+      .insert({
+        project_id: projectId,
+        task_id: input.taskId,
+        output_type: input.outputType,
+        title: input.title || null,
+        content_text: input.contentText || null,
+        link_url: input.linkUrl || null,
+        created_by: 'ui',
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_output_added',
+      message: `Added ${input.outputType} output: ${input.title || input.outputType}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+      task_id: input.taskId,
+    });
+
+    return { ok: true, id: data?.id };
+  } catch (e: any) {
+    console.error('createTaskOutput failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function uploadTaskOutput(
+  taskId: string,
+  file: File,
+  title: string
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const outputId = crypto.randomUUID();
+  const storagePath = `${projectId}/tasks/${taskId}/${file.name}`;
+
+  try {
+    // Upload to storage
+    const { error: uploadError } = await supabase.storage
+      .from('clawdos-documents')
+      .upload(storagePath, file);
+
+    if (uploadError) throw uploadError;
+
+    // Create DB record
+    const { data, error: dbError } = await supabase
+      .from('task_outputs')
+      .insert({
+        id: outputId,
+        project_id: projectId,
+        task_id: taskId,
+        output_type: 'file',
+        title: title || file.name,
+        storage_path: storagePath,
+        mime_type: file.type || 'application/octet-stream',
+        created_by: 'ui',
+      })
+      .select('id')
+      .single();
+
+    if (dbError) throw dbError;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_output_added',
+      message: `Uploaded file: ${title || file.name}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+      task_id: taskId,
+    });
+
+    return { ok: true, id: data?.id };
+  } catch (e: any) {
+    console.error('uploadTaskOutput failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function deleteTaskOutput(outputId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    // Get the output first to check storage path
+    const { data: output, error: fetchError } = await supabase
+      .from('task_outputs')
+      .select('title, storage_path, task_id')
+      .eq('id', outputId)
+      .eq('project_id', projectId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    // Delete from storage if it's a file
+    if (output?.storage_path) {
+      await supabase.storage.from('clawdos-documents').remove([output.storage_path]);
+    }
+
+    // Delete DB record
+    const { error: deleteError } = await supabase
+      .from('task_outputs')
+      .delete()
+      .eq('id', outputId)
+      .eq('project_id', projectId);
+
+    if (deleteError) throw deleteError;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_output_deleted',
+      message: `Deleted output: ${output?.title || outputId}`,
+      actor_agent_key: DASHBOARD_ACTOR_KEY,
+      task_id: output?.task_id,
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    console.error('deleteTaskOutput failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function generateTaskLogSummary(taskId: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    // Get related activities for this task
+    const { data: activities, error: fetchError } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('task_id', taskId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+
+    if (fetchError) throw fetchError;
+
+    if (!activities || activities.length === 0) {
+      return { ok: true, summary: undefined };
+    }
+
+    // Build activity text for summarization
+    const activityText = activities
+      .map((a: any) => `[${a.type}] ${a.message}`)
+      .join('\n');
+
+    // Call the existing summarize-activity edge function
+    const { data: summaryData, error: summaryError } = await supabase.functions.invoke('summarize-activity', {
+      body: {
+        activities: activityText,
+        context: 'task completion summary',
+      },
+    });
+
+    if (summaryError) throw summaryError;
+
+    const summary = summaryData?.summary || 'Activity log reviewed.';
+
+    // Create task output with the summary
+    const { error: insertError } = await supabase
+      .from('task_outputs')
+      .insert({
+        project_id: projectId,
+        task_id: taskId,
+        output_type: 'log_summary',
+        title: 'Activity Log',
+        content_text: summary,
+        created_by: 'ai',
+      });
+
+    if (insertError) throw insertError;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'task_output_added',
+      message: `Generated activity summary`,
+      actor_agent_key: 'ai',
+      task_id: taskId,
+    });
+
+    return { ok: true, summary };
+  } catch (e: any) {
+    console.error('generateTaskLogSummary failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
 }

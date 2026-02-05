@@ -12,16 +12,20 @@ import {
   type TaskStatus, 
   type Agent, 
   type TaskComment,
+  type TaskOutput,
   updateTask, 
   getTaskComments, 
   createTaskComment,
-  createActivity 
+  createActivity,
+  getTaskOutputs,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { RejectConfirmDialog } from './RejectConfirmDialog';
 import { BlockedReasonModal } from './BlockedReasonModal';
+import { TaskOutputSection } from './TaskOutputSection';
+import { AddOutputDialog } from './AddOutputDialog';
 
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'inbox', label: 'Inbox' },
@@ -43,21 +47,26 @@ interface TaskDetailSheetProps {
 export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdated }: TaskDetailSheetProps) {
   const { toast } = useToast();
   const [comments, setComments] = useState<TaskComment[]>([]);
+  const [outputs, setOutputs] = useState<TaskOutput[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [isLoadingOutputs, setIsLoadingOutputs] = useState(false);
   const [isSendingComment, setIsSendingComment] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
+  const [showAddOutput, setShowAddOutput] = useState(false);
   const [pendingBlockedStatus, setPendingBlockedStatus] = useState<TaskStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load comments when task changes
+  // Load comments and outputs when task changes
   useEffect(() => {
     if (task?.id && open) {
       loadComments();
+      loadOutputs();
     } else {
       setComments([]);
+      setOutputs([]);
     }
   }, [task?.id, open]);
 
@@ -78,6 +87,19 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
       console.error('Failed to load comments:', e);
     } finally {
       setIsLoadingComments(false);
+    }
+  };
+
+  const loadOutputs = async () => {
+    if (!task?.id) return;
+    setIsLoadingOutputs(true);
+    try {
+      const data = await getTaskOutputs(task.id);
+      setOutputs(data);
+    } catch (e) {
+      console.error('Failed to load outputs:', e);
+    } finally {
+      setIsLoadingOutputs(false);
     }
   };
 
@@ -483,6 +505,14 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                 </div>
               )}
 
+              {/* Outputs */}
+              <TaskOutputSection
+                outputs={outputs}
+                onAddOutput={() => setShowAddOutput(true)}
+                onOutputDeleted={loadOutputs}
+                isLoading={isLoadingOutputs}
+              />
+
               <Separator />
 
               {/* Thread */}
@@ -569,6 +599,14 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
         }}
         onConfirm={handleBlockedConfirm}
         taskTitle={task.title}
+      />
+
+      <AddOutputDialog
+        open={showAddOutput}
+        onOpenChange={setShowAddOutput}
+        taskId={task.id}
+        taskTitle={task.title}
+        onOutputAdded={loadOutputs}
       />
     </>
   );
