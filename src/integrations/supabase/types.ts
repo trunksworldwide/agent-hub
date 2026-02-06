@@ -463,11 +463,16 @@ export type Database = {
       }
       project_documents: {
         Row: {
+          agent_key: string | null
           content_text: string | null
           created_at: string
+          doc_notes: Json | null
+          doc_type: string | null
           id: string
           mime_type: string | null
+          pinned: boolean | null
           project_id: string
+          sensitivity: string | null
           size_bytes: number | null
           source_type: string
           storage_path: string | null
@@ -475,11 +480,16 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_key?: string | null
           content_text?: string | null
           created_at?: string
+          doc_notes?: Json | null
+          doc_type?: string | null
           id?: string
           mime_type?: string | null
+          pinned?: boolean | null
           project_id: string
+          sensitivity?: string | null
           size_bytes?: number | null
           source_type: string
           storage_path?: string | null
@@ -487,11 +497,16 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_key?: string | null
           content_text?: string | null
           created_at?: string
+          doc_notes?: Json | null
+          doc_type?: string | null
           id?: string
           mime_type?: string | null
+          pinned?: boolean | null
           project_id?: string
+          sensitivity?: string | null
           size_bytes?: number | null
           source_type?: string
           storage_path?: string | null
@@ -633,6 +648,7 @@ export type Database = {
           assignee_agent_key: string | null
           blocked_at: string | null
           blocked_reason: string | null
+          context_snapshot: Json | null
           created_at: string
           description: string | null
           id: string
@@ -648,6 +664,7 @@ export type Database = {
           assignee_agent_key?: string | null
           blocked_at?: string | null
           blocked_reason?: string | null
+          context_snapshot?: Json | null
           created_at?: string
           description?: string | null
           id?: string
@@ -663,6 +680,7 @@ export type Database = {
           assignee_agent_key?: string | null
           blocked_at?: string | null
           blocked_reason?: string | null
+          context_snapshot?: Json | null
           created_at?: string
           description?: string | null
           id?: string

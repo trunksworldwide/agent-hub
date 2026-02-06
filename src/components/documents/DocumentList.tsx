@@ -1,7 +1,8 @@
-import { FileText, Image, File, Trash2, Eye } from 'lucide-react';
+import { FileText, Image, File, Trash2, Eye, Pin, Lock, Users, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,13 +15,14 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
-import type { ProjectDocument } from '@/lib/api';
+import type { ProjectDocument, Agent } from '@/lib/api';
 
 interface DocumentListProps {
   documents: ProjectDocument[];
   onView: (doc: ProjectDocument) => void;
   onDelete: (id: string) => void;
   isDeleting?: string | null;
+  agents?: Agent[];
 }
 
 function getIcon(mimeType: string | null | undefined) {
@@ -49,7 +51,25 @@ function formatDate(iso: string): string {
   }
 }
 
-export function DocumentList({ documents, onView, onDelete, isDeleting }: DocumentListProps) {
+const DOC_TYPE_LABELS: Record<string, string> = {
+  general: 'General',
+  playbook: 'Playbook',
+  reference: 'Reference',
+  credentials: 'Credentials',
+  style_guide: 'Style Guide',
+};
+
+export function DocumentList({ documents, onView, onDelete, isDeleting, agents = [] }: DocumentListProps) {
+  const getAgentName = (agentKey: string): string => {
+    const agent = agents.find((a) => a.id === agentKey);
+    return agent?.name || agentKey.split(':')[1] || 'Agent';
+  };
+
+  const getAgentEmoji = (agentKey: string): string => {
+    const agent = agents.find((a) => a.id === agentKey);
+    return agent?.avatar || '🤖';
+  };
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -67,27 +87,76 @@ export function DocumentList({ documents, onView, onDelete, isDeleting }: Docume
       {documents.map((doc) => {
         const Icon = getIcon(doc.mimeType);
         const deleting = isDeleting === doc.id;
+        const isPinned = doc.pinned;
+        const isCredential = doc.sensitivity === 'contains_secrets';
+        const isAgentSpecific = !!doc.agentKey;
 
         return (
-          <Card key={doc.id} className="overflow-hidden">
+          <Card key={doc.id} className={cn('overflow-hidden', isPinned && 'border-primary/30')}>
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
-                <div className="p-2 rounded-lg bg-muted">
+                <div className="p-2 rounded-lg bg-muted relative">
                   <Icon className="w-5 h-5 text-muted-foreground" />
+                  {isPinned && (
+                    <Pin className="w-3 h-3 text-primary absolute -top-1 -right-1" />
+                  )}
                 </div>
                 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-medium truncate">{doc.title}</h4>
+                    
+                    {/* Doc type badge */}
                     <Badge variant="secondary" className="text-xs shrink-0">
-                      {doc.sourceType}
+                      {DOC_TYPE_LABELS[doc.docType || 'general'] || doc.docType}
                     </Badge>
+
+                    {/* Scope indicator */}
+                    {isAgentSpecific ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-xs shrink-0 gap-1">
+                            <span>{getAgentEmoji(doc.agentKey!)}</span>
+                            {getAgentName(doc.agentKey!)}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Only visible to this agent
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-xs shrink-0 gap-1">
+                            <Users className="w-3 h-3" />
+                            Global
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Available to all agents
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+
+                    {/* Secret indicator */}
+                    {isCredential && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Lock className="w-3.5 h-3.5 text-warning" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Contains secrets — only pointer shown in Context Pack
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                     <span>{formatDate(doc.updatedAt)}</span>
                     {doc.sizeBytes && <span>{formatSize(doc.sizeBytes)}</span>}
-                    {doc.mimeType && <span className="truncate">{doc.mimeType}</span>}
+                    {doc.docNotes && (
+                      <span className="text-success">✓ Indexed</span>
+                    )}
                   </div>
                 </div>
 

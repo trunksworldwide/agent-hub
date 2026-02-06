@@ -2,3 +2,9 @@ project_id = "bsqeddnaiojvvckpdvcu"
 
 [functions.summarize-activity]
 verify_jwt = false
+
+[functions.get-context-pack]
+verify_jwt = false
+
+[functions.extract-document-notes]
+verify_jwt = false

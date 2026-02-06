@@ -10,12 +10,16 @@ import {
   uploadDocument,
   deleteDocument,
   getDocumentStorageUrl,
+  getAgents,
   type ProjectDocument,
+  type Agent,
+  type CreateDocumentOptions,
 } from '@/lib/api';
 import { generateRecentChangesSummary } from '@/lib/recent-changes';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { AddDocumentDialog } from '@/components/documents/AddDocumentDialog';
 import { DocumentViewer } from '@/components/documents/DocumentViewer';
+import { ProjectOverviewCard } from '@/components/documents/ProjectOverviewCard';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +28,7 @@ export function DocumentsPage() {
   const { toast } = useToast();
 
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -40,8 +45,12 @@ export function DocumentsPage() {
   const loadDocuments = async () => {
     setLoading(true);
     try {
-      const docs = await getDocuments();
+      const [docs, agentsList] = await Promise.all([
+        getDocuments(),
+        getAgents(),
+      ]);
       setDocuments(docs);
+      setAgents(agentsList);
     } catch (err: any) {
       toast({
         title: 'Failed to load documents',
@@ -72,8 +81,8 @@ export function DocumentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId]);
 
-  const handleCreateNote = async (title: string, content: string) => {
-    const res = await createNoteDocument(title, content);
+  const handleCreateNote = async (title: string, content: string, options?: CreateDocumentOptions) => {
+    const res = await createNoteDocument(title, content, options);
     if (!res.ok) {
       toast({
         title: 'Failed to create note',
@@ -86,8 +95,8 @@ export function DocumentsPage() {
     await loadDocuments();
   };
 
-  const handleUploadFile = async (file: File, title: string) => {
-    const res = await uploadDocument(file, title);
+  const handleUploadFile = async (file: File, title: string, options?: CreateDocumentOptions) => {
+    const res = await uploadDocument(file, title, options);
     if (!res.ok) {
       toast({
         title: 'Failed to upload file',
@@ -132,9 +141,9 @@ export function DocumentsPage() {
           <div className="flex items-center gap-3">
             <FileStack className="w-6 h-6 text-muted-foreground" />
             <div>
-              <h1 className="text-2xl font-semibold">Documents</h1>
+              <h1 className="text-2xl font-semibold">Knowledge</h1>
               <p className="text-muted-foreground text-sm">
-                Knowledge and context for your agents.
+                Context and documents for your agents.
               </p>
             </div>
           </div>
@@ -154,13 +163,18 @@ export function DocumentsPage() {
           </div>
         </div>
 
-        {/* Recent Changes - Pinned */}
+        {/* Project Overview */}
+        <div className="mb-6">
+          <ProjectOverviewCard />
+        </div>
+
+        {/* Recent Changes - Collapsible */}
         <Card className="mb-6">
           <Collapsible open={recentChangesOpen} onOpenChange={setRecentChangesOpen}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
-                  📋 Recent Changes
+                  🕐 Recent Changes
                   <span className="text-xs font-normal text-muted-foreground">
                     (auto-generated)
                   </span>
@@ -193,7 +207,7 @@ export function DocumentsPage() {
                   {recentChanges || 'Loading...'}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  💡 Agents should read this before executing tasks to stay aligned.
+                  💡 This summary is included in every agent's Context Pack.
                 </p>
               </CardContent>
             </CollapsibleContent>
@@ -206,6 +220,7 @@ export function DocumentsPage() {
           onView={handleView}
           onDelete={handleDelete}
           isDeleting={deletingId}
+          agents={agents}
         />
       </div>
 
@@ -215,6 +230,7 @@ export function DocumentsPage() {
         onOpenChange={setAddDialogOpen}
         onCreateNote={handleCreateNote}
         onUploadFile={handleUploadFile}
+        agents={agents}
       />
 
       {/* Document Viewer */}
