@@ -1,3 +1,13 @@
+### Cron Agent Assignment: durable persistence + UI polish (schedule durability fix)
+- **Problem**: Jobs showed "Unassigned" even when agents were selected because agent info was only in DB columns, not the job payload itself.
+- **Solution**: Dual-path persistence — agent/intent now stored in **both** DB columns AND as `@agent:`/`@intent:` headers in instructions.
+- **New functions**: `encodeJobHeaders()` and `decodeJobHeaders()` in `schedule-utils.ts` handle header encoding/decoding.
+- **Create flow**: New jobs encode agent + intent into instructions via headers for durable assignment.
+- **Reassign flow**: Changing agent parses existing instructions, re-encodes with new agent, queues patch with both fields and updated instructions.
+- **Display logic**: `getEffectiveTargetAgent()` and `getEffectiveIntent()` check DB fields first, fallback to parsing instructions.
+- **UI polish**: AgentAssignmentDropdown compact mode now shows "Needs assignment" amber badge; layout improved with inline agent + intent badges.
+- **Migration**: Users can manually reassign legacy jobs — dropdown click queues patch that durably updates instructions.
+
 ### Context Flow Architecture: centralized, predictable context system for agents
 - **Database schema**: Extended `project_documents` with `agent_key` (scoping), `pinned`, `doc_type`, `sensitivity`, and `doc_notes` (structured extraction).
 - **Project Overview**: New `brain_docs.doc_type = 'project_overview'` for project description, editable in Knowledge page, auto-included in every Context Pack.

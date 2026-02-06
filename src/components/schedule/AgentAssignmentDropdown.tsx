@@ -55,25 +55,26 @@ export function AgentAssignmentDropdown({
             aria-expanded={open}
             disabled={disabled}
             className={cn(
-              'h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground',
+              'h-auto py-0.5 px-1.5 text-xs gap-1.5 font-normal',
+              selectedAgent ? 'text-foreground' : 'text-muted-foreground',
               className
             )}
           >
             {selectedAgent ? (
               <>
-                <span>{selectedAgent.avatar || '🤖'}</span>
-                <span className="max-w-[80px] truncate">{selectedAgent.name}</span>
+                <span className="text-sm">{selectedAgent.avatar || '🤖'}</span>
+                <span className="max-w-[100px] truncate">{selectedAgent.name}</span>
               </>
             ) : (
               <>
                 <User className="w-3 h-3" />
-                <span>Unassigned</span>
+                <span className="text-amber-600 dark:text-amber-400">Needs assignment</span>
               </>
             )}
-            <ChevronsUpDown className="w-3 h-3 opacity-50" />
+            <ChevronsUpDown className="w-2.5 h-2.5 opacity-40" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[200px] p-0" align="start">
+        <PopoverContent className="w-[200px] p-0 z-50" align="start">
           <Command>
             <CommandInput placeholder="Search agents..." className="h-9" />
             <CommandList>

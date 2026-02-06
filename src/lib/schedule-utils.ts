@@ -204,8 +204,69 @@ export function configToScheduleExpression(config: ScheduleConfig): {
   }
 }
 
+// ============= Job Header Encoding/Decoding =============
+
+const HEADER_SEPARATOR = '\n---\n';
+
 /**
- * Encode target agent into instructions
+ * Encode target agent and intent into instructions header for durable persistence.
+ * Format:
+ *   @agent:agent:main:main
+ *   @intent:daily_brief
+ *   ---
+ *   [actual instructions]
+ */
+export function encodeJobHeaders(
+  targetAgentKey: string | null,
+  jobIntent: string | null,
+  instructions: string
+): string {
+  const headers: string[] = [];
+  if (targetAgentKey) headers.push(`@agent:${targetAgentKey}`);
+  if (jobIntent && jobIntent !== 'custom') headers.push(`@intent:${jobIntent}`);
+  
+  if (headers.length === 0) return instructions || '';
+  return headers.join('\n') + HEADER_SEPARATOR + (instructions || '');
+}
+
+/**
+ * Decode target agent and intent from instructions header.
+ * Supports both new @agent: format and legacy @target: format.
+ */
+export function decodeJobHeaders(instructions: string | null | undefined): {
+  targetAgent: string | null;
+  intent: string | null;
+  body: string;
+} {
+  if (!instructions) return { targetAgent: null, intent: null, body: '' };
+  
+  // Check for new header section format
+  const sepIndex = instructions.indexOf(HEADER_SEPARATOR);
+  if (sepIndex >= 0) {
+    const headerSection = instructions.slice(0, sepIndex);
+    const body = instructions.slice(sepIndex + HEADER_SEPARATOR.length);
+    
+    const agentMatch = headerSection.match(/@agent:([^\n]+)/);
+    const intentMatch = headerSection.match(/@intent:([^\n]+)/);
+    
+    return {
+      targetAgent: agentMatch ? agentMatch[1].trim() : null,
+      intent: intentMatch ? intentMatch[1].trim() : null,
+      body,
+    };
+  }
+  
+  // Fallback: check legacy @target: format at start of instructions
+  const targetMatch = instructions.match(/^@target:([^\n]+)\n([\s\S]*)$/);
+  if (targetMatch) {
+    return { targetAgent: targetMatch[1].trim(), intent: null, body: targetMatch[2] };
+  }
+  
+  return { targetAgent: null, intent: null, body: instructions };
+}
+
+/**
+ * Legacy: Encode target agent into instructions (deprecated, use encodeJobHeaders)
  */
 export function encodeTargetAgent(agentKey: string | null, instructions: string): string {
   if (!agentKey) return instructions;
@@ -213,7 +274,7 @@ export function encodeTargetAgent(agentKey: string | null, instructions: string)
 }
 
 /**
- * Decode target agent from instructions
+ * Legacy: Decode target agent from instructions (deprecated, use decodeJobHeaders)
  */
 export function decodeTargetAgent(instructions: string | null | undefined): { 
   targetAgent: string | null; 
@@ -221,9 +282,16 @@ export function decodeTargetAgent(instructions: string | null | undefined): {
 } {
   if (!instructions) return { targetAgent: null, body: '' };
   
+  // Try new format first
+  const decoded = decodeJobHeaders(instructions);
+  if (decoded.targetAgent) {
+    return { targetAgent: decoded.targetAgent, body: decoded.body };
+  }
+  
+  // Legacy format
   const match = instructions.match(/^@target:([^\n]+)\n([\s\S]*)$/);
   if (match) {
-    return { targetAgent: match[1], body: match[2] };
+    return { targetAgent: match[1].trim(), body: match[2] };
   }
   return { targetAgent: null, body: instructions };
 }
