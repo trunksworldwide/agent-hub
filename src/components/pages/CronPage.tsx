@@ -1376,14 +1376,11 @@ export function CronPage() {
             {/* Target Agent */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Assigned Agent</label>
-              <Select value={editTargetAgent || 'none'} onValueChange={(v) => setEditTargetAgent(v === 'none' ? '' : v)}>
+              <Select value={editTargetAgent || ''} onValueChange={(v) => setEditTargetAgent(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an agent..." />
                 </SelectTrigger>
                 <SelectContent className="bg-popover">
-                  <SelectItem value="none">
-                    <span className="text-muted-foreground">No agent assigned</span>
-                  </SelectItem>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
                       <span className="flex items-center gap-2">
