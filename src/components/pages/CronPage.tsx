@@ -52,6 +52,8 @@ import {
   parseScheduleToConfig,
   configToScheduleExpression,
   formatScheduleDisplay,
+  encodeJobHeaders,
+  decodeJobHeaders,
   encodeTargetAgent,
   decodeTargetAgent,
 } from '@/lib/schedule-utils';
@@ -171,17 +173,28 @@ function CronJobRow({
   onRefreshRuns,
   agents,
 }: CronJobRowProps) {
-  // Get effective target agent (prefer explicit field, fallback to instructions prefix)
+  // Get effective target agent (prefer explicit field, fallback to instructions header)
   const getEffectiveTargetAgent = (): string | null => {
     if (job.targetAgentKey) return job.targetAgentKey;
     if (job.instructions) {
-      const { targetAgent } = decodeTargetAgent(job.instructions);
+      const { targetAgent } = decodeJobHeaders(job.instructions);
       return targetAgent;
+    }
+    return null;
+  };
+
+  // Get effective intent (prefer explicit field, fallback to instructions header)
+  const getEffectiveIntent = (): string | null => {
+    if (job.jobIntent) return job.jobIntent;
+    if (job.instructions) {
+      const { intent } = decodeJobHeaders(job.instructions);
+      return intent;
     }
     return null;
   };
   
   const targetAgentKey = getEffectiveTargetAgent();
+  const effectiveIntent = getEffectiveIntent();
   const targetAgent = agents.find(a => a.id === targetAgentKey);
   const getStatusIcon = (status: string | null | undefined) => {
     switch (status) {
@@ -239,8 +252,8 @@ function CronJobRow({
                     </Badge>
                   )}
                 </div>
-                {/* Agent and Intent badges */}
-                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                {/* Agent and Intent badges - inline on same row */}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   <AgentAssignmentDropdown
                     agents={agents}
                     value={targetAgentKey}
@@ -248,7 +261,7 @@ function CronJobRow({
                     disabled={pendingDelete}
                     compact
                   />
-                  {job.jobIntent && <JobIntentBadge intent={job.jobIntent} />}
+                  {effectiveIntent && <JobIntentBadge intent={effectiveIntent} />}
                 </div>
                 {/* Schedule on third line - clickable inline editor */}
                 <InlineScheduleEditor
@@ -758,15 +771,25 @@ export function CronPage() {
     }
   };
 
-  // Handle agent assignment change
+  // Handle agent assignment change - also encode into instructions for durability
   const handleAgentChange = async (job: CronMirrorJob, agentKey: string | null) => {
     try {
-      const result = await updateCronJobAgent(job.jobId, agentKey);
+      // Parse existing instructions to get body without old headers
+      const { intent, body } = decodeJobHeaders(job.instructions);
+      
+      // Re-encode with new agent + existing intent
+      const newInstructions = encodeJobHeaders(agentKey, intent || job.jobIntent || null, body);
+      
+      const result = await queueCronPatchRequest(job.jobId, {
+        targetAgentKey: agentKey,
+        instructions: newInstructions,
+      });
+      
       if (result.ok) {
         // Optimistic update
         setMirrorJobs(mirrorJobs.map(j =>
           j.jobId === job.jobId
-            ? { ...j, targetAgentKey: agentKey }
+            ? { ...j, targetAgentKey: agentKey, instructions: newInstructions }
             : j
         ));
         const agentName = agentKey ? agents.find(a => a.id === agentKey)?.name || agentKey : 'Unassigned';
@@ -800,17 +823,22 @@ export function CronPage() {
     };
     const scheduleResult = configToScheduleExpression(scheduleConfig);
     
-    // Don't encode target agent into instructions anymore - pass as explicit field
+    // Encode agent + intent into instructions for durability (belt + suspenders)
+    const encodedInstructions = encodeJobHeaders(
+      createTargetAgent || null,
+      createJobIntent || null,
+      createInstructions || ''
+    );
     
     setSavingCreate(true);
     try {
-      // Queue create request with explicit agent assignment
+      // Queue create request with both explicit fields AND encoded instructions
       const result = await queueCronCreateRequest({
         name: createName,
         scheduleKind: scheduleResult.kind,
         scheduleExpr: scheduleResult.expr,
         tz: createTz || undefined,
-        instructions: createInstructions || undefined,
+        instructions: encodedInstructions || undefined,
         targetAgentKey: createTargetAgent || undefined,
         jobIntent: createJobIntent || undefined,
         contextPolicy: createContextPolicy || undefined,

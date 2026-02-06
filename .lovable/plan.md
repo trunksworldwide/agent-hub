@@ -1,37 +1,20 @@
+# Cron Agent Assignment + Durable Persistence
 
+## Status: ✅ COMPLETED
 
-# Fix Cron "Unassigned" Persistence + UI Polish
+## Summary
 
-## Problem Diagnosis
+Fixed the "Unassigned" display issue for cron jobs and improved UI layout. Agent assignments are now durably persisted in **both** the DB columns and as headers in the job instructions.
 
-### Current State
+## Key Changes
 
-1. **All existing jobs have `target_agent_key = NULL`** in `cron_mirror` table
-2. The dashboard stores agent assignment in DB columns (`cron_mirror.target_agent_key`, `cron_create_requests.target_agent_key`)
-3. But the executor needs this info in the **job payload** to know which agent to run
-4. When jobs sync back to mirror, the agent info is lost because it's not in the source payload
+### 1. Dual-Path Persistence (Belt + Suspenders)
 
-### Why "Unassigned" Appears
+Agent/intent info is stored in:
+- **Explicit DB columns**: `target_agent_key`, `job_intent` for quick UI access
+- **Encoded headers in instructions**: For executor durability and mirror sync
 
-- Legacy jobs were created before the assignment feature existed
-- The `decodeTargetAgent()` fallback checks for `@target:` prefix in instructions, but it's not there
-- Even new jobs created via UI don't encode target into instructions (intentionally removed in recent update)
-
-### The Missing Link
-
-There's a **durability gap**: the executor should persist `agentId` in the OpenClaw cron job config, and the mirror sync should extract it back to `target_agent_key`.
-
----
-
-## Solution
-
-### A) Dual-Path Persistence (Belt + Suspenders)
-
-Store target agent in **both** places:
-1. **Explicit DB column** (`target_agent_key`) for quick UI access
-2. **Header in instructions** for executor durability and legacy compatibility
-
-When creating/patching jobs, include a machine-readable header:
+Header format in instructions:
 ```text
 @agent:agent:main:main
 @intent:daily_brief
@@ -39,318 +22,61 @@ When creating/patching jobs, include a machine-readable header:
 [actual instructions]
 ```
 
-This ensures:
-- Mirror table gets populated from DB on create
-- Executor can read agent info from job payload
-- Mirror sync can extract and repopulate if needed
+### 2. New Functions in `schedule-utils.ts`
 
-### B) Parse Headers on Display
+- `encodeJobHeaders(agentKey, intent, instructions)` - Encode metadata into instructions
+- `decodeJobHeaders(instructions)` - Extract `{ targetAgent, intent, body }` from instructions
 
-Update `getEffectiveTargetAgent()` to also check for `@agent:` header (not just `@target:`):
+Both support legacy `@target:` format for backwards compatibility.
 
-```typescript
-function getEffectiveTargetAgent(job: CronMirrorJob): string | null {
-  // 1. Prefer explicit field
-  if (job.targetAgentKey) return job.targetAgentKey;
-  
-  // 2. Fallback: parse @agent: or @target: from instructions
-  if (job.instructions) {
-    // Check new format: @agent:xxx
-    const agentMatch = job.instructions.match(/^@agent:([^\n@]+)/);
-    if (agentMatch) return agentMatch[1].trim();
-    
-    // Check legacy format: @target:xxx
-    const { targetAgent } = decodeTargetAgent(job.instructions);
-    if (targetAgent) return targetAgent;
-  }
-  
-  return null;
-}
-```
+### 3. CronPage Updates
 
-### C) Encode Headers When Creating/Patching Jobs
+- **Job creation**: Encodes agent + intent into instructions via `encodeJobHeaders()`
+- **Agent reassignment**: Decodes existing instructions, re-encodes with new agent
+- **Display**: Uses `getEffectiveTargetAgent()` and `getEffectiveIntent()` that check both DB fields and parsed instructions
+- **Layout**: Agent badge + intent badge now inline on same line
 
-When creating a new job with agent assignment:
+### 4. AgentAssignmentDropdown Polish
 
-```typescript
-function encodeJobHeaders(
-  targetAgentKey: string | null, 
-  jobIntent: string | null,
-  instructions: string
-): string {
-  const headers: string[] = [];
-  if (targetAgentKey) headers.push(`@agent:${targetAgentKey}`);
-  if (jobIntent) headers.push(`@intent:${jobIntent}`);
-  
-  if (headers.length === 0) return instructions;
-  return headers.join('\n') + '\n---\n' + instructions;
-}
-```
+- Shows "Needs assignment" with amber warning text when no agent selected
+- Cleaner compact mode styling with smaller chevron icon
+- Higher z-index on popover for proper layering
 
-### D) Patch Existing Jobs (One-Time Migration)
+## How It Works
 
-For the "Front Office: 9am Morning Brief" and other legacy jobs, provide a way to assign them to Trunks:
+### Creating New Jobs
 
-1. User clicks agent dropdown, selects "Trunks"
-2. UI queues patch request with `targetAgentKey` AND updates instructions to include header
-3. Executor applies patch, job now has durable assignment
+1. User fills in form with target agent and intent
+2. `handleCreate()` calls `encodeJobHeaders()` to embed metadata in instructions
+3. Both explicit fields AND encoded instructions are sent to `queueCronCreateRequest`
+4. Executor creates job with durable payload
 
-### E) UI: Replace "Unassigned" with Context-Aware Label
+### Reassigning Existing Jobs
 
-Instead of always showing "Unassigned":
-- **Unassigned jobs**: Show warning badge "Needs assignment" (amber)
-- **System jobs**: Show "System" badge (gray) - future enhancement
-- **Assigned jobs**: Show agent emoji + name
+1. User clicks agent dropdown on job row
+2. `handleAgentChange()` calls `decodeJobHeaders()` to get current body
+3. Re-encodes with new agent + existing intent via `encodeJobHeaders()`
+4. Queues patch with both `targetAgentKey` field AND updated instructions
+5. When executor applies, job payload has durable assignment
 
-### F) UI: Fix Awkward Layout (from screenshot)
+### Displaying Agent Info
 
-Current layout has the assignment dropdown awkwardly centered below the job name. Proposed fix:
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│ [Toggle] ClawdOS Morning Standup           ✓ OK • Feb 3 [▶][🗑][v]
-│          ⚡ Trunks · Daily Brief                                 
-│          Daily at 8:00 AM ET                                    
-└─────────────────────────────────────────────────────────────────┘
-```
-
-Changes:
-- Agent badge inline on same line as intent badge (not stacked)
-- Remove dropdown chevrons from display - make the whole agent area clickable
-- Better vertical alignment - use consistent left padding
-- Smaller, more subtle badges
-
----
-
-## File Changes
-
-| File | Action | Description |
-|------|--------|-------------|
-| `src/lib/schedule-utils.ts` | Edit | Add `encodeJobHeaders()`, update `decodeTargetAgent()` to handle `@agent:` format |
-| `src/components/pages/CronPage.tsx` | Edit | Use header encoding when creating jobs, fix `getEffectiveTargetAgent`, improve layout |
-| `src/components/schedule/AgentAssignmentDropdown.tsx` | Edit | Improve compact mode styling - cleaner look |
-| `src/lib/api.ts` | Edit | Update `queueCronCreateRequest` to encode headers into instructions, update `updateCronJobAgent` to patch instructions too |
-
----
-
-## Implementation Details
-
-### 1. Update schedule-utils.ts
-
-Add new header encoding/decoding functions:
-
-```typescript
-const HEADER_SEPARATOR = '\n---\n';
-
-export function encodeJobHeaders(
-  targetAgentKey: string | null,
-  jobIntent: string | null,
-  instructions: string
-): string {
-  const headers: string[] = [];
-  if (targetAgentKey) headers.push(`@agent:${targetAgentKey}`);
-  if (jobIntent && jobIntent !== 'custom') headers.push(`@intent:${jobIntent}`);
-  
-  if (headers.length === 0) return instructions;
-  return headers.join('\n') + HEADER_SEPARATOR + (instructions || '');
-}
-
-export function decodeJobHeaders(instructions: string | null | undefined): {
-  targetAgent: string | null;
-  intent: string | null;
-  body: string;
-} {
-  if (!instructions) return { targetAgent: null, intent: null, body: '' };
-  
-  // Check for header section
-  const sepIndex = instructions.indexOf(HEADER_SEPARATOR);
-  if (sepIndex >= 0) {
-    const headerSection = instructions.slice(0, sepIndex);
-    const body = instructions.slice(sepIndex + HEADER_SEPARATOR.length);
-    
-    const agentMatch = headerSection.match(/@agent:([^\n]+)/);
-    const intentMatch = headerSection.match(/@intent:([^\n]+)/);
-    
-    return {
-      targetAgent: agentMatch ? agentMatch[1].trim() : null,
-      intent: intentMatch ? intentMatch[1].trim() : null,
-      body,
-    };
-  }
-  
-  // Fallback: check legacy @target: format at start
-  const targetMatch = instructions.match(/^@target:([^\n]+)\n([\s\S]*)$/);
-  if (targetMatch) {
-    return { targetAgent: targetMatch[1], intent: null, body: targetMatch[2] };
-  }
-  
-  return { targetAgent: null, intent: null, body: instructions };
-}
-```
-
-### 2. Update CronPage.tsx - Job Creation
-
-When creating a job, encode headers into instructions:
-
-```typescript
-const handleCreate = async () => {
-  // ... existing schedule config code ...
-  
-  // Encode agent + intent into instructions for durability
-  const encodedInstructions = encodeJobHeaders(
-    createTargetAgent || null,
-    createJobIntent || null,
-    createInstructions || ''
-  );
-  
-  const result = await queueCronCreateRequest({
-    name: createName,
-    scheduleKind: scheduleResult.kind,
-    scheduleExpr: scheduleResult.expr,
-    tz: createTz || undefined,
-    instructions: encodedInstructions,  // Includes headers
-    targetAgentKey: createTargetAgent || undefined,
-    jobIntent: createJobIntent || undefined,
-    contextPolicy: createContextPolicy || undefined,
-  });
-  // ...
-};
-```
-
-### 3. Update CronPage.tsx - Agent Change Handler
-
-When reassigning agent, also update instructions:
-
-```typescript
-const handleAgentChange = async (job: CronMirrorJob, agentKey: string | null) => {
-  // Parse existing instructions to get body without old headers
-  const { intent, body } = decodeJobHeaders(job.instructions);
-  
-  // Re-encode with new agent
-  const newInstructions = encodeJobHeaders(agentKey, intent || job.jobIntent, body);
-  
-  const result = await queueCronPatchRequest(job.jobId, {
-    targetAgentKey: agentKey,
-    instructions: newInstructions,  // Update instructions too
-  });
-  // ...
-};
-```
-
-### 4. Update CronJobRow - Better Display Logic
-
-```typescript
-function CronJobRow({ job, agents, ... }: CronJobRowProps) {
-  const getEffectiveTargetAgent = (): string | null => {
-    // Prefer explicit DB field
-    if (job.targetAgentKey) return job.targetAgentKey;
-    
-    // Fallback: parse from instructions
-    const { targetAgent } = decodeJobHeaders(job.instructions);
-    return targetAgent;
-  };
-  
-  const getEffectiveIntent = (): string | null => {
-    if (job.jobIntent) return job.jobIntent;
-    const { intent } = decodeJobHeaders(job.instructions);
-    return intent;
-  };
-  // ...
-}
-```
-
-### 5. Improve AgentAssignmentDropdown Compact Styling
-
-Make the compact mode cleaner:
-
-```tsx
-// In compact mode, use a simpler badge-like appearance
-<Button
-  variant="ghost"
-  size="sm"
-  className={cn(
-    'h-auto py-0.5 px-1.5 text-xs gap-1.5 font-normal',
-    selectedAgent 
-      ? 'text-foreground' 
-      : 'text-muted-foreground',
-    className
-  )}
->
-  {selectedAgent ? (
-    <>
-      <span className="text-sm">{selectedAgent.avatar || '🤖'}</span>
-      <span>{selectedAgent.name}</span>
-    </>
-  ) : (
-    <>
-      <User className="w-3 h-3" />
-      <span className="text-amber-600 dark:text-amber-400">Needs assignment</span>
-    </>
-  )}
-  <ChevronsUpDown className="w-2.5 h-2.5 opacity-40" />
-</Button>
-```
-
-### 6. Improve CronJobRow Layout
-
-Restructure for better alignment:
-
-```tsx
-<div className="min-w-0 flex-1">
-  {/* Line 1: Job name */}
-  <h3 className="font-medium truncate">{job.name}</h3>
-  
-  {/* Line 2: Agent + Intent badges inline */}
-  <div className="flex items-center gap-1.5 mt-1">
-    <AgentAssignmentDropdown
-      agents={agents}
-      value={targetAgentKey}
-      onChange={onAgentChange}
-      compact
-    />
-    {effectiveIntent && <JobIntentBadge intent={effectiveIntent} />}
-  </div>
-  
-  {/* Line 3: Schedule */}
-  <div className="mt-1">
-    <InlineScheduleEditor ... />
-  </div>
-</div>
-```
-
----
+1. `getEffectiveTargetAgent()` checks `job.targetAgentKey` first
+2. Falls back to parsing `@agent:` or `@target:` from instructions
+3. Same for `getEffectiveIntent()` with `@intent:` header
 
 ## Migration for Existing Jobs
 
-### Option 1: Manual (Recommended for V1)
+Users can manually reassign legacy jobs:
+1. Click the agent dropdown on a job row
+2. Select an agent (e.g., Trunks)
+3. Patch is queued with updated instructions
+4. After executor applies, assignment is durable
 
-Users click the agent dropdown for each legacy job and assign it. This:
-1. Queues a patch with `targetAgentKey` + updated `instructions`
-2. Executor applies
-3. Mirror updates with correct data
+## Files Changed
 
-### Option 2: Bulk Migration Script (Future)
-
-A script that:
-1. Reads all `cron_mirror` rows where `target_agent_key IS NULL`
-2. For each, infers agent from job name or prompts user
-3. Queues patches
-
----
-
-## Success Criteria
-
-1. "Front Office: 9am Morning Brief" shows "⚡ Trunks" after user assigns it
-2. New jobs created via UI have agent info in **both** DB column AND instructions
-3. Reassigning agent updates instructions (durable)
-4. No more confusing "Unassigned" for actively-used jobs
-5. Layout is cleaner and more professional
-
----
-
-## Out of Scope
-
-- Executor-side implementation (documented contract)
-- System job detection (all jobs are agent jobs for now)
-- Bulk migration tool (manual assignment for V1)
-
+| File | Description |
+|------|-------------|
+| `src/lib/schedule-utils.ts` | Added `encodeJobHeaders()` and `decodeJobHeaders()` |
+| `src/components/pages/CronPage.tsx` | Updated create/reassign to encode headers, improved layout |
+| `src/components/schedule/AgentAssignmentDropdown.tsx` | "Needs assignment" amber badge, polished styling |
