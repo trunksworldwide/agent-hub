@@ -347,15 +347,13 @@ function CronJobRow({
         {/* Expanded details */}
         <CollapsibleContent>
           <div className="px-4 pb-4 pt-0 border-t border-border mt-2">
-            {/* Edit button in expanded section */}
-            {controlApiConnected && (
-              <div className="mt-3 mb-4">
-                <Button variant="outline" size="sm" onClick={onEdit} className="gap-2">
-                  <Pencil className="w-3 h-3" />
-                  Edit
-                </Button>
-              </div>
-            )}
+            {/* Edit button - always visible (uses queue when offline) */}
+            <div className="mt-3 mb-4">
+              <Button variant="outline" size="sm" onClick={onEdit} className="gap-2">
+                <Pencil className="w-3 h-3" />
+                Edit
+              </Button>
+            </div>
 
             <div className="mt-3">
               <h4 className="text-sm font-medium text-muted-foreground mb-2">Instructions</h4>
@@ -460,6 +458,8 @@ export function CronPage() {
   const [editName, setEditName] = useState('');
   const [editSchedule, setEditSchedule] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  const [editTargetAgent, setEditTargetAgent] = useState('');
+  const [editJobIntent, setEditJobIntent] = useState<JobIntent>('custom');
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Create dialog state - human-friendly
@@ -918,29 +918,59 @@ export function CronPage() {
     }
   };
 
-  // Open edit dialog
+  // Open edit dialog - parse headers from instructions for agent/intent
   const openEdit = (job: CronMirrorJob) => {
     setEditingJob(job);
     setEditName(job.name || '');
     setEditSchedule(job.scheduleExpr || '');
-    setEditInstructions(job.instructions || '');
+    // Parse instructions to get body without headers
+    const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
+    setEditInstructions(body);
+    setEditTargetAgent(targetAgent || job.targetAgentKey || '');
+    setEditJobIntent((intent || job.jobIntent || 'custom') as JobIntent);
   };
 
-  // Save edit via Control API
+  // Save edit via Control API or queue request for offline mode
   const handleSaveEdit = async () => {
     if (!editingJob || savingEdit) return;
     setSavingEdit(true);
     try {
-      await editCronJob(editingJob.jobId, {
-        name: editName,
-        schedule: editSchedule,
-        instructions: editInstructions,
-      });
-
-      toast({
-        title: 'Job updated',
-        description: `${editingJob.name} saved.`,
-      });
+      // Encode agent + intent into instructions for durability
+      const encodedInstructions = encodeJobHeaders(
+        editTargetAgent || null,
+        editJobIntent || null,
+        editInstructions || ''
+      );
+      
+      if (controlApiConnected) {
+        // Direct edit via Control API
+        await editCronJob(editingJob.jobId, {
+          name: editName,
+          schedule: editSchedule,
+          instructions: encodedInstructions,
+        });
+        toast({
+          title: 'Job updated',
+          description: `${editingJob.name} saved.`,
+        });
+      } else {
+        // Queue patch request for offline execution
+        const result = await queueCronPatchRequest(editingJob.jobId, {
+          name: editName,
+          scheduleExpr: editSchedule,
+          instructions: encodedInstructions,
+          targetAgentKey: editTargetAgent || undefined,
+          jobIntent: editJobIntent || undefined,
+        });
+        if (result.ok) {
+          toast({
+            title: 'Edit queued',
+            description: 'Changes will apply when the executor picks up the request.',
+          });
+        } else {
+          throw new Error(result.error || 'Failed to queue edit');
+        }
+      }
 
       setEditingJob(null);
       await loadJobs();
@@ -1315,12 +1345,22 @@ export function CronPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog - Enhanced with Agent/Intent */}
       <Dialog open={Boolean(editingJob)} onOpenChange={(open) => { if (!open) setEditingJob(null); }}>
-        <DialogContent className="sm:max-w-[640px]">
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit scheduled job</DialogTitle>
           </DialogHeader>
+
+          {/* Offline mode warning banner */}
+          {!controlApiConnected && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <p className="text-sm">
+                Control API offline. Changes will be queued and applied when the Mac mini executor picks them up.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-4">
             <div className="space-y-2">
@@ -1331,6 +1371,49 @@ export function CronPage() {
             <div className="space-y-2">
               <div className="text-sm font-medium">Schedule (cron expression)</div>
               <Input value={editSchedule} onChange={(e) => setEditSchedule(e.target.value)} placeholder="*/30 * * * *" />
+            </div>
+
+            {/* Target Agent */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Assigned Agent</label>
+              <Select value={editTargetAgent || 'none'} onValueChange={(v) => setEditTargetAgent(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an agent..." />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">No agent assigned</span>
+                  </SelectItem>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      <span className="flex items-center gap-2">
+                        <span>{agent.avatar || '🤖'}</span>
+                        <span>{agent.name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Job Intent */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Job Intent</label>
+              <Select value={editJobIntent} onValueChange={(v) => setEditJobIntent(v as JobIntent)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {JOB_INTENTS.map((intent) => (
+                    <SelectItem key={intent.id} value={intent.id}>
+                      <div className="flex flex-col">
+                        <span>{intent.label}</span>
+                        <span className="text-xs text-muted-foreground">{intent.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -1344,7 +1427,9 @@ export function CronPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Saves through the Control API (clawdbot cron edit). This edits the job's systemEvent payload.
+              {controlApiConnected
+                ? 'Saves directly via Control API.'
+                : 'Edits are queued for the executor to apply.'}
             </p>
           </div>
 
