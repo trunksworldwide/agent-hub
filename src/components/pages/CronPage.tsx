@@ -252,17 +252,16 @@ function CronJobRow({
                     </Badge>
                   )}
                 </div>
-                {/* Agent and Intent badges - inline on same row */}
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <AgentAssignmentDropdown
-                    agents={agents}
-                    value={targetAgentKey}
-                    onChange={onAgentChange}
-                    disabled={pendingDelete}
-                    compact
-                  />
-                  {effectiveIntent && <JobIntentBadge intent={effectiveIntent} />}
-                </div>
+                 {/* Agent and Intent badges - inline on same row */}
+                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                   <AgentAssignmentDropdown
+                     agents={agents}
+                     value={targetAgentKey}
+                     onChange={onAgentChange}
+                     disabled={pendingDelete}
+                     compact
+                   />
+                 </div>
                 {/* Schedule on third line - clickable inline editor */}
                 <InlineScheduleEditor
                   scheduleKind={job.scheduleKind}
