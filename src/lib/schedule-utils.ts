@@ -60,6 +60,27 @@ export const COMMON_TIMEZONES = [
   { id: 'Asia/Tokyo', label: 'Tokyo (JST)' },
 ];
 
+// ============= Job Intent & Context Policy Constants =============
+
+export const JOB_INTENTS = [
+  { id: 'daily_brief', label: 'Daily Brief', description: 'Morning/evening summaries' },
+  { id: 'task_suggestions', label: 'Task Suggestions', description: 'Propose tasks or priorities' },
+  { id: 'monitoring', label: 'Monitoring', description: 'Health checks and alerts' },
+  { id: 'housekeeping', label: 'Housekeeping', description: 'Cleanup and maintenance' },
+  { id: 'sync', label: 'Sync', description: 'Data synchronization' },
+  { id: 'custom', label: 'Custom', description: 'User-defined' },
+] as const;
+
+export type JobIntent = typeof JOB_INTENTS[number]['id'];
+
+export const CONTEXT_POLICIES = [
+  { id: 'minimal', label: 'Minimal', description: 'Overview + recent changes only' },
+  { id: 'default', label: 'Default', description: 'Full context pack' },
+  { id: 'expanded', label: 'Expanded', description: 'Include unpinned relevant docs' },
+] as const;
+
+export type ContextPolicy = typeof CONTEXT_POLICIES[number]['id'];
+
 /**
  * Parse schedule expression into human-friendly config
  */

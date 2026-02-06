@@ -273,6 +273,25 @@ curl -X POST https://bsqeddnaiojvvckpdvcu.supabase.co/functions/v1/get-context-p
 | `supabase/functions/extract-document-notes/` | Document extraction pipeline |
 | `docs/CONTEXT-FLOW.md` | This documentation |
 
+## Scheduled Job Context
+
+When a scheduled job runs, the executor:
+
+1. Resolves the target agent from job configuration (`target_agent_key`)
+2. Calls `get-context-pack` with project + agent + optional task
+3. Prepends the context markdown to the job's instructions
+4. Runs the agent turn with full context
+
+This ensures consistent context delivery regardless of:
+- Whether the job is main-session or isolated
+- The job's schedule frequency
+- Manual vs automated execution
+
+Database fields for cron jobs:
+- `target_agent_key`: Agent that owns/runs this job
+- `job_intent`: Semantic category (daily_brief, monitoring, sync, etc.)
+- `context_policy`: How much context to include (minimal, default, expanded)
+
 ## Future Enhancements
 
 - Semantic search / embeddings for relevant doc retrieval

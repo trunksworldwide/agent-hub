@@ -192,8 +192,10 @@ export type Database = {
       cron_create_requests: {
         Row: {
           completed_at: string | null
+          context_policy: string | null
           id: string
           instructions: string | null
+          job_intent: string | null
           name: string
           picked_up_at: string | null
           project_id: string
@@ -203,12 +205,15 @@ export type Database = {
           schedule_expr: string
           schedule_kind: string | null
           status: string
+          target_agent_key: string | null
           tz: string | null
         }
         Insert: {
           completed_at?: string | null
+          context_policy?: string | null
           id?: string
           instructions?: string | null
+          job_intent?: string | null
           name: string
           picked_up_at?: string | null
           project_id: string
@@ -218,12 +223,15 @@ export type Database = {
           schedule_expr: string
           schedule_kind?: string | null
           status?: string
+          target_agent_key?: string | null
           tz?: string | null
         }
         Update: {
           completed_at?: string | null
+          context_policy?: string | null
           id?: string
           instructions?: string | null
+          job_intent?: string | null
           name?: string
           picked_up_at?: string | null
           project_id?: string
@@ -233,6 +241,7 @@ export type Database = {
           schedule_expr?: string
           schedule_kind?: string | null
           status?: string
+          target_agent_key?: string | null
           tz?: string | null
         }
         Relationships: []
@@ -314,10 +323,12 @@ export type Database = {
       }
       cron_mirror: {
         Row: {
+          context_policy: string | null
           enabled: boolean
           id: string
           instructions: string | null
           job_id: string
+          job_intent: string | null
           last_duration_ms: number | null
           last_run_at: string | null
           last_status: string | null
@@ -326,14 +337,18 @@ export type Database = {
           project_id: string
           schedule_expr: string | null
           schedule_kind: string | null
+          target_agent_key: string | null
           tz: string | null
+          ui_label: string | null
           updated_at: string
         }
         Insert: {
+          context_policy?: string | null
           enabled?: boolean
           id?: string
           instructions?: string | null
           job_id: string
+          job_intent?: string | null
           last_duration_ms?: number | null
           last_run_at?: string | null
           last_status?: string | null
@@ -342,14 +357,18 @@ export type Database = {
           project_id: string
           schedule_expr?: string | null
           schedule_kind?: string | null
+          target_agent_key?: string | null
           tz?: string | null
+          ui_label?: string | null
           updated_at?: string
         }
         Update: {
+          context_policy?: string | null
           enabled?: boolean
           id?: string
           instructions?: string | null
           job_id?: string
+          job_intent?: string | null
           last_duration_ms?: number | null
           last_run_at?: string | null
           last_status?: string | null
@@ -358,7 +377,9 @@ export type Database = {
           project_id?: string
           schedule_expr?: string | null
           schedule_kind?: string | null
+          target_agent_key?: string | null
           tz?: string | null
+          ui_label?: string | null
           updated_at?: string
         }
         Relationships: []

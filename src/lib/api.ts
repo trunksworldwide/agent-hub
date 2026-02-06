@@ -116,6 +116,11 @@ export interface CronMirrorJob {
   lastDurationMs?: number | null;
   instructions?: string | null;
   updatedAt: string;
+  // Agent assignment fields
+  targetAgentKey?: string | null;
+  jobIntent?: string | null;
+  contextPolicy?: string | null;
+  uiLabel?: string | null;
 }
 
 export interface CronRunRequest {
@@ -1060,6 +1065,11 @@ export async function getCronMirrorJobs(): Promise<CronMirrorJob[]> {
     lastDurationMs: row.last_duration_ms,
     instructions: row.instructions,
     updatedAt: row.updated_at,
+    // Agent assignment fields
+    targetAgentKey: row.target_agent_key,
+    jobIntent: row.job_intent,
+    contextPolicy: row.context_policy,
+    uiLabel: row.ui_label,
   }));
 }
 
@@ -1152,6 +1162,10 @@ export interface CronCreateRequest {
   result?: any;
   pickedUpAt?: string | null;
   completedAt?: string | null;
+  // Agent assignment fields
+  targetAgentKey?: string | null;
+  jobIntent?: string | null;
+  contextPolicy?: string | null;
 }
 
 export interface CronDeleteRequest {
@@ -1218,6 +1232,10 @@ export async function queueCronCreateRequest(input: {
   scheduleExpr: string;
   tz?: string;
   instructions?: string;
+  // Agent assignment fields
+  targetAgentKey?: string;
+  jobIntent?: string;
+  contextPolicy?: string;
 }): Promise<{ ok: boolean; requestId?: string; error?: string }> {
   if (!(hasSupabase() && supabase)) {
     return { ok: false, error: 'supabase_not_configured' };
@@ -1235,6 +1253,9 @@ export async function queueCronCreateRequest(input: {
         schedule_expr: input.scheduleExpr,
         tz: input.tz || null,
         instructions: input.instructions || null,
+        target_agent_key: input.targetAgentKey || null,
+        job_intent: input.jobIntent || null,
+        context_policy: input.contextPolicy || 'default',
         requested_by: 'ui',
         status: 'queued',
       })
@@ -1247,7 +1268,7 @@ export async function queueCronCreateRequest(input: {
     await supabase.from('activities').insert({
       project_id: projectId,
       type: 'cron_create_queued',
-      message: `Queued creation of cron job: ${input.name}`,
+      message: `Queued creation of cron job: ${input.name}${input.targetAgentKey ? ` (assigned to ${input.targetAgentKey})` : ''}`,
       actor_agent_key: 'dashboard',
     });
 
@@ -1286,6 +1307,22 @@ export async function getCronPatchRequests(limit = 20): Promise<CronPatchRequest
     pickedUpAt: row.picked_up_at,
     completedAt: row.completed_at,
   }));
+}
+
+/**
+ * Update cron job agent assignment via patch request.
+ * Convenience wrapper for common agent reassignment operation.
+ */
+export async function updateCronJobAgent(
+  jobId: string,
+  targetAgentKey: string | null,
+  jobIntent?: string,
+  contextPolicy?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const patch: Record<string, any> = { targetAgentKey };
+  if (jobIntent !== undefined) patch.jobIntent = jobIntent;
+  if (contextPolicy !== undefined) patch.contextPolicy = contextPolicy;
+  return queueCronPatchRequest(jobId, patch);
 }
 
 /**
