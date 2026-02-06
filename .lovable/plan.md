@@ -1,82 +1,173 @@
-# Cron Agent Assignment + Durable Persistence
 
-## Status: ✅ COMPLETED
 
-## Summary
+# Fix Cron Jobs: Auto-Assign Existing Jobs + Enable Queue-Based Editing
 
-Fixed the "Unassigned" display issue for cron jobs and improved UI layout. Agent assignments are now durably persisted in **both** the DB columns and as headers in the job instructions.
+## Problem Summary
 
-## Key Changes
+1. **All existing jobs show "Needs assignment"** because they were created before the assignment feature - their `target_agent_key` is NULL in the database
 
-### 1. Dual-Path Persistence (Belt + Suspenders)
+2. **Users cannot edit instructions** because the Edit button only appears when the Control API is connected. In remote/mirror mode, the button is hidden entirely.
 
-Agent/intent info is stored in:
-- **Explicit DB columns**: `target_agent_key`, `job_intent` for quick UI access
-- **Encoded headers in instructions**: For executor durability and mirror sync
+## Solution Overview
 
-Header format in instructions:
-```text
-@agent:agent:main:main
-@intent:daily_brief
----
-[actual instructions]
+### Part 1: Auto-Assign Existing Jobs to Trunks
+
+Run a one-time update to assign all existing unassigned cron jobs to the default agent (Trunks):
+
+```sql
+UPDATE cron_mirror 
+SET target_agent_key = 'agent:main:main', 
+    job_intent = 'custom',
+    updated_at = now()
+WHERE project_id = 'front-office' 
+  AND target_agent_key IS NULL;
 ```
 
-### 2. New Functions in `schedule-utils.ts`
+This immediately fixes the "Needs assignment" display for all current jobs.
 
-- `encodeJobHeaders(agentKey, intent, instructions)` - Encode metadata into instructions
-- `decodeJobHeaders(instructions)` - Extract `{ targetAgent, intent, body }` from instructions
+### Part 2: Enable Queue-Based Job Editing (Offline Mode)
 
-Both support legacy `@target:` format for backwards compatibility.
+Currently, the Edit feature requires the Control API. We need to extend it to work via the patch queue when offline:
 
-### 3. CronPage Updates
+**Changes to CronPage.tsx:**
 
-- **Job creation**: Encodes agent + intent into instructions via `encodeJobHeaders()`
-- **Agent reassignment**: Decodes existing instructions, re-encodes with new agent
-- **Display**: Uses `getEffectiveTargetAgent()` and `getEffectiveIntent()` that check both DB fields and parsed instructions
-- **Layout**: Agent badge + intent badge now inline on same line
+1. **Always show the Edit button** (not just when controlApiConnected)
 
-### 4. AgentAssignmentDropdown Polish
+2. **Add target agent and intent fields** to the Edit dialog (missing currently)
 
-- Shows "Needs assignment" with amber warning text when no agent selected
-- Cleaner compact mode styling with smaller chevron icon
-- Higher z-index on popover for proper layering
+3. **Update handleSaveEdit** to use queue pattern when offline:
 
-## How It Works
+```typescript
+const handleSaveEdit = async () => {
+  if (!editingJob || savingEdit) return;
+  setSavingEdit(true);
+  
+  try {
+    // Encode agent + intent into instructions for durability
+    const encodedInstructions = encodeJobHeaders(
+      editTargetAgent || null,
+      editJobIntent || null,
+      editInstructions || ''
+    );
+    
+    if (controlApiConnected) {
+      // Direct edit via Control API
+      await editCronJob(editingJob.jobId, {
+        name: editName,
+        schedule: editSchedule,
+        instructions: encodedInstructions,
+      });
+      toast({ title: 'Job updated' });
+    } else {
+      // Queue patch request for offline execution
+      const result = await queueCronPatchRequest(editingJob.jobId, {
+        name: editName,
+        scheduleExpr: editSchedule,
+        instructions: encodedInstructions,
+        targetAgentKey: editTargetAgent || undefined,
+        jobIntent: editJobIntent || undefined,
+      });
+      if (result.ok) {
+        toast({ 
+          title: 'Edit queued', 
+          description: 'Changes will apply when the executor picks up the request.' 
+        });
+      }
+    }
+    
+    setEditingJob(null);
+    await loadJobs();
+  } catch (err) {
+    // ... error handling
+  }
+};
+```
 
-### Creating New Jobs
+4. **Update openEdit** to populate new fields:
 
-1. User fills in form with target agent and intent
-2. `handleCreate()` calls `encodeJobHeaders()` to embed metadata in instructions
-3. Both explicit fields AND encoded instructions are sent to `queueCronCreateRequest`
-4. Executor creates job with durable payload
+```typescript
+const openEdit = (job: CronMirrorJob) => {
+  setEditingJob(job);
+  setEditName(job.name || '');
+  setEditSchedule(job.scheduleExpr || '');
+  // Parse instructions to get body without headers
+  const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
+  setEditInstructions(body);
+  setEditTargetAgent(targetAgent || job.targetAgentKey || '');
+  setEditJobIntent((intent || job.jobIntent || 'custom') as JobIntent);
+};
+```
 
-### Reassigning Existing Jobs
+5. **Enhance Edit Dialog** with agent/intent dropdowns matching the Create dialog
 
-1. User clicks agent dropdown on job row
-2. `handleAgentChange()` calls `decodeJobHeaders()` to get current body
-3. Re-encodes with new agent + existing intent via `encodeJobHeaders()`
-4. Queues patch with both `targetAgentKey` field AND updated instructions
-5. When executor applies, job payload has durable assignment
+---
 
-### Displaying Agent Info
+## Technical Implementation
 
-1. `getEffectiveTargetAgent()` checks `job.targetAgentKey` first
-2. Falls back to parsing `@agent:` or `@target:` from instructions
-3. Same for `getEffectiveIntent()` with `@intent:` header
+### File Changes
 
-## Migration for Existing Jobs
+| File | Changes |
+|------|---------|
+| Database | One-time UPDATE to assign existing jobs to Trunks |
+| `src/components/pages/CronPage.tsx` | Add edit state for agent/intent, update openEdit and handleSaveEdit, show Edit button always, enhance Edit dialog UI |
 
-Users can manually reassign legacy jobs:
-1. Click the agent dropdown on a job row
-2. Select an agent (e.g., Trunks)
-3. Patch is queued with updated instructions
-4. After executor applies, assignment is durable
+### New State Variables
 
-## Files Changed
+```typescript
+// Add to existing edit dialog state
+const [editTargetAgent, setEditTargetAgent] = useState('');
+const [editJobIntent, setEditJobIntent] = useState<JobIntent>('custom');
+```
 
-| File | Description |
-|------|-------------|
-| `src/lib/schedule-utils.ts` | Added `encodeJobHeaders()` and `decodeJobHeaders()` |
-| `src/components/pages/CronPage.tsx` | Updated create/reassign to encode headers, improved layout |
-| `src/components/schedule/AgentAssignmentDropdown.tsx` | "Needs assignment" amber badge, polished styling |
+### Updated Edit Dialog UI
+
+The Edit dialog will include:
+- Job Name (existing)
+- Schedule (existing, but use human-friendly editor instead of raw cron)
+- Target Agent dropdown (new)
+- Job Intent dropdown (new)
+- Instructions textarea (existing)
+- Offline mode warning banner
+
+### API Layer
+
+The existing `queueCronPatchRequest` already supports patching:
+- `name`
+- `scheduleExpr`
+- `instructions`
+- `targetAgentKey`
+- `jobIntent`
+
+No API changes needed.
+
+---
+
+## Implementation Order
+
+1. Run database update to auto-assign existing jobs to Trunks
+2. Add `editTargetAgent` and `editJobIntent` state variables
+3. Update `openEdit` to parse and populate agent/intent from job
+4. Update `handleSaveEdit` to use queue pattern when offline
+5. Remove the `controlApiConnected &&` condition from Edit button
+6. Enhance Edit dialog with agent/intent dropdowns
+7. Add human-friendly schedule editor to Edit dialog (optional, can use raw cron for now)
+8. Add offline mode warning banner to Edit dialog
+
+---
+
+## Expected Outcome
+
+1. All existing jobs immediately show "Trunks" instead of "Needs assignment"
+2. Users can click Edit on any job even when the Mac mini is offline
+3. Edits are queued and applied when the executor picks them up
+4. Instructions are editable with agent/intent metadata preserved
+5. The queue pattern remains consistent across all operations (run, toggle, delete, edit, create)
+
+---
+
+## Out of Scope
+
+- Human-friendly schedule editor in Edit dialog (keep raw cron input for v1)
+- Bulk editing of multiple jobs
+- Undo/revert of edits
+
