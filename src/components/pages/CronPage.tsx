@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil, AlertCircle, Search, Filter, Plus, Trash2 } from 'lucide-react';
+import { Play, Clock, Check, X, ChevronDown, RefreshCw, Pencil, AlertCircle, Search, Filter, Plus, Trash2, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,7 @@ import {
   queueCronDeleteRequest,
   getCronDeleteRequests,
   getAgents,
+  updateCronJobAgent,
   type CronJob,
   type CronRunEntry,
   type CronMirrorJob,
@@ -41,9 +42,13 @@ import {
 import {
   type ScheduleConfig,
   type FrequencyType,
+  type JobIntent,
+  type ContextPolicy,
   SCHEDULE_PRESETS,
   DAY_OPTIONS,
   COMMON_TIMEZONES,
+  JOB_INTENTS,
+  CONTEXT_POLICIES,
   parseScheduleToConfig,
   configToScheduleExpression,
   formatScheduleDisplay,
@@ -51,6 +56,8 @@ import {
   decodeTargetAgent,
 } from '@/lib/schedule-utils';
 import { InlineScheduleEditor } from '@/components/schedule/ScheduleEditor';
+import { JobIntentBadge } from '@/components/schedule/JobIntentBadge';
+import { AgentAssignmentDropdown } from '@/components/schedule/AgentAssignmentDropdown';
 import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -76,6 +83,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 // ============= Helpers =============
 
@@ -133,6 +141,7 @@ interface CronJobRowProps {
   onDelete: () => void;
   onToggleEnabled: () => void;
   onScheduleChange: (result: { kind: 'cron' | 'every'; expr: string; tz?: string }) => void;
+  onAgentChange: (agentKey: string | null) => void;
   running: boolean;
   controlApiConnected: boolean;
   pendingToggle: boolean;
@@ -140,6 +149,7 @@ interface CronJobRowProps {
   runHistory: CronRunEntry[];
   loadingRuns: boolean;
   onRefreshRuns: () => void;
+  agents: Agent[];
 }
 
 function CronJobRow({
@@ -151,6 +161,7 @@ function CronJobRow({
   onDelete,
   onToggleEnabled,
   onScheduleChange,
+  onAgentChange,
   running,
   controlApiConnected,
   pendingToggle,
@@ -158,7 +169,20 @@ function CronJobRow({
   runHistory,
   loadingRuns,
   onRefreshRuns,
+  agents,
 }: CronJobRowProps) {
+  // Get effective target agent (prefer explicit field, fallback to instructions prefix)
+  const getEffectiveTargetAgent = (): string | null => {
+    if (job.targetAgentKey) return job.targetAgentKey;
+    if (job.instructions) {
+      const { targetAgent } = decodeTargetAgent(job.instructions);
+      return targetAgent;
+    }
+    return null;
+  };
+  
+  const targetAgentKey = getEffectiveTargetAgent();
+  const targetAgent = agents.find(a => a.id === targetAgentKey);
   const getStatusIcon = (status: string | null | undefined) => {
     switch (status) {
       case 'ok':
@@ -215,7 +239,18 @@ function CronJobRow({
                     </Badge>
                   )}
                 </div>
-                {/* Schedule on second line - clickable inline editor */}
+                {/* Agent and Intent badges */}
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <AgentAssignmentDropdown
+                    agents={agents}
+                    value={targetAgentKey}
+                    onChange={onAgentChange}
+                    disabled={pendingDelete}
+                    compact
+                  />
+                  {job.jobIntent && <JobIntentBadge intent={job.jobIntent} />}
+                </div>
+                {/* Schedule on third line - clickable inline editor */}
                 <InlineScheduleEditor
                   scheduleKind={job.scheduleKind}
                   scheduleExpr={job.scheduleExpr}
@@ -424,6 +459,8 @@ export function CronPage() {
   const [createTz, setCreateTz] = useState('America/New_York');
   const [createInstructions, setCreateInstructions] = useState('');
   const [createTargetAgent, setCreateTargetAgent] = useState('');
+  const [createJobIntent, setCreateJobIntent] = useState<JobIntent>('custom');
+  const [createContextPolicy, setCreateContextPolicy] = useState<ContextPolicy>('default');
   const [savingCreate, setSavingCreate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -438,6 +475,8 @@ export function CronPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [agentFilter, setAgentFilter] = useState<string>('all');
+  const [intentFilter, setIntentFilter] = useState<string>('all');
 
   const supabaseConnected = hasSupabase();
   const controlApiConnected = apiStatus.mode === 'control-api';
@@ -451,6 +490,16 @@ export function CronPage() {
     );
     setPendingDeletes(pendingJobIds);
   }, [deleteRequests]);
+
+  // Helper to get effective target agent (from field or instructions prefix)
+  const getEffectiveTargetAgent = (job: CronMirrorJob): string | null => {
+    if (job.targetAgentKey) return job.targetAgentKey;
+    if (job.instructions) {
+      const { targetAgent } = decodeTargetAgent(job.instructions);
+      return targetAgent;
+    }
+    return null;
+  };
 
   // Filter jobs
   const filteredJobs = useMemo(() => {
@@ -467,9 +516,24 @@ export function CronPage() {
       if (enabledFilter === 'enabled' && !job.enabled) return false;
       if (enabledFilter === 'disabled' && job.enabled) return false;
 
+      // Agent filter
+      if (agentFilter !== 'all') {
+        const jobAgent = getEffectiveTargetAgent(job);
+        if (agentFilter === 'unassigned') {
+          if (jobAgent) return false;
+        } else if (jobAgent !== agentFilter) {
+          return false;
+        }
+      }
+
+      // Intent filter
+      if (intentFilter !== 'all') {
+        if (job.jobIntent !== intentFilter) return false;
+      }
+
       return true;
     });
-  }, [mirrorJobs, searchQuery, enabledFilter]);
+  }, [mirrorJobs, searchQuery, enabledFilter, agentFilter, intentFilter]);
 
   // Load jobs from Supabase cron_mirror
   const loadJobs = useCallback(async () => {
@@ -694,6 +758,34 @@ export function CronPage() {
     }
   };
 
+  // Handle agent assignment change
+  const handleAgentChange = async (job: CronMirrorJob, agentKey: string | null) => {
+    try {
+      const result = await updateCronJobAgent(job.jobId, agentKey);
+      if (result.ok) {
+        // Optimistic update
+        setMirrorJobs(mirrorJobs.map(j =>
+          j.jobId === job.jobId
+            ? { ...j, targetAgentKey: agentKey }
+            : j
+        ));
+        const agentName = agentKey ? agents.find(a => a.id === agentKey)?.name || agentKey : 'Unassigned';
+        toast({
+          title: 'Agent assignment queued',
+          description: `${job.name} will be assigned to ${agentName} when the Mac mini executor picks up the request.`,
+        });
+      } else {
+        throw new Error(result.error || 'Failed to queue agent update');
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Failed to update agent',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Create new scheduled job with human-friendly config
   const handleCreate = async () => {
     if (!createName.trim()) return;
@@ -708,18 +800,20 @@ export function CronPage() {
     };
     const scheduleResult = configToScheduleExpression(scheduleConfig);
     
-    // Encode target agent into instructions if set
-    const finalInstructions = encodeTargetAgent(createTargetAgent || null, createInstructions);
+    // Don't encode target agent into instructions anymore - pass as explicit field
     
     setSavingCreate(true);
     try {
-      // Queue create request (works for both modes)
+      // Queue create request with explicit agent assignment
       const result = await queueCronCreateRequest({
         name: createName,
         scheduleKind: scheduleResult.kind,
         scheduleExpr: scheduleResult.expr,
         tz: createTz || undefined,
-        instructions: finalInstructions || undefined,
+        instructions: createInstructions || undefined,
+        targetAgentKey: createTargetAgent || undefined,
+        jobIntent: createJobIntent || undefined,
+        contextPolicy: createContextPolicy || undefined,
       });
       
       if (result.ok) {
@@ -736,6 +830,8 @@ export function CronPage() {
         setCreateTz('America/New_York');
         setCreateInstructions('');
         setCreateTargetAgent('');
+        setCreateJobIntent('custom');
+        setCreateContextPolicy('default');
         setShowAdvanced(false);
         await loadJobs();
       } else {
@@ -929,27 +1025,80 @@ export function CronPage() {
 
         {/* Search and Filter */}
         {mirrorJobs.length > 0 && (
-          <div className="mb-4 flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search jobs..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
+          <div className="mb-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search jobs..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={enabledFilter} onValueChange={(v) => setEnabledFilter(v as any)}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="enabled">Enabled</SelectItem>
+                  <SelectItem value="disabled">Disabled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={enabledFilter} onValueChange={(v) => setEnabledFilter(v as any)}>
-              <SelectTrigger className="w-[140px]">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Jobs</SelectItem>
-                <SelectItem value="enabled">Enabled</SelectItem>
-                <SelectItem value="disabled">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
+            
+            {/* Agent and Intent Filters */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Agent:</span>
+                <Select value={agentFilter} onValueChange={setAgentFilter}>
+                  <SelectTrigger className="w-[140px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover">
+                    <SelectItem value="all">All Agents</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {agents.map(agent => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.avatar || '🤖'} {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Intent:</span>
+                <Select value={intentFilter} onValueChange={setIntentFilter}>
+                  <SelectTrigger className="w-[140px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover">
+                    <SelectItem value="all">All Intents</SelectItem>
+                    {JOB_INTENTS.map(intent => (
+                      <SelectItem key={intent.id} value={intent.id}>
+                        {intent.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {(agentFilter !== 'all' || intentFilter !== 'all') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAgentFilter('all');
+                    setIntentFilter('all');
+                  }}
+                  className="h-8 text-xs"
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -992,6 +1141,7 @@ export function CronPage() {
               onDelete={() => setDeletingJob(job)}
               onToggleEnabled={() => handleToggle(job)}
               onScheduleChange={(result) => handleScheduleChange(job, result)}
+              onAgentChange={(agentKey) => handleAgentChange(job, agentKey)}
               running={runningJob === job.jobId}
               controlApiConnected={controlApiConnected}
               pendingToggle={pendingToggles.has(job.jobId)}
@@ -999,6 +1149,7 @@ export function CronPage() {
               runHistory={runsByJob[job.jobId] || []}
               loadingRuns={Boolean(loadingRuns[job.jobId])}
               onRefreshRuns={() => loadRuns(job.jobId, { force: true })}
+              agents={agents}
             />
           ))}
         </div>
@@ -1302,7 +1453,10 @@ export function CronPage() {
 
             {/* Target Agent */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Target Agent (optional)</label>
+              <label className="text-sm font-medium flex items-center gap-1">
+                Target Agent
+                <InfoTooltip text="The agent that will execute this job. The agent will receive the job's context pack when the job runs." />
+              </label>
               <Select value={createTargetAgent} onValueChange={setCreateTargetAgent}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an agent..." />
@@ -1316,8 +1470,51 @@ export function CronPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Job Intent */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                Job Intent
+                <InfoTooltip text="What type of job is this? Helps with filtering and understanding job purpose." />
+              </label>
+              <Select value={createJobIntent} onValueChange={(v) => setCreateJobIntent(v as JobIntent)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {JOB_INTENTS.map((intent) => (
+                    <SelectItem key={intent.id} value={intent.id}>
+                      {intent.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                The agent that will receive this scheduled task
+                {JOB_INTENTS.find(i => i.id === createJobIntent)?.description}
+              </p>
+            </div>
+
+            {/* Context Policy */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                Context Pack Size
+                <InfoTooltip text="How much context the agent receives when this job runs. Default is recommended." />
+              </label>
+              <Select value={createContextPolicy} onValueChange={(v) => setCreateContextPolicy(v as ContextPolicy)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {CONTEXT_POLICIES.map((policy) => (
+                    <SelectItem key={policy.id} value={policy.id}>
+                      {policy.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {CONTEXT_POLICIES.find(p => p.id === createContextPolicy)?.description}
               </p>
             </div>
 
