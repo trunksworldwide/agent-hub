@@ -192,6 +192,17 @@ export interface Project {
   tag?: string;
 }
 
+export type DocumentType = 'general' | 'playbook' | 'reference' | 'credentials' | 'style_guide';
+export type DocumentSensitivity = 'normal' | 'contains_secrets';
+
+export interface DocumentNotes {
+  summary: string[];
+  key_facts: string[];
+  rules: string[];
+  keywords: string[];
+  extracted_at: string;
+}
+
 export interface ProjectDocument {
   id: string;
   projectId: string;
@@ -203,6 +214,12 @@ export interface ProjectDocument {
   sizeBytes?: number | null;
   createdAt: string;
   updatedAt: string;
+  // Context flow fields
+  agentKey?: string | null;
+  pinned?: boolean;
+  docType?: DocumentType;
+  sensitivity?: DocumentSensitivity;
+  docNotes?: DocumentNotes | null;
 }
 
 export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
@@ -511,6 +528,9 @@ export async function createAgent(input: {
       { onConflict: 'project_id,agent_key' }
     );
 
+    // Generate SOUL.md from template
+    await createAgentSoulFromTemplate(projectId, agentKey, name, role || 'General assistant');
+
     // Best-effort: activity feed entry.
     await supabase.from('activities').insert({
       project_id: projectId,
@@ -525,6 +545,86 @@ export async function createAgent(input: {
     console.error('createAgent failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
+}
+
+/**
+ * Create SOUL.md for a new agent from the project's template.
+ */
+async function createAgentSoulFromTemplate(
+  projectId: string,
+  agentKey: string,
+  name: string,
+  purpose: string
+): Promise<void> {
+  if (!supabase) return;
+
+  // First, check if SOUL already exists for this agent
+  const { data: existingSoul } = await supabase
+    .from('brain_docs')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('agent_key', agentKey)
+    .eq('doc_type', 'soul')
+    .maybeSingle();
+
+  if (existingSoul) {
+    // SOUL already exists, don't overwrite
+    return;
+  }
+
+  // Fetch the project's SOUL template (or use default)
+  const { data: templateDoc } = await supabase
+    .from('brain_docs')
+    .select('content')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'agent_soul_template')
+    .is('agent_key', null)
+    .maybeSingle();
+
+  const defaultTemplate = `# SOUL.md - {{AGENT_NAME}}
+
+> {{AGENT_PURPOSE}}
+
+## Core Behavior
+
+### Context Awareness
+Before acting on any task, you receive a **Context Pack** containing:
+- Project overview and goals
+- Relevant documents assigned to you
+- Recent changes in the project
+- Task-specific context
+
+Read and apply this context. Do not assume information not provided.
+
+### Communication
+- Be direct and clear
+- Match the project's communication style
+- Ask clarifying questions when context is insufficient
+
+## Your Role
+{{AGENT_ROLE_DETAILS}}
+
+## Tools Available
+{{TOOLS_LIST}}
+`;
+
+  const template = templateDoc?.content || defaultTemplate;
+
+  // Generate SOUL content from template
+  const soulContent = template
+    .replace(/\{\{AGENT_NAME\}\}/g, name)
+    .replace(/\{\{AGENT_PURPOSE\}\}/g, purpose)
+    .replace(/\{\{AGENT_ROLE_DETAILS\}\}/g, purpose)
+    .replace(/\{\{TOOLS_LIST\}\}/g, 'Default tools enabled');
+
+  // Create the SOUL document
+  await supabase.from('brain_docs').insert({
+    project_id: projectId,
+    agent_key: agentKey,
+    doc_type: 'soul',
+    content: soulContent,
+    updated_by: 'ui',
+  });
 }
 
 export async function updateAgentRoster(input: {
@@ -1844,15 +1944,27 @@ export async function getChannels(): Promise<Channel[]> {
 
 // ============= Documents API =============
 
-export async function getDocuments(): Promise<ProjectDocument[]> {
+export async function getDocuments(options?: { agentKey?: string | null }): Promise<ProjectDocument[]> {
   if (!hasSupabase() || !supabase) return [];
 
   const projectId = getProjectId();
-  const { data, error } = await supabase
+  let query = supabase
     .from('project_documents')
     .select('*')
     .eq('project_id', projectId)
+    .order('pinned', { ascending: false })
     .order('updated_at', { ascending: false });
+
+  // Optionally filter by agent scope
+  if (options?.agentKey !== undefined) {
+    if (options.agentKey === null) {
+      query = query.is('agent_key', null);
+    } else {
+      query = query.eq('agent_key', options.agentKey);
+    }
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
@@ -1867,10 +1979,27 @@ export async function getDocuments(): Promise<ProjectDocument[]> {
     sizeBytes: d.size_bytes,
     createdAt: d.created_at,
     updatedAt: d.updated_at,
+    // Context flow fields
+    agentKey: d.agent_key,
+    pinned: d.pinned ?? false,
+    docType: d.doc_type ?? 'general',
+    sensitivity: d.sensitivity ?? 'normal',
+    docNotes: d.doc_notes,
   }));
 }
 
-export async function createNoteDocument(title: string, content: string): Promise<{ ok: boolean; id?: string; error?: string }> {
+export interface CreateDocumentOptions {
+  agentKey?: string | null;
+  pinned?: boolean;
+  docType?: DocumentType;
+  sensitivity?: DocumentSensitivity;
+}
+
+export async function createNoteDocument(
+  title: string, 
+  content: string,
+  options?: CreateDocumentOptions
+): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!hasSupabase() || !supabase) {
     return { ok: false, error: 'supabase_not_configured' };
   }
@@ -1887,6 +2016,10 @@ export async function createNoteDocument(title: string, content: string): Promis
         content_text: content,
         mime_type: 'text/plain',
         size_bytes: new Blob([content]).size,
+        agent_key: options?.agentKey ?? null,
+        pinned: options?.pinned ?? false,
+        doc_type: options?.docType ?? 'general',
+        sensitivity: options?.sensitivity ?? 'normal',
       })
       .select('id')
       .single();
@@ -1910,7 +2043,8 @@ export async function createNoteDocument(title: string, content: string): Promis
 
 export async function uploadDocument(
   file: File,
-  title: string
+  title: string,
+  options?: CreateDocumentOptions
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!hasSupabase() || !supabase) {
     return { ok: false, error: 'supabase_not_configured' };
@@ -1939,11 +2073,21 @@ export async function uploadDocument(
         storage_path: storagePath,
         mime_type: file.type || 'application/octet-stream',
         size_bytes: file.size,
+        agent_key: options?.agentKey ?? null,
+        pinned: options?.pinned ?? false,
+        doc_type: options?.docType ?? 'general',
+        sensitivity: options?.sensitivity ?? 'normal',
       })
       .select('id')
       .single();
 
     if (dbError) throw dbError;
+
+    // Trigger extraction for text-based documents
+    const docIdResult = data?.id;
+    if (docIdResult && file.type?.startsWith('text/')) {
+      triggerDocumentExtraction(docIdResult, title, await file.text(), options?.docType || 'general');
+    }
 
     // Activity log
     await supabase.from('activities').insert({
@@ -1953,9 +2097,72 @@ export async function uploadDocument(
       actor_agent_key: DASHBOARD_ACTOR_KEY,
     });
 
-    return { ok: true, id: data?.id };
+    return { ok: true, id: docIdResult };
   } catch (e: any) {
     console.error('uploadDocument failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Trigger document extraction in background (fire-and-forget).
+ */
+function triggerDocumentExtraction(documentId: string, title: string, content: string, docType: string): void {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) return;
+
+  fetch(`${supabaseUrl}/functions/v1/extract-document-notes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+    },
+    body: JSON.stringify({ documentId, title, content, docType }),
+  }).catch((e) => {
+    console.warn('Document extraction failed (non-blocking):', e);
+  });
+}
+
+/**
+ * Update document metadata (pinned, scope, type, sensitivity).
+ */
+export async function updateDocument(
+  id: string,
+  updates: {
+    title?: string;
+    agentKey?: string | null;
+    pinned?: boolean;
+    docType?: DocumentType;
+    sensitivity?: DocumentSensitivity;
+  }
+): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const patch: any = {};
+
+  if (updates.title !== undefined) patch.title = updates.title;
+  if (updates.agentKey !== undefined) patch.agent_key = updates.agentKey;
+  if (updates.pinned !== undefined) patch.pinned = updates.pinned;
+  if (updates.docType !== undefined) patch.doc_type = updates.docType;
+  if (updates.sensitivity !== undefined) patch.sensitivity = updates.sensitivity;
+
+  try {
+    const { error } = await supabase
+      .from('project_documents')
+      .update(patch)
+      .eq('id', id)
+      .eq('project_id', projectId);
+
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    console.error('updateDocument failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
 }
@@ -2003,6 +2210,118 @@ export async function deleteDocument(id: string): Promise<{ ok: boolean; error?:
     return { ok: true };
   } catch (e: any) {
     console.error('deleteDocument failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ============= Project Overview (brain_docs) =============
+
+export interface ProjectOverview {
+  content: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export async function getProjectOverview(): Promise<ProjectOverview | null> {
+  if (!hasSupabase() || !supabase) return null;
+
+  const projectId = getProjectId();
+
+  const { data, error } = await supabase
+    .from('brain_docs')
+    .select('content, updated_at, updated_by')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'project_overview')
+    .is('agent_key', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getProjectOverview error:', error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  return {
+    content: data.content || '',
+    updatedAt: data.updated_at,
+    updatedBy: data.updated_by,
+  };
+}
+
+export async function saveProjectOverview(content: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { error } = await supabase.from('brain_docs').upsert(
+      {
+        project_id: projectId,
+        agent_key: null,
+        doc_type: 'project_overview',
+        content,
+        updated_by: 'ui',
+      },
+      { onConflict: 'project_id,agent_key,doc_type' }
+    );
+
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    console.error('saveProjectOverview failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ============= SOUL Template =============
+
+export async function getSoulTemplate(): Promise<string | null> {
+  if (!hasSupabase() || !supabase) return null;
+
+  const projectId = getProjectId();
+
+  const { data, error } = await supabase
+    .from('brain_docs')
+    .select('content')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'agent_soul_template')
+    .is('agent_key', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getSoulTemplate error:', error);
+    return null;
+  }
+
+  return data?.content || null;
+}
+
+export async function saveSoulTemplate(content: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { error } = await supabase.from('brain_docs').upsert(
+      {
+        project_id: projectId,
+        agent_key: null,
+        doc_type: 'agent_soul_template',
+        content,
+        updated_by: 'ui',
+      },
+      { onConflict: 'project_id,agent_key,doc_type' }
+    );
+
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    console.error('saveSoulTemplate failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
 }

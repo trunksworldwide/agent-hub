@@ -1,3 +1,17 @@
+### Context Flow Architecture: centralized, predictable context system for agents
+- **Database schema**: Extended `project_documents` with `agent_key` (scoping), `pinned`, `doc_type`, `sensitivity`, and `doc_notes` (structured extraction).
+- **Project Overview**: New `brain_docs.doc_type = 'project_overview'` for project description, editable in Knowledge page, auto-included in every Context Pack.
+- **Document scoping**: Documents can now be **Global** (all agents) or **Agent-specific**. Pinned docs are auto-included in Context Pack.
+- **Document types**: general, playbook, reference, credentials, style_guide. Credentials get pointer-only treatment (no secrets in Context Pack).
+- **Context Pack Builder**: New `src/lib/context-pack.ts` builds minimal, curated bundles with project overview, pinned doc summaries, and recent changes.
+- **Edge Functions**: 
+  - `get-context-pack` — Executor-callable endpoint returning structured ContextPack + markdown.
+  - `extract-document-notes` — One-time AI extraction of summary/facts/rules/keywords per document.
+- **Agent Creation**: New agents now get auto-generated SOUL.md from project template (includes Context Pack rule).
+- **SOUL Template**: Editable per-project template stored in `brain_docs.doc_type = 'agent_soul_template'`.
+- **UI Updates**: Knowledge page now shows Project Overview card, document scope/pin badges, and enhanced Add Document dialog with context settings.
+- **Documentation**: See `docs/CONTEXT-FLOW.md` for full architecture details.
+
 ### Activity → Task Output Viewer: click task-linked activities to preview outputs
 - Activity items with a linked task now show a chevron indicator and are clickable.
 - Clicking opens a lightweight **TaskOutputPreview** sheet showing task title, status badge, and outputs (read-only).
