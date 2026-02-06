@@ -1,391 +1,347 @@
 
-# Context Flow Architecture: Complete Implementation Plan
+
+# Scheduled Jobs: Agent Assignment + Context Pack Injection
 
 ## Executive Summary
 
-This plan implements a **centralized, predictable context system** for ClawdOS that ensures every agent receives exactly the right information at the right time—without bloating context windows or relying on agents to "remember" to fetch things.
+This plan extends the Schedule/Cron system to explicitly assign jobs to agents and ensure every run receives the correct Context Pack. This integrates with the recently-built Context Flow Architecture and aligns with OpenClaw's native cron system which already supports `agentId` binding.
 
-The core principle: **Context Pack is generated centrally and attached to task execution events.** Documents are stored and indexed once; the Context Pack is the curated, minimal bundle delivered at runtime.
+**Key outcomes:**
+1. Every scheduled job has a clear **target agent** (visible in UI, stored in DB)
+2. Jobs have semantic **intent labels** for filtering (daily_brief, monitoring, etc.)
+3. Context Pack is **automatically injected** when jobs run
+4. Mirror + Queue pattern preserved - dashboard works without executor
 
 ---
 
-## Architecture Overview
+## Current State Analysis
+
+### What exists today:
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `cron_mirror` table | Basic | Has schedule, name, instructions - no agent_key or intent fields |
+| `cron_create_requests` | Basic | No explicit agent targeting |
+| `cron_job_patch_requests` | Basic | No agent targeting in patch_json |
+| Target Agent in UI | Partial | Create dialog has dropdown, encodes as `@target:` prefix in instructions |
+| Display in list | Missing | No agent badge shown on job rows |
+| Context Pack | Built | `get-context-pack` edge function ready |
+
+### OpenClaw cron system (reference):
+
+- `agentId` field for agent binding
+- `sessionTarget`: main vs isolated
+- `payload.kind`: systemEvent vs agentTurn
+- Jobs stored in `~/.openclaw/cron/jobs.json`
+- CLI: `openclaw cron add --agent <id>`
+
+---
+
+## Architecture Alignment
+
+The existing `@target:agent_key` encoding in instructions is a workaround. OpenClaw's native `agentId` field is the proper mechanism. Our plan:
+
+1. Add explicit fields to `cron_mirror` for visibility (read-only from UI)
+2. Use `agentId` in the actual cron payload on the executor
+3. Mirror worker extracts and populates the mirror fields
+4. UI reads from mirror, writes to request queues
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           CONTEXT FLOW HIERARCHY                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   PROJECT OVERVIEW (brain_docs.doc_type = 'project_overview')               │
-│   └── "What is this project about?" - shown at top of Knowledge page        │
-│                                                                             │
-│   GLOBAL DOCUMENTS (project_documents.agent_key = NULL)                     │
-│   └── Available to ALL agents in project                                    │
-│       └── Pinned = always in Context Pack                                   │
-│       └── Unpinned = available on-demand                                    │
-│                                                                             │
-│   AGENT-SPECIFIC DOCUMENTS (project_documents.agent_key = 'agent:X:main')   │
-│   └── Available only to THAT agent                                          │
-│       └── Pinned = always in that agent's Context Pack                      │
-│       └── Unpinned = available on-demand                                    │
-│                                                                             │
-│   SOUL TEMPLATE (brain_docs.doc_type = 'agent_soul_template')               │
-│   └── Used when creating new agents - includes Context Pack rule            │
-│                                                                             │
-│   RECENT CHANGES (generated on-demand from activities)                      │
-│   └── Always included in Context Pack                                       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Phase 1: Database Schema Changes
-
-### 1.1 Extend `project_documents` Table
-
-Add columns for scoping and context pack inclusion:
-
-```sql
--- Add agent scoping: NULL = global, specific key = agent-only
-ALTER TABLE project_documents ADD COLUMN agent_key TEXT DEFAULT NULL;
-
--- Pin/always-load flag: pinned docs go in every Context Pack
-ALTER TABLE project_documents ADD COLUMN pinned BOOLEAN DEFAULT false;
-
--- Document type classification for extraction behavior
-ALTER TABLE project_documents ADD COLUMN doc_type TEXT DEFAULT 'general';
--- Values: general, playbook, reference, credentials, style_guide
-
--- Sensitivity flag: credentials docs get pointer-only treatment
-ALTER TABLE project_documents ADD COLUMN sensitivity TEXT DEFAULT 'normal';
--- Values: normal, contains_secrets
-
--- Structured extraction (populated on upload, one-time AI cost)
-ALTER TABLE project_documents ADD COLUMN doc_notes JSONB DEFAULT NULL;
--- Structure: { summary: string[], key_facts: string[], rules: string[], keywords: string[] }
-
--- Index for Context Pack queries
-CREATE INDEX idx_project_docs_agent ON project_documents(project_id, agent_key);
-CREATE INDEX idx_project_docs_pinned ON project_documents(project_id, pinned) WHERE pinned = true;
-```
-
-### 1.2 Extend `brain_docs` for Project-Level Documents
-
-Brain docs already supports `agent_key = NULL` for project-wide docs. Add new doc_type values:
-
-- `project_overview` — the project description/brief
-- `agent_soul_template` — editable template for new agent SOULs
-- `project_user` — project-wide USER.md (shared preferences)
-
-No schema change needed—just use new doc_type values.
-
-### 1.3 Add Context Pack Snapshot (Optional, for Auditing)
-
-```sql
--- Optional: store the context pack delivered with each task start
-ALTER TABLE tasks ADD COLUMN context_snapshot JSONB DEFAULT NULL;
--- Stores: { built_at, docs_included: [{id, title, type}], project_overview_preview, recent_changes_preview }
-```
-
----
-
-## Phase 2: Document Extraction Pipeline
-
-### 2.1 New Edge Function: `extract-document-notes`
-
-One-time extraction when a document is created/uploaded. Produces structured notes, not narrative summaries.
-
-**Input:**
-```json
-{
-  "document_id": "uuid",
-  "title": "Meta Ads Playbook",
-  "content": "...",
-  "doc_type": "playbook"
-}
-```
-
-**Output (stored in `doc_notes`):**
-```json
-{
-  "summary": ["5-10 bullet points"],
-  "key_facts": ["Entity: Meta Ads", "Budget: $50k/month"],
-  "rules": ["Never pause campaigns without approval", "Always A/B test creatives"],
-  "keywords": ["meta", "ads", "facebook", "marketing"],
-  "extracted_at": "2026-02-06T..."
-}
-```
-
-**Why structured extraction?**
-- Reduces misses vs. prose summaries
-- Enables precise retrieval (search by keywords, filter by rules)
-- One-time cost per document, not per task
-
-### 2.2 Sensitivity Detection
-
-For documents containing credentials:
-- Set `sensitivity = 'contains_secrets'`
-- Context Pack includes pointer only: "Credentials in 'Meta Ads Login'"
-- Never include actual secrets in Context Pack
-
----
-
-## Phase 3: Context Pack Builder
-
-### 3.1 Core Function: `buildContextPack()`
-
-Located in `src/lib/context-pack.ts`:
-
-```typescript
-interface ContextPack {
-  builtAt: string;
-  projectOverview: string;           // Short project description
-  globalDocs: DocReference[];        // Pinned global docs (notes + link)
-  agentDocs: DocReference[];         // Pinned agent-specific docs
-  recentChanges: string;             // Last 10-20 activities summarized
-  taskContext?: string;              // Thread highlights for this task
-}
-
-interface DocReference {
-  id: string;
-  title: string;
-  docType: string;
-  notes: string[];                   // Extracted summary bullets
-  rules: string[];                   // Extracted constraints
-  isCredential: boolean;             // If true, no content included
-}
-
-async function buildContextPack(
-  projectId: string,
-  agentKey: string,
-  taskId?: string
-): Promise<ContextPack>
-```
-
-### 3.2 What Gets Included
-
-1. **Always included:**
-   - Project overview (from `brain_docs` where `doc_type = 'project_overview'`)
-   - Recent changes (generated from last 20 activities)
-
-2. **Pinned documents (max 10 total):**
-   - Global pinned docs (`agent_key = NULL`, `pinned = true`)
-   - Agent-specific pinned docs (`agent_key = agentKey`, `pinned = true`)
-   - Include `doc_notes.summary` and `doc_notes.rules`, not full content
-   - For credential docs, include title/pointer only
-
-3. **Task-specific (if taskId provided):**
-   - Task description
-   - Thread highlights (recent comments)
-
-### 3.3 Output Format (Text for LLM)
-
-```markdown
-# Context Pack for Agent: Research
-Built: 2026-02-06T10:30:00Z
-
-## Project: Front Office
-AI assistant management for personal productivity and business operations.
-
-## Recent Changes
-- [10:15] Completed task "Update Meta Ads targeting"
-- [09:30] Created document "Q1 Marketing Plan"
-- [09:00] Agent Trunks started shift
-
-## Reference Documents
-
-### Global Knowledge
-- **Meta Ads Playbook** (playbook)
-  - Budget: $50k/month across 3 accounts
-  - Never pause campaigns without approval
-  - Always A/B test creatives
-
-- **Brand Voice Guide** (style_guide)
-  - Casual but professional tone
-  - Avoid jargon, prefer clarity
-
-### Your Knowledge (Research)
-- **Research Methodology** (reference)
-  - Use 3+ sources for any claim
-  - Cite sources in footnotes
-
-### Credential References
-- Meta Ads Login (see document for credentials)
-- AWS Access Keys (see document for credentials)
-```
-
----
-
-## Phase 4: Agent Creation with Default Brain Docs
-
-### 4.1 SOUL Template System
-
-Store an editable template in `brain_docs`:
-- `project_id` = current project
-- `agent_key` = NULL (project-wide)
-- `doc_type` = 'agent_soul_template'
-
-**Default template content:**
-
-```markdown
-# SOUL.md - {{AGENT_NAME}}
-
-> {{AGENT_PURPOSE}}
-
-## Core Behavior
-
-### Context Awareness
-Before acting on any task, you receive a **Context Pack** containing:
-- Project overview and goals
-- Relevant documents assigned to you
-- Recent changes in the project
-- Task-specific context
-
-Read and apply this context. Do not assume information not provided.
-
-### Communication
-- Be direct and clear
-- Match the project's communication style
-- Ask clarifying questions when context is insufficient
-
-## Your Role
-{{AGENT_ROLE_DETAILS}}
-
-## Tools Available
-{{TOOLS_LIST}}
-```
-
-### 4.2 Updated Agent Creation Flow
-
-When "Create Agent" is clicked:
-
-1. Generate `agent_key` from name (existing logic)
-2. Fetch SOUL template from `brain_docs`
-3. Replace variables:
-   - `{{AGENT_NAME}}` → agent name
-   - `{{AGENT_PURPOSE}}` → purpose field
-   - `{{AGENT_ROLE_DETAILS}}` → expanded from purpose
-   - `{{TOOLS_LIST}}` → "Default tools enabled" (v1)
-4. Create `brain_docs` rows:
-   - `doc_type = 'soul'`, `agent_key = new_key`
-   - Optionally: `doc_type = 'memory_long'` (blank)
-5. Create agent roster row (existing)
-6. Create agent_status row (existing)
-7. Open agent detail panel
-
-### 4.3 Optional: AI-Enhanced SOUL Generation
-
-If `OPENAI_API_KEY` is configured:
-- "Enhance with AI" button in agent creation dialog
-- Takes name + purpose, generates richer SOUL content
-- Uses template as base, expands role details
-
----
-
-## Phase 5: UI Changes
-
-### 5.1 Documents Page Updates
-
-**A) Project Overview Section (Top of Page)**
-
-```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 📋 Project Overview                                    [Edit]   │
+│                    CRON ASSIGNMENT FLOW                         │
 ├─────────────────────────────────────────────────────────────────┤
-│ Front Office is an AI-powered personal assistant system        │
-│ managing productivity, communications, and business ops.       │
 │                                                                 │
-│ This overview is included in every agent's context.            │
+│   Dashboard (Supabase)              Executor (Mac mini)         │
+│   ───────────────────               ──────────────────          │
+│   1. User creates job               4. Polls cron_create_reqs   │
+│   2. Writes to cron_create_requests 5. Creates job with agentId │
+│   3. UI shows "pending"             6. Updates cron_mirror      │
+│                                     7. On run: fetch context    │
+│                                        pack, inject into run    │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**B) Document Scoping in Add Dialog**
-
-Add to `AddDocumentDialog`:
-- **Scope** dropdown: "All Agents (Global)" | "Specific Agent: [dropdown]"
-- **Pin to Context Pack** toggle (with info tooltip)
-- **Document Type** dropdown: General, Playbook, Reference, Credentials, Style Guide
-
-**C) Document List Visual Updates**
-
-Show badges:
-- 📌 for pinned docs
-- 🔒 for credential docs
-- Agent emoji for agent-specific docs
-
-**D) SOUL Template Editor**
-
-New section in Documents or Settings:
-- Edit the project's agent SOUL template
-- Preview with variable placeholders
-- "Reset to Default" button
-
-### 5.2 Agent Creation Dialog Updates
-
-**Current fields:**
-- Name, Purpose, Emoji, Color
-
-**Add:**
-- Tools selection (v1: display only, future: affects SOUL)
-- "Preview SOUL" expandable section showing generated content
-- Optional "Enhance with AI" button
-
-### 5.3 Task Detail: Context Pack Preview (Optional)
-
-Add collapsible section showing what context was/will be delivered:
-- List of included documents
-- Recent changes preview
-- "View Full Context Pack" button
-
 ---
 
-## Phase 6: Integration Points
+## Phase 1: Database Schema Extensions
 
-### 6.1 Where Context Pack Gets Consumed
+### 1.1 Extend `cron_mirror` table
 
-The executor (Mac mini) should call `buildContextPack()` when:
-1. A task is assigned to an agent
-2. A cron job triggers work
-3. An agent starts a new session
+Add visibility fields (populated by executor's mirror sync):
 
-**Implementation options:**
-- **API Endpoint**: New edge function `get-context-pack` that executor calls
-- **Task Table Field**: Store snapshot when task moves to `in_progress`
-- **Real-time**: Executor subscribes to task changes, builds pack on assignment
+```sql
+ALTER TABLE cron_mirror ADD COLUMN target_agent_key TEXT DEFAULT NULL;
+ALTER TABLE cron_mirror ADD COLUMN job_intent TEXT DEFAULT NULL;
+ALTER TABLE cron_mirror ADD COLUMN context_policy TEXT DEFAULT 'default';
+ALTER TABLE cron_mirror ADD COLUMN ui_label TEXT DEFAULT NULL;
 
-**Recommended v1:** Edge function that executor calls:
-
-```typescript
-// supabase/functions/get-context-pack/index.ts
-// Input: { projectId, agentKey, taskId? }
-// Output: { contextPack: ContextPack, markdown: string }
+CREATE INDEX idx_cron_mirror_agent ON cron_mirror(project_id, target_agent_key);
+CREATE INDEX idx_cron_mirror_intent ON cron_mirror(project_id, job_intent);
 ```
 
-### 6.2 Sync Considerations
+**Field definitions:**
+- `target_agent_key`: Which agent owns/runs this job (e.g., `agent:trunks:main`)
+- `job_intent`: Semantic category (daily_brief, task_suggestions, monitoring, housekeeping, sync, custom)
+- `context_policy`: How much context to include (minimal, default, expanded)
+- `ui_label`: Optional human-friendly override for job name display
 
-The existing `brain-doc-sync.mjs` handles SOUL/USER/MEMORY sync. For context pack:
-- No sync needed—it's generated on-demand
-- Project overview syncs as `doc_type = 'project_overview'` in brain_docs
+### 1.2 Extend `cron_create_requests` table
+
+Add fields so the executor knows what to create:
+
+```sql
+ALTER TABLE cron_create_requests ADD COLUMN target_agent_key TEXT DEFAULT NULL;
+ALTER TABLE cron_create_requests ADD COLUMN job_intent TEXT DEFAULT NULL;
+ALTER TABLE cron_create_requests ADD COLUMN context_policy TEXT DEFAULT 'default';
+```
+
+### 1.3 Extend `cron_job_patch_requests` 
+
+The `patch_json` JSONB field already supports arbitrary patches. We'll document the expected shape:
+
+```typescript
+interface CronPatchPayload {
+  scheduleKind?: string;
+  scheduleExpr?: string;
+  tz?: string;
+  enabled?: boolean;
+  instructions?: string;
+  // New fields:
+  targetAgentKey?: string | null;  // null = unassign
+  jobIntent?: string;
+  contextPolicy?: string;
+}
+```
 
 ---
 
-## Phase 7: Keeping Context Windows Small
+## Phase 2: Job Intent Categories
 
-### Hard Limits (Enforced)
+Define a fixed set of intents for clarity and filtering:
 
-| Item | Limit | Rationale |
-|------|-------|-----------|
-| Pinned docs per agent | 10 | Prevent context bloat |
-| Doc summary bullets | 10 | Focus on key points |
-| Recent changes | 20 | Enough context, not overwhelming |
-| Full doc text | Never auto-included | Always notes + pointer |
+| Intent | Description | Typical Schedule |
+|--------|-------------|------------------|
+| `daily_brief` | Morning/evening summaries | Daily at specific time |
+| `task_suggestions` | Propose new tasks or priorities | Daily/weekly |
+| `monitoring` | Health checks, alerts, status | Every 5-30 mins |
+| `housekeeping` | Cleanup, archival, maintenance | Weekly/nightly |
+| `sync` | Data synchronization, updates | Frequent intervals |
+| `custom` | User-defined purpose | Any |
 
-### UI Enforcement
+These are soft labels - not enforced, but help with filtering and understanding.
 
-- Warn when pinning 11th document
-- Show estimated context size in UI
-- Allow "Expand full doc" as explicit action
+---
+
+## Phase 3: UI Updates
+
+### 3.1 Job List: Show Agent Assignment
+
+Add to each `CronJobRow`:
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ ○ ClawdOS Morning Standup                            ▢ ▶ 🗑    │
+│   🤖 Trunks • daily_brief                                      │
+│   Daily at 8:00 AM ET                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Visual elements:
+- Agent badge with emoji + name (or "Unassigned" if null)
+- Intent badge (pill-style, subtle color)
+
+### 3.2 Job List: Agent Assignment Control
+
+Add inline dropdown to reassign agents:
+- Dropdown listing project agents
+- "Unassigned" option
+- On change: queue a patch request
+- Show "Pending" badge while waiting for executor
+
+### 3.3 Job List: Filtering
+
+Add filter bar:
+- **By Agent**: All | Agent dropdown | Unassigned
+- **By Intent**: All | daily_brief | monitoring | ...
+- **By Status**: All | Enabled | Disabled
+
+### 3.4 Create Dialog Updates
+
+Current: Target Agent dropdown exists but stores as `@target:` prefix.
+
+Changes:
+- Make Target Agent more prominent (move up, add explanation)
+- Add Job Intent dropdown (optional, defaults to "custom")
+- Add Context Policy dropdown (optional, defaults to "default")
+- Remove `@target:` encoding - pass as explicit field in request
+
+### 3.5 Edit Dialog Updates
+
+Add fields to patch an existing job:
+- Target Agent reassignment
+- Job Intent change
+- Context Policy change
+
+---
+
+## Phase 4: API Updates
+
+### 4.1 Extend `queueCronCreateRequest`
+
+```typescript
+export async function queueCronCreateRequest(input: {
+  name: string;
+  scheduleKind?: string;
+  scheduleExpr: string;
+  tz?: string;
+  instructions?: string;
+  // New fields:
+  targetAgentKey?: string;
+  jobIntent?: string;
+  contextPolicy?: string;
+}): Promise<{ ok: boolean; requestId?: string; error?: string }>
+```
+
+### 4.2 Extend `CronMirrorJob` interface
+
+```typescript
+export interface CronMirrorJob {
+  // ... existing fields ...
+  targetAgentKey?: string | null;
+  jobIntent?: string | null;
+  contextPolicy?: string | null;
+  uiLabel?: string | null;
+}
+```
+
+### 4.3 Update `getCronMirrorJobs` 
+
+Include new fields in SELECT query.
+
+### 4.4 New helper: `updateCronJobAgent`
+
+Convenience function for reassigning:
+
+```typescript
+export async function updateCronJobAgent(
+  jobId: string, 
+  targetAgentKey: string | null
+): Promise<{ ok: boolean; error?: string }>
+```
+
+---
+
+## Phase 5: Executor Contract (Context Pack Injection)
+
+The Mac mini executor must inject Context Pack on every cron run. This is the **critical enforcement point**.
+
+### 5.1 Execution Flow
+
+When a cron job fires:
+
+```text
+1. Resolve target_agent_key from job payload (or mirror)
+2. If target_agent_key is set:
+   a. Call get-context-pack(project_id, target_agent_key, task_id?)
+   b. Prepend context markdown to the agent's system prompt
+   c. Log context_pack_version in run metadata
+3. If target_agent_key is null:
+   a. Run without agent-specific context (global context only)
+   b. Log warning: "Running job without agent assignment"
+4. Execute the job
+5. Update cron_mirror with run results
+6. Log activity to activities table
+```
+
+### 5.2 Context Pack Fetch
+
+The executor should call the edge function:
+
+```bash
+curl -X POST $SUPABASE_URL/functions/v1/get-context-pack \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SERVICE_KEY" \
+  -d '{
+    "projectId": "front-office",
+    "agentKey": "agent:trunks:main"
+  }'
+```
+
+Response includes `markdown` field ready to inject.
+
+### 5.3 Failure Handling
+
+If context pack fetch fails:
+- Log warning (don't fail the job)
+- Run with degraded context (include warning in prompt)
+- Record `context_pack_status: "failed"` in run metadata
+
+### 5.4 Mirror Sync Updates
+
+When syncing to `cron_mirror`, the executor should:
+1. Parse `agentId` from the OpenClaw job config
+2. Map to `target_agent_key` format: `agent:<name>:main`
+3. Parse job intent from name/description or explicit field
+4. Populate mirror row with all metadata
+
+---
+
+## Phase 6: Integration with Existing Encoding
+
+### Migration Path
+
+The current `@target:agent_key` prefix in instructions must be handled:
+
+1. **On create**: Use explicit field, don't encode in instructions
+2. **On display**: Check both `target_agent_key` field AND parse from instructions (fallback)
+3. **On executor sync**: If job has `@target:` prefix, extract and populate mirror field
+4. **Future**: Clean up legacy encoding during edits
+
+```typescript
+// Enhanced decodeTargetAgent for backwards compat
+function getEffectiveTargetAgent(job: CronMirrorJob): string | null {
+  // Prefer explicit field
+  if (job.targetAgentKey) return job.targetAgentKey;
+  
+  // Fallback: parse from instructions
+  if (job.instructions) {
+    const { targetAgent } = decodeTargetAgent(job.instructions);
+    return targetAgent;
+  }
+  
+  return null;
+}
+```
+
+---
+
+## Phase 7: Types & Constants
+
+### 7.1 Job Intent Constants
+
+```typescript
+// src/lib/schedule-utils.ts
+
+export const JOB_INTENTS = [
+  { id: 'daily_brief', label: 'Daily Brief', description: 'Morning/evening summaries' },
+  { id: 'task_suggestions', label: 'Task Suggestions', description: 'Propose tasks or priorities' },
+  { id: 'monitoring', label: 'Monitoring', description: 'Health checks and alerts' },
+  { id: 'housekeeping', label: 'Housekeeping', description: 'Cleanup and maintenance' },
+  { id: 'sync', label: 'Sync', description: 'Data synchronization' },
+  { id: 'custom', label: 'Custom', description: 'User-defined' },
+] as const;
+
+export type JobIntent = typeof JOB_INTENTS[number]['id'];
+
+export const CONTEXT_POLICIES = [
+  { id: 'minimal', label: 'Minimal', description: 'Overview + recent changes only' },
+  { id: 'default', label: 'Default', description: 'Full context pack' },
+  { id: 'expanded', label: 'Expanded', description: 'Include unpinned relevant docs' },
+] as const;
+
+export type ContextPolicy = typeof CONTEXT_POLICIES[number]['id'];
+```
 
 ---
 
@@ -393,62 +349,97 @@ The existing `brain-doc-sync.mjs` handles SOUL/USER/MEMORY sync. For context pac
 
 | File | Action | Description |
 |------|--------|-------------|
-| `supabase/migrations/...` | Create | Add columns to `project_documents` |
-| `src/lib/context-pack.ts` | Create | Context Pack builder function |
-| `src/lib/api.ts` | Edit | Add doc scoping, template CRUD |
-| `supabase/functions/extract-document-notes/` | Create | One-time doc extraction |
-| `supabase/functions/get-context-pack/` | Create | Executor-callable endpoint |
-| `src/components/documents/AddDocumentDialog.tsx` | Edit | Add scope/pin/type fields |
-| `src/components/documents/DocumentList.tsx` | Edit | Show scope/pin badges |
-| `src/components/pages/DocumentsPage.tsx` | Edit | Add Project Overview section |
-| `src/components/pages/AgentsPage.tsx` | Edit | Create brain_docs on agent create |
-| `src/components/settings/SoulTemplateEditor.tsx` | Create | Template editing UI |
-| `docs/CONTEXT-FLOW.md` | Create | Architecture documentation |
-| `changes.md` | Edit | Document the feature |
+| `supabase/migrations/...` | Create | Add columns to cron tables |
+| `src/lib/api.ts` | Edit | Extend types and API functions |
+| `src/lib/schedule-utils.ts` | Edit | Add intent/policy constants |
+| `src/integrations/supabase/types.ts` | Edit | Regenerate with new columns |
+| `src/components/pages/CronPage.tsx` | Edit | Show agent/intent, add filters |
+| `src/components/schedule/JobIntentBadge.tsx` | Create | Intent display component |
+| `src/components/schedule/AgentAssignmentDropdown.tsx` | Create | Inline agent selector |
+| `docs/CONTEXT-FLOW.md` | Edit | Document cron integration |
+| `changes.md` | Edit | Document feature |
 
 ---
 
 ## Implementation Order
 
-### Batch 1: Database + Core Logic
+### Batch 1: Schema + Types
 1. Database migration (add columns)
-2. Create `context-pack.ts` builder
-3. Create `get-context-pack` edge function
-4. Update `createAgent` to generate SOUL from template
+2. Update TypeScript types
+3. Add constants to schedule-utils.ts
 
-### Batch 2: Document Extraction
-5. Create `extract-document-notes` edge function
-6. Call extraction on document create/upload
-7. Update document APIs to handle new fields
+### Batch 2: API Layer
+4. Update `CronMirrorJob` interface
+5. Update `getCronMirrorJobs` to fetch new fields
+6. Update `queueCronCreateRequest` to accept new fields
+7. Add `updateCronJobAgent` helper
 
-### Batch 3: UI Updates
-8. Update `AddDocumentDialog` with scope/pin/type
-9. Update `DocumentList` with badges
-10. Add Project Overview section to DocumentsPage
-11. Create SOUL Template editor
+### Batch 3: UI - Display
+8. Create `JobIntentBadge` component
+9. Update `CronJobRow` to show agent + intent
+10. Add filter bar to CronPage
 
-### Batch 4: Integration + Docs
-12. Create `docs/CONTEXT-FLOW.md`
-13. Update `changes.md`
-14. Test end-to-end flow
+### Batch 4: UI - Editing
+11. Create `AgentAssignmentDropdown` component
+12. Update Create dialog with explicit fields
+13. Update Edit dialog with reassignment
+
+### Batch 5: Documentation
+14. Update CONTEXT-FLOW.md with cron section
+15. Update changes.md
 
 ---
 
 ## Success Criteria
 
-1. **New agents get working SOUL** with Context Pack rule built-in
-2. **Documents can be scoped** to global or specific agent
-3. **Pinned docs appear in Context Pack** (notes, not full text)
-4. **Credential docs** show pointer only, never secrets
-5. **Context Pack is generated centrally** and available via edge function
-6. **Context size is predictable** — never unbounded
+1. Every job in the Schedule list shows which agent owns it
+2. Jobs can be filtered by agent and intent
+3. New jobs are created with explicit agent assignment (no prefix encoding)
+4. Existing jobs with `@target:` prefix still work (backwards compat)
+5. Executor contract is documented for Context Pack injection
+6. Dashboard works fully when executor is offline (queue model preserved)
 
 ---
 
-## Future Enhancements (Not in This Plan)
+## Out of Scope (Future Work)
 
-- Semantic search / embeddings for relevant doc retrieval
-- Tool/skill gating in SOUL generation
-- Context Pack analytics (what docs get used?)
-- Multi-project context sharing
-- Agent-to-agent context handoff
+- Executor-side implementation of Context Pack injection (documented contract only)
+- OpenClaw `sessionTarget` (main vs isolated) - keep current behavior
+- Job delivery configuration (channel targeting)
+- Task creation policy (jobs that auto-create tasks)
+- Context Pack analytics (which docs are used)
+
+---
+
+## Failure Modes & Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Job assigned to deleted agent | Show "Agent not found" badge, allow reassignment |
+| Context pack fetch fails | Run with warning, log degraded state |
+| Unassigned job | Run without agent context, show "Unassigned" in UI |
+| Legacy `@target:` job | Parse and display, convert on next edit |
+| Multiple pending patches | Last wins (queue is FIFO) |
+
+---
+
+## Documentation Updates
+
+Add section to `docs/CONTEXT-FLOW.md`:
+
+```markdown
+## Scheduled Job Context
+
+When a scheduled job runs, the executor:
+
+1. Resolves the target agent from job configuration
+2. Calls `get-context-pack` with project + agent + optional task
+3. Prepends the context markdown to the job's instructions
+4. Runs the agent turn with full context
+
+This ensures consistent context delivery regardless of:
+- Whether the job is main-session or isolated
+- The job's schedule frequency
+- Manual vs automated execution
+```
+
