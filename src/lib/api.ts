@@ -59,6 +59,13 @@ export interface Session {
   totalTokens?: number;
 }
 
+export interface SkillMissing {
+  bins?: string[];
+  env?: string[];
+  config?: string[];
+  os?: string[];
+}
+
 export interface Skill {
   id: string;
   name: string;
@@ -67,6 +74,13 @@ export interface Skill {
   version: string;
   installed: boolean;
   lastUpdated: string;
+  emoji?: string;
+  eligible?: boolean;
+  disabled?: boolean;
+  blockedByAllowlist?: boolean;
+  missing?: SkillMissing;
+  source?: 'bundled' | 'installed' | 'local';
+  homepage?: string;
 }
 
 export interface Tool {
@@ -1026,14 +1040,68 @@ async function getSkillsMirror(): Promise<Skill[]> {
     .eq('project_id', projectId)
     .order('name', { ascending: true });
   if (error) { console.error('[API] skills_mirror query failed', error); return []; }
-  return (data || []).map((row: any) => ({
-    id: row.skill_id || row.id,
-    name: row.name,
-    slug: (row.name || '').toLowerCase().replace(/\s+/g, '-'),
-    description: row.description || '',
-    version: row.version || '',
-    installed: row.installed ?? false,
-    lastUpdated: row.last_updated || '',
+  return (data || []).map((row: any) => {
+    const extra = row.extra_json || {};
+    return {
+      id: row.skill_id || row.id,
+      name: row.name,
+      slug: (row.name || '').toLowerCase().replace(/\s+/g, '-'),
+      description: row.description || '',
+      version: row.version || '',
+      installed: row.installed ?? false,
+      lastUpdated: row.last_updated || '',
+      emoji: extra.emoji,
+      eligible: extra.eligible,
+      disabled: extra.disabled,
+      blockedByAllowlist: extra.blockedByAllowlist,
+      missing: extra.missing,
+      source: extra.source,
+      homepage: extra.homepage,
+    };
+  });
+}
+
+export async function installSkill(identifier: string): Promise<{ ok: boolean; error?: string }> {
+  const base = getApiBaseUrl();
+  if (base) {
+    try {
+      return await requestJson('/api/skills/install', {
+        method: 'POST',
+        body: JSON.stringify({ identifier }),
+      });
+    } catch (err: any) {
+      console.warn('[API] Control API skill install failed, storing request in Supabase', err);
+    }
+  }
+  // Fallback: store in skill_requests table
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const { error } = await supabase.from('skill_requests' as any).insert({
+      project_id: projectId,
+      identifier,
+      status: 'pending',
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  return { ok: false, error: 'No backend available' };
+}
+
+export async function getSkillRequests(): Promise<Array<{ id: string; identifier: string; status: string; resultMessage?: string; createdAt: string }>> {
+  if (!hasSupabase() || !supabase) return [];
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('skill_requests' as any)
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    identifier: r.identifier,
+    status: r.status,
+    resultMessage: r.result_message,
+    createdAt: r.created_at,
   }));
 }
 
