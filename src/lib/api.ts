@@ -1009,11 +1009,32 @@ export async function getSkills(): Promise<Skill[]> {
   if (base) {
     try {
       return await requestJson<Skill[]>('/api/skills');
-    } catch {
-      return [];
+    } catch (err) {
+      console.warn('[API] Control API skills fetch failed, falling back to Supabase', err);
     }
   }
-  return [];
+  // Fallback: read from skills_mirror in Supabase
+  return getSkillsMirror();
+}
+
+async function getSkillsMirror(): Promise<Skill[]> {
+  if (!hasSupabase() || !supabase) return [];
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('skills_mirror' as any)
+    .select('*')
+    .eq('project_id', projectId)
+    .order('name', { ascending: true });
+  if (error) { console.error('[API] skills_mirror query failed', error); return []; }
+  return (data || []).map((row: any) => ({
+    id: row.skill_id || row.id,
+    name: row.name,
+    slug: (row.name || '').toLowerCase().replace(/\s+/g, '-'),
+    description: row.description || '',
+    version: row.version || '',
+    installed: row.installed ?? false,
+    lastUpdated: row.last_updated || '',
+  }));
 }
 
 export async function getTools(): Promise<Tool[]> {
@@ -1972,11 +1993,30 @@ export async function getChannels(): Promise<Channel[]> {
   if (base) {
     try {
       return await requestJson<Channel[]>('/api/channels');
-    } catch {
-      return [];
+    } catch (err) {
+      console.warn('[API] Control API channels fetch failed, falling back to Supabase', err);
     }
   }
-  return [];
+  // Fallback: read from channels_mirror in Supabase
+  return getChannelsMirror();
+}
+
+async function getChannelsMirror(): Promise<Channel[]> {
+  if (!hasSupabase() || !supabase) return [];
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('channels_mirror' as any)
+    .select('*')
+    .eq('project_id', projectId)
+    .order('name', { ascending: true });
+  if (error) { console.error('[API] channels_mirror query failed', error); return []; }
+  return (data || []).map((row: any) => ({
+    id: row.channel_id || row.id,
+    name: row.name,
+    type: row.type || '',
+    status: row.status === 'connected' ? 'connected' : 'disconnected',
+    lastActivity: row.last_activity || '',
+  }));
 }
 
 // ============= Documents API =============

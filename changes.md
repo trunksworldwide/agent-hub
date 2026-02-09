@@ -1,3 +1,8 @@
+### Skills & Channels: Supabase mirror fallback
+- Created `skills_mirror` and `channels_mirror` Supabase tables (mirror pattern, matching `cron_mirror`).
+- `getSkills()` and `getChannels()` now fall back to their respective mirror tables when the Control API is unavailable or fails, instead of returning empty arrays.
+- No page changes needed — `SkillsPage` and `ChannelsPage` automatically render whatever the API returns.
+
 ### Cron toggle/run: fail loudly when Control API is connected + pending patch overlay
 - **Toggle/Run** no longer silently fall back to the Supabase queue when the Control API is connected and the direct call fails. Instead, a destructive error toast is shown and the UI state stays unchanged so the toggle accurately reflects reality.
 - **Pending patch overlay**: On page load, pending `cron_job_patch_requests` (queued/running) are fetched and merged on top of mirror data via `effectiveJobs` useMemo. This prevents toggles from reverting on page reload when the executor hasn't processed the patch yet.

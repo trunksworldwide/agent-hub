@@ -189,6 +189,39 @@ export type Database = {
           },
         ]
       }
+      channels_mirror: {
+        Row: {
+          channel_id: string
+          id: string
+          last_activity: string
+          name: string
+          project_id: string
+          status: string
+          synced_at: string
+          type: string
+        }
+        Insert: {
+          channel_id: string
+          id?: string
+          last_activity?: string
+          name: string
+          project_id: string
+          status?: string
+          synced_at?: string
+          type?: string
+        }
+        Update: {
+          channel_id?: string
+          id?: string
+          last_activity?: string
+          name?: string
+          project_id?: string
+          status?: string
+          synced_at?: string
+          type?: string
+        }
+        Relationships: []
+      }
       cron_create_requests: {
         Row: {
           completed_at: string | null
@@ -562,6 +595,42 @@ export type Database = {
           id?: string
           name?: string
           workspace_path?: string | null
+        }
+        Relationships: []
+      }
+      skills_mirror: {
+        Row: {
+          description: string
+          id: string
+          installed: boolean
+          last_updated: string
+          name: string
+          project_id: string
+          skill_id: string
+          synced_at: string
+          version: string
+        }
+        Insert: {
+          description?: string
+          id?: string
+          installed?: boolean
+          last_updated?: string
+          name: string
+          project_id: string
+          skill_id: string
+          synced_at?: string
+          version?: string
+        }
+        Update: {
+          description?: string
+          id?: string
+          installed?: boolean
+          last_updated?: string
+          name?: string
+          project_id?: string
+          skill_id?: string
+          synced_at?: string
+          version?: string
         }
         Relationships: []
       }
