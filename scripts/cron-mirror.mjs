@@ -151,14 +151,19 @@ async function mirrorCronList() {
   );
   if (fpErr) throw fpErr;
 
-  // Clean up stale mirror rows for jobs that no longer exist on executor
-  const currentJobIds = jobs.map(j => String(j.id));
+  // Clean up stale mirror rows for jobs that no longer exist on executor.
+  // IMPORTANT: PostgREST `in` filters require values to be quoted. Use JSON.stringify for safe quoting.
+  const currentJobIds = jobs.map((j) => String(j.id)).filter(Boolean);
   currentJobIds.push(stateJobId); // keep the state row
+
+  const inList = `(${currentJobIds.map((id) => JSON.stringify(String(id))).join(',')})`;
+
   const { error: delErr } = await sb
     .from('cron_mirror')
     .delete()
     .eq('project_id', PROJECT_ID)
-    .not('job_id', 'in', `(${currentJobIds.join(',')})`);
+    .not('job_id', 'in', inList);
+
   if (delErr) console.error('[cron-mirror] stale row cleanup failed', delErr);
   else console.log('[cron-mirror] cleanup done, keeping', currentJobIds.length, 'rows');
 
