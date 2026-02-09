@@ -1,104 +1,158 @@
 
 
-# Fix: Skills and Channels Should Fall Back to Supabase
+# Fix: Skills and Channels Server Endpoints (OpenClaw-Native)
 
 ## Problem
 
-`getSkills()` and `getChannels()` in `src/lib/api.ts` only fetch from the Control API. If the Control API URL is not set or the call fails, they return an empty array -- resulting in the "not configured" empty state on the Settings page.
+The dashboard shows "online" but Skills and Channels are empty. This is a server-side issue in `server/index.mjs`:
 
-There is no Supabase fallback, unlike cron jobs which read from `cron_mirror`.
+1. `/api/skills` returns `[]` when `EXECUTOR_SKILLS_DIR` is not set (line 586)
+2. `/api/channels` endpoint doesn't exist at all -- returns 404
+
+The UI-side Supabase fallback we added works, but the mirror tables are also empty because nothing populates them. The real fix is making the server endpoints return actual data.
 
 ## Solution
 
-Follow the established Mirror pattern: create `skills_mirror` and `channels_mirror` Supabase tables, and update the API functions to fall back to Supabase when the Control API is unavailable or fails.
+### 1. Update `/api/skills` -- use OpenClaw CLI (lines 582-613)
 
----
+Replace the directory-scan-only approach with a CLI-first strategy:
 
-## Part 1: Supabase Mirror Tables
+- **Primary**: Call `execExecutor('skills list --json')` and parse the result
+- **Fallback 1**: Scan `EXECUTOR_SKILLS_DIR` if set (existing logic)
+- **Fallback 2**: Try common default paths (`/opt/homebrew/lib/node_modules/openclaw/skills`, `/opt/homebrew/lib/node_modules/clawdbot/skills`)
+- Only return `[]` if all strategies fail
 
-### Table: `skills_mirror`
+This works out of the box without any env var configuration.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK, default gen_random_uuid() |
-| project_id | text | not null |
-| skill_id | text | not null (executor-side ID) |
-| name | text | not null |
-| description | text | default '' |
-| version | text | default '' |
-| installed | boolean | default false |
-| last_updated | text | default '' |
-| synced_at | timestamptz | default now() |
+### 2. Add `GET /api/channels` (new route, after skills)
 
-Unique constraint on (project_id, skill_id). RLS enabled with read policy for authenticated users.
+Read channel config from `~/.openclaw/openclaw.json`:
 
-### Table: `channels_mirror`
+- Parse `config.channels` map
+- Normalize each entry into: `{ id, name, type, enabled, status, lastActivity }` plus any useful fields like `dmPolicy`, `groupPolicy`, `includeAttachments`, `mediaMaxMb`
+- If file missing or parse fails, return `[]` (not 404)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK, default gen_random_uuid() |
-| project_id | text | not null |
-| channel_id | text | not null (executor-side ID) |
-| name | text | not null |
-| type | text | default '' |
-| status | text | default 'disconnected' |
-| last_activity | text | default '' |
-| synced_at | timestamptz | default now() |
+Insert the new route after the `/api/skills` block (after line 613).
 
-Unique constraint on (project_id, channel_id). RLS enabled with read policy for authenticated users.
+### 3. Mirror sync on fetch
 
----
+After both endpoints return data, upsert results into `skills_mirror` and `channels_mirror` (best-effort, non-blocking) so the Supabase fallback stays populated for when the executor is offline.
 
-## Part 2: API Functions Update
+## Technical Details
 
-### File: `src/lib/api.ts`
+### File: `server/index.mjs`
 
-**`getSkills()` (~line 1007)**
+**`/api/skills` (lines 582-613) -- replace entirely:**
 
-Change from:
+```javascript
+if (req.method === 'GET' && url.pathname === '/api/skills') {
+  try {
+    let skills = [];
+
+    // Strategy 1: OpenClaw CLI
+    try {
+      const { stdout } = await execExecutor('skills list --json');
+      const parsed = JSON.parse(stdout || '{}');
+      const list = parsed.skills || (Array.isArray(parsed) ? parsed : []);
+      if (list.length > 0) {
+        skills = list.map(s => ({
+          id: s.name || s.id,
+          name: s.name || s.id,
+          slug: s.slug || s.name || s.id,
+          description: s.description || '',
+          version: s.version || 'installed',
+          installed: true,
+          lastUpdated: s.lastUpdated || new Date().toISOString(),
+        }));
+      }
+    } catch { /* CLI doesn't support skills list, fall through */ }
+
+    // Strategy 2: Directory scan
+    if (skills.length === 0) {
+      const dirs = [
+        process.env.EXECUTOR_SKILLS_DIR,
+        '/opt/homebrew/lib/node_modules/openclaw/skills',
+        '/opt/homebrew/lib/node_modules/clawdbot/skills',
+      ].filter(Boolean);
+
+      for (const skillsDir of dirs) {
+        // ... existing directory scan logic (read SKILL.md files) ...
+        if (skills.length > 0) break;
+      }
+    }
+
+    // Best-effort: sync to Supabase mirror
+    syncSkillsMirror(projectId, skills);
+
+    return sendJson(res, 200, skills);
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+  }
+}
 ```
-if (base) { try fetch from API, catch return [] }
-return []
+
+**New `/api/channels` route (insert after skills block):**
+
+```javascript
+if (req.method === 'GET' && url.pathname === '/api/channels') {
+  try {
+    let channels = [];
+    const configPath = path.join(
+      process.env.HOME || '/root',
+      '.openclaw',
+      'openclaw.json'
+    );
+    const st = await safeStat(configPath);
+    if (st) {
+      const raw = await readFile(configPath, 'utf8');
+      const config = JSON.parse(raw);
+      const channelsMap = config.channels || {};
+      channels = Object.entries(channelsMap).map(([id, cfg]) => ({
+        id,
+        name: id.charAt(0).toUpperCase() + id.slice(1),
+        type: 'messaging',
+        enabled: cfg.enabled !== false,
+        status: cfg.enabled !== false ? 'connected' : 'disconnected',
+        lastActivity: '',
+        includeAttachments: cfg.includeAttachments || false,
+        mediaMaxMb: cfg.mediaMaxMb || null,
+        dmPolicy: cfg.dmPolicy || null,
+        groupPolicy: cfg.groupPolicy || null,
+      }));
+    }
+
+    // Best-effort: sync to Supabase mirror
+    syncChannelsMirror(projectId, channels);
+
+    return sendJson(res, 200, channels);
+  } catch (err) {
+    return sendJson(res, 200, []); // Graceful empty on error
+  }
+}
 ```
 
-To:
-```
-if (base) { try fetch from API, catch fall through }
-// Fallback: read from skills_mirror in Supabase
-```
+**New mirror sync helpers (add near top, after existing Supabase helpers):**
 
-Add a new `getSkillsMirror()` helper that reads from `skills_mirror` table filtered by project_id, mapping rows to the existing `Skill` type.
+- `syncSkillsMirror(projectId, skills)` -- upserts into `skills_mirror`, throttled
+- `syncChannelsMirror(projectId, channels)` -- upserts into `channels_mirror`, throttled
 
-**`getChannels()` (~line 1970)**
+Both use the existing `getSupabase()` client and are fire-and-forget (non-blocking, error-swallowing).
 
-Same pattern -- try Control API first, fall back to `channels_mirror` table.
+### File: `changes.md`
 
-Add a new `getChannelsMirror()` helper that reads from `channels_mirror` filtered by project_id, mapping rows to the existing `Channel` type.
-
----
-
-## Part 3: No Page Changes Needed
-
-`SkillsPage.tsx` and `ChannelsPage.tsx` already call `getSkills()` / `getChannels()` and render whatever is returned. Once the API functions have a Supabase fallback, the pages will automatically show data when it exists in the mirror tables.
-
----
+Log the changes.
 
 ## File Summary
 
 | File | Action |
 |------|--------|
-| Supabase migration | Create `skills_mirror` and `channels_mirror` tables with RLS |
-| `src/lib/api.ts` | Edit `getSkills()` and `getChannels()` to fall back to Supabase mirror tables |
-| `changes.md` | Log the change |
+| `server/index.mjs` | Replace skills endpoint with CLI-first strategy, add channels endpoint, add mirror sync helpers |
+| `changes.md` | Log changes |
 
 ## What This Does NOT Change
 
-- Control API fetch logic (still tries direct API first when available)
-- Page components (no UI changes needed)
-- Executor scripts (mirror sync is handled by the Mac mini cron scripts)
-- Other tables or existing mirror patterns
-
-## Note
-
-The mirror tables will need to be populated by the executor's sync scripts (similar to how `cron_mirror` is synced by `scripts/cron-mirror.mjs`). Until those scripts are updated, the tables will be empty -- but the pages will at least show the "no data" state rather than implying a connectivity problem.
+- UI components (no page changes)
+- Supabase tables (already created)
+- `src/lib/api.ts` (fallback logic already in place)
+- Other server endpoints
 
