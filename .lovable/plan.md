@@ -1,72 +1,85 @@
 
 
-# Fix: Cron Toggle Fails Loudly + Pending Patches Override Stale Mirror
+# Fix: Skills and Channels Should Fall Back to Supabase
 
-This plan addresses two related problems:
+## Problem
 
-1. **Toggle silently falls back to queue** -- When the direct Control API fails (e.g., "unknown job ID"), the code silently queues a Supabase request instead of telling you it failed. You want it to show an error immediately so you know the Mac mini didn't actually disable the job.
+`getSkills()` and `getChannels()` in `src/lib/api.ts` only fetch from the Control API. If the Control API URL is not set or the call fails, they return an empty array -- resulting in the "not configured" empty state on the Settings page.
 
-2. **Toggle reverts on page reload** -- When you toggle a job off and navigate away then back, `loadJobs()` re-fetches from `cron_mirror` which still says `enabled: true` (the executor hasn't processed the patch yet). The optimistic UI update is lost.
+There is no Supabase fallback, unlike cron jobs which read from `cron_mirror`.
 
----
+## Solution
 
-## Combined Solution
-
-### Part A: Fail loudly when Control API is connected
-
-Remove the silent fallback-to-queue behavior. When `controlApiConnected` is true and the direct API call fails, show a destructive error toast with the actual error message. Do NOT update the UI state. The toggle stays in its current position so it accurately reflects reality.
-
-The queue path only runs when `controlApiConnected` is false (genuine offline mode).
-
-Apply this to all three action handlers: toggle, run, and delete.
-
-### Part B: Overlay pending patches on mirror data
-
-When the page loads or realtime triggers a refresh, fetch pending `cron_job_patch_requests` (status = queued or running) alongside the mirror data. Use a `useMemo` to produce `effectiveJobs` that merges pending patches on top of mirror state. Render `effectiveJobs` instead of raw `mirrorJobs`. This way, even if the mirror hasn't caught up, the UI shows the intended state.
+Follow the established Mirror pattern: create `skills_mirror` and `channels_mirror` Supabase tables, and update the API functions to fall back to Supabase when the Control API is unavailable or fails.
 
 ---
 
-## Technical Details
+## Part 1: Supabase Mirror Tables
 
-### File: `src/components/pages/CronPage.tsx`
+### Table: `skills_mirror`
 
-**handleToggle (~line 667)**
-- Remove the `doQueueFallback()` call from the `catch` block when `controlApiConnected` is true
-- Instead, show a destructive toast with the error message (e.g., "unknown cron job id: ...")
-- Do NOT call `setMirrorJobs` on failure -- the toggle stays unchanged
-- The `else` branch (offline/queue mode) remains as-is
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK, default gen_random_uuid() |
+| project_id | text | not null |
+| skill_id | text | not null (executor-side ID) |
+| name | text | not null |
+| description | text | default '' |
+| version | text | default '' |
+| installed | boolean | default false |
+| last_updated | text | default '' |
+| synced_at | timestamptz | default now() |
 
-**handleRunNow (~line 908)**
-- Same pattern: remove `doQueueRun()` from the catch block when `controlApiConnected` is true
-- Show destructive toast on failure instead
+Unique constraint on (project_id, skill_id). RLS enabled with read policy for authenticated users.
 
-**handleDelete (~line 704)**
-- Currently always uses the queue. Keep that behavior since delete is inherently async, but if the user wants direct delete when connected, we can add that. For now, no change needed here since it already queues correctly.
+### Table: `channels_mirror`
 
-**loadJobs (~line 551)**
-- Add `getCronPatchRequests()` to the `Promise.all` call
-- Store result in new state: `patchRequests`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK, default gen_random_uuid() |
+| project_id | text | not null |
+| channel_id | text | not null (executor-side ID) |
+| name | text | not null |
+| type | text | default '' |
+| status | text | default 'disconnected' |
+| last_activity | text | default '' |
+| synced_at | timestamptz | default now() |
 
-**New state + effectiveJobs merge**
-- Add `patchRequests` state (array of `CronPatchRequest`)
-- Add a `useMemo` called `effectiveJobs` that:
-  - Takes `mirrorJobs` as base
-  - For each job, checks if there's a pending patch request (status = queued or running) targeting that job_id
-  - If a pending patch has `enabled: false`, override the job's `enabled` to `false` (and vice versa)
-  - Returns the merged array
-- Replace all references to `mirrorJobs` in the render/filter logic with `effectiveJobs`
+Unique constraint on (project_id, channel_id). RLS enabled with read policy for authenticated users.
 
-**Realtime subscription (~line 589)**
-- Already listens to `cron_job_patch_requests` -- no change needed
+---
+
+## Part 2: API Functions Update
 
 ### File: `src/lib/api.ts`
 
-- `getCronPatchRequests()` already exists -- no changes needed
-- `CronPatchRequest` type already exists -- no changes needed
+**`getSkills()` (~line 1007)**
 
-### File: `changes.md`
+Change from:
+```
+if (base) { try fetch from API, catch return [] }
+return []
+```
 
-- Log both fixes
+To:
+```
+if (base) { try fetch from API, catch fall through }
+// Fallback: read from skills_mirror in Supabase
+```
+
+Add a new `getSkillsMirror()` helper that reads from `skills_mirror` table filtered by project_id, mapping rows to the existing `Skill` type.
+
+**`getChannels()` (~line 1970)**
+
+Same pattern -- try Control API first, fall back to `channels_mirror` table.
+
+Add a new `getChannelsMirror()` helper that reads from `channels_mirror` filtered by project_id, mapping rows to the existing `Channel` type.
+
+---
+
+## Part 3: No Page Changes Needed
+
+`SkillsPage.tsx` and `ChannelsPage.tsx` already call `getSkills()` / `getChannels()` and render whatever is returned. Once the API functions have a Supabase fallback, the pages will automatically show data when it exists in the mirror tables.
 
 ---
 
@@ -74,13 +87,18 @@ When the page loads or realtime triggers a refresh, fetch pending `cron_job_patc
 
 | File | Action |
 |------|--------|
-| `src/components/pages/CronPage.tsx` | Edit -- remove silent fallback, show errors, add patch overlay logic |
-| `changes.md` | Edit -- log the changes |
+| Supabase migration | Create `skills_mirror` and `channels_mirror` tables with RLS |
+| `src/lib/api.ts` | Edit `getSkills()` and `getChannels()` to fall back to Supabase mirror tables |
+| `changes.md` | Log the change |
 
 ## What This Does NOT Change
 
-- Offline/queue mode behavior (still works when Control API is disconnected)
-- Server-side scripts or executor code
-- Supabase tables or migrations
-- Delete handler (already uses queue pattern correctly)
-- Other pages or components
+- Control API fetch logic (still tries direct API first when available)
+- Page components (no UI changes needed)
+- Executor scripts (mirror sync is handled by the Mac mini cron scripts)
+- Other tables or existing mirror patterns
+
+## Note
+
+The mirror tables will need to be populated by the executor's sync scripts (similar to how `cron_mirror` is synced by `scripts/cron-mirror.mjs`). Until those scripts are updated, the tables will be empty -- but the pages will at least show the "no data" state rather than implying a connectivity problem.
+
