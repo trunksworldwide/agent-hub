@@ -1,3 +1,11 @@
+### Cron: Fix scheduled job deletion ghost-back behavior
+- **`CronDeleteRequest`** now includes parsed `removed` boolean from executor result `stdoutTail`.
+- **`getCronDeleteRequests`** parses `stdoutTail` JSON to extract `removed` status; falls back to `exitCode === 0` when JSON parsing fails.
+- **`CronPage`** replaces `pendingDeletes` Set with a `deleteStates` Map tracking `'pending' | 'failed' | 'removed'` per job.
+- Jobs with `removed: true` (or ambiguous success) are hidden from the list immediately, preventing ghost-back before mirror cleanup.
+- Jobs with `removed: false` or error status show a "Delete failed — click to retry" badge.
+- Retry button re-queues the delete request without requiring the confirmation dialog again.
+
 ### Skills: Capabilities Manager upgrade (rich metadata, detail drawer, add skill)
 - **Expanded `Skill` interface** with `emoji`, `eligible`, `disabled`, `blockedByAllowlist`, `missing` (bins/env/config/os), `source`, `homepage`.
 - **Server `/api/skills`** now passes through rich metadata from `openclaw skills list --json` and directory scan fallback parses emoji from SKILL.md frontmatter.

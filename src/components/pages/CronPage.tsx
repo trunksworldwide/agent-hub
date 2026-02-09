@@ -149,7 +149,8 @@ interface CronJobRowProps {
   running: boolean;
   controlApiConnected: boolean;
   pendingToggle: boolean;
-  pendingDelete: boolean;
+  deleteState: 'pending' | 'failed' | null;
+  onRetryDelete: () => void;
   runHistory: CronRunEntry[];
   loadingRuns: boolean;
   onRefreshRuns: () => void;
@@ -169,12 +170,15 @@ function CronJobRow({
   running,
   controlApiConnected,
   pendingToggle,
-  pendingDelete,
+  deleteState,
+  onRetryDelete,
   runHistory,
   loadingRuns,
   onRefreshRuns,
   agents,
 }: CronJobRowProps) {
+  const pendingDelete = deleteState === 'pending';
+  const deleteFailed = deleteState === 'failed';
   // Get effective target agent (prefer explicit field, fallback to instructions header)
   const getEffectiveTargetAgent = (): string | null => {
     if (job.targetAgentKey) return job.targetAgentKey;
@@ -251,6 +255,11 @@ function CronJobRow({
                   {pendingDelete && (
                     <Badge variant="secondary" className="text-[10px] bg-destructive/10 text-destructive">
                       Deletion pending
+                    </Badge>
+                  )}
+                  {deleteFailed && (
+                    <Badge variant="destructive" className="text-[10px] gap-1 cursor-pointer" onClick={onRetryDelete}>
+                      Delete failed — click to retry
                     </Badge>
                   )}
                 </div>
@@ -481,7 +490,8 @@ export function CronPage() {
 
   // Delete dialog state
   const [deletingJob, setDeletingJob] = useState<CronMirrorJob | null>(null);
-  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+  // Map of jobId -> 'pending' | 'failed' | 'removed'
+  const [deleteStates, setDeleteStates] = useState<Map<string, 'pending' | 'failed' | 'removed'>>(new Map());
 
   // Pending toggle requests (for offline mode)
   const [pendingToggles, setPendingToggles] = useState<Set<string>>(new Set());
@@ -498,14 +508,28 @@ export function CronPage() {
   const supabaseConnected = hasSupabase();
   const controlApiConnected = apiStatus.mode === 'control-api';
 
-  // Compute pending deletes from delete requests
+  // Compute delete states from delete requests
   useEffect(() => {
-    const pendingJobIds = new Set(
-      deleteRequests
-        .filter(r => r.status === 'queued' || r.status === 'running')
-        .map(r => r.jobId)
-    );
-    setPendingDeletes(pendingJobIds);
+    const states = new Map<string, 'pending' | 'failed' | 'removed'>();
+    // Process most recent request per job (requests are ordered desc by requested_at)
+    const seenJobs = new Set<string>();
+    for (const r of deleteRequests) {
+      if (seenJobs.has(r.jobId)) continue;
+      seenJobs.add(r.jobId);
+      if (r.status === 'queued' || r.status === 'running') {
+        states.set(r.jobId, 'pending');
+      } else if (r.status === 'done') {
+        if (r.removed === false) {
+          states.set(r.jobId, 'failed');
+        } else {
+          // removed === true or undefined (ambiguous success) — hide from list
+          states.set(r.jobId, 'removed');
+        }
+      } else if (r.status === 'error') {
+        states.set(r.jobId, 'failed');
+      }
+    }
+    setDeleteStates(states);
   }, [deleteRequests]);
 
   // Helper to get effective target agent (from field or instructions prefix)
@@ -545,6 +569,9 @@ export function CronPage() {
   // Filter jobs
   const filteredJobs = useMemo(() => {
     return effectiveJobs.filter((job) => {
+      // Hide jobs that were successfully removed (before mirror cleanup)
+      if (deleteStates.get(job.jobId) === 'removed') return false;
+
       // Search filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -574,7 +601,7 @@ export function CronPage() {
 
       return true;
     });
-  }, [effectiveJobs, searchQuery, enabledFilter, agentFilter, intentFilter]);
+  }, [effectiveJobs, deleteStates, searchQuery, enabledFilter, agentFilter, intentFilter]);
 
   // Load jobs from Supabase cron_mirror
   const loadJobs = useCallback(async () => {
@@ -749,6 +776,28 @@ export function CronPage() {
     } catch (err: any) {
       toast({
         title: 'Failed to delete job',
+        description: String(err?.message || err),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Retry delete handler (no confirmation dialog needed)
+  const handleRetryDelete = async (job: CronMirrorJob) => {
+    try {
+      const result = await queueCronDeleteRequest(job.jobId);
+      if (result.ok) {
+        toast({
+          title: 'Retry queued',
+          description: `${job.name} delete request has been re-queued.`,
+        });
+        await loadJobs();
+      } else {
+        throw new Error(result.error || 'Failed to queue retry');
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Failed to retry delete',
         description: String(err?.message || err),
         variant: 'destructive',
       });
@@ -1246,7 +1295,8 @@ export function CronPage() {
               running={runningJob === job.jobId}
               controlApiConnected={controlApiConnected}
               pendingToggle={pendingToggles.has(job.jobId)}
-              pendingDelete={pendingDeletes.has(job.jobId)}
+              deleteState={(() => { const s = deleteStates.get(job.jobId); return s === 'pending' || s === 'failed' ? s : null; })()}
+              onRetryDelete={() => handleRetryDelete(job)}
               runHistory={runsByJob[job.jobId] || []}
               loadingRuns={Boolean(loadingRuns[job.jobId])}
               onRefreshRuns={() => loadRuns(job.jobId, { force: true })}

@@ -1256,6 +1256,8 @@ export interface CronDeleteRequest {
   result?: any;
   pickedUpAt?: string | null;
   completedAt?: string | null;
+  /** Parsed from result.stdoutTail — true if executor confirmed removal */
+  removed?: boolean;
 }
 
 /**
@@ -1458,17 +1460,38 @@ export async function getCronDeleteRequests(limit = 20): Promise<CronDeleteReque
 
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    projectId: row.project_id,
-    jobId: row.job_id,
-    requestedAt: row.requested_at,
-    requestedBy: row.requested_by,
-    status: row.status,
-    result: row.result,
-    pickedUpAt: row.picked_up_at,
-    completedAt: row.completed_at,
-  }));
+  return (data || []).map((row: any) => {
+    // Parse the `removed` boolean from result.stdoutTail when status is done
+    let removed: boolean | undefined;
+    if (row.status === 'done' && row.result) {
+      try {
+        const stdout = row.result?.stdoutTail || '';
+        // stdoutTail may contain JSON like {"removed":true,"id":"..."}
+        const parsed = JSON.parse(stdout);
+        if (typeof parsed?.removed === 'boolean') {
+          removed = parsed.removed;
+        }
+      } catch {
+        // If we can't parse, leave undefined — treat as ambiguous success
+        // (exit code 0 + done status is the best we have)
+        if (row.result?.exitCode === 0) {
+          removed = true;
+        }
+      }
+    }
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      jobId: row.job_id,
+      requestedAt: row.requested_at,
+      requestedBy: row.requested_by,
+      status: row.status,
+      result: row.result,
+      pickedUpAt: row.picked_up_at,
+      completedAt: row.completed_at,
+      removed,
+    };
+  });
 }
 
 // ============= Legacy Control API Cron Functions =============
