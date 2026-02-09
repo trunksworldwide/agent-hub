@@ -1,8 +1,8 @@
 # ClawdOS (agent-hub)
 
-ClawdOS is a mobile-friendly “control plane” UI for Clawdbot running on a Mac mini.
+ClawdOS is a mobile-friendly "control plane" UI for [OpenClaw](https://docs.openclaw.ai/) agents running on a Mac mini.
 
-It’s designed to make an AI agent system understandable and editable from a single place:
+It's designed to make an AI agent system understandable and editable from a single place:
 - agents and their instruction sets ("Soul")
 - user configuration
 - memory (daily + long-term)
@@ -15,12 +15,12 @@ It’s designed to make an AI agent system understandable and editable from a si
 The goal is not just a pretty dashboard. The goal is operational control: a modern interface where every component does something real, is auditable, and can be rolled back.
 
 ## Why this exists
-Most agent setups are opaque. You can’t easily see:
+Most agent setups are opaque. You can't easily see:
 - what the agent believes (instructions)
 - what it remembers
 - what it can do (skills/tools)
 - what it has been doing recently
-- what’s scheduled to happen next
+- what's scheduled to happen next
 
 ClawdOS turns this into an OS-like interface.
 
@@ -35,10 +35,10 @@ ClawdOS is split into two parts:
 2) Control API (included in this repo under `server/`)
 - A minimal Node HTTP server that runs locally on the Mac mini.
 - Exposes a safe, stable API contract that the UI can call.
-- Reads/writes files in the Clawdbot workspace.
-- Calls Clawdbot CLI commands to fetch sessions, cron jobs, etc.
+- Reads/writes files in the OpenClaw workspace.
+- Calls OpenClaw CLI commands (via `server/executor.mjs` compatibility wrapper) to fetch sessions, cron jobs, etc.
 
-This is intentionally an “adapter layer.” It prevents the UI from being tightly coupled to Clawdbot internals, and it gives us a single place to add:
+This is intentionally an "adapter layer." It prevents the UI from being tightly coupled to OpenClaw internals, and it gives us a single place to add:
 - authentication
 - rate limiting
 - logging
@@ -48,26 +48,26 @@ This is intentionally an “adapter layer.” It prevents the UI from being tigh
 ## Data sources
 ClawdOS pulls from:
 
-- Clawdbot workspace files (the agent’s “brain”):
+- OpenClaw workspace files (the agent's "brain"):
   - `SOUL.md` (behavior)
   - `USER.md` (user preferences/config)
   - `MEMORY.md` (long-term)
   - `memory/YYYY-MM-DD.md` (daily)
 
-- Clawdbot session store:
-  - `clawdbot sessions --json`
+- OpenClaw session store:
+  - `openclaw sessions --json`
 
-- Clawdbot scheduler:
-  - `clawdbot cron list --json`
+- OpenClaw scheduler:
+  - `openclaw cron list --json`
 
 - Installed skills:
-  - local Clawdbot skills folder (reads `SKILL.md`)
+  - configured via `EXECUTOR_SKILLS_DIR` env var (reads `SKILL.md`)
 
 - Activity feed:
   - git commit history from the workspace repo
 
 ## Key principle: edits must be auditable
-Editing the agent’s instructions without history is dangerous.
+Editing the agent's instructions without history is dangerous.
 
 So the Control API commits changes to git when you edit core brain files.
 This enables:
@@ -81,7 +81,7 @@ UI support for diff/rollback is planned (backend commits already happen).
 
 ### Prereqs
 - Node.js + npm
-- Clawdbot installed and running on the same machine
+- OpenClaw installed and running on the same machine (`npm i -g openclaw@latest`)
 
 ### Start the Control API
 ```bash
@@ -110,6 +110,7 @@ npm run dev:all
 - `GET /api/cron`
 - `POST /api/cron/:id/run`
 - `GET /api/activity` (recent git commits)
+- `GET /api/executor-check` (non-destructive smoke test)
 - `POST /api/restart` (restarts the gateway)
 
 ## Mobile-first behavior
@@ -127,4 +128,3 @@ ClawdOS is designed so you can check it quickly on a phone:
 - Agent profile creation/deletion/reorder
 - Remote access (Tailscale/Cloudflare Tunnel)
 - Authentication (API key + optional SSO)
-

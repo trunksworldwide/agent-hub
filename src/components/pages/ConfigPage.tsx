@@ -115,7 +115,7 @@ export function ConfigPage() {
               className="gap-2"
             >
               <span>🦀</span>
-              Update Claw
+              Update OpenClaw
             </Button>
             
             <AlertDialog>
@@ -131,7 +131,7 @@ export function ConfigPage() {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Restart ClawdOffice?</AlertDialogTitle>
+                  <AlertDialogTitle>Restart OpenClaw?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will restart the entire agent runtime. All active sessions will be 
                     interrupted and pending jobs may fail.
@@ -151,28 +151,10 @@ export function ConfigPage() {
         {/* Config Info */}
         <div className="mt-8 p-4 rounded-lg border border-dashed border-border bg-muted/20">
           <h3 className="font-medium mb-2">Configuration Files</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            System configuration is managed via files on the Mac mini. Edit these files 
-            directly or through the agent tabs.
+          <p className="text-sm text-muted-foreground">
+            Configuration files are managed in your OpenClaw workspace directory. 
+            Edit them directly or through the agent tabs above.
           </p>
-          <div className="space-y-2 font-mono text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">~/clawdbot/</span>
-              <span>SOUL.md</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">~/clawdbot/</span>
-              <span>USER.md</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">~/clawdbot/</span>
-              <span>MEMORY.md</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">~/clawdbot/memory/</span>
-              <span>YYYY-MM-DD.md</span>
-            </div>
-          </div>
         </div>
       </div>
     </div>

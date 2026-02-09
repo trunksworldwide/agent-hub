@@ -5,6 +5,7 @@ import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
+import { execExecutor, resolveExecutorBin } from './executor.mjs';
 
 const exec = promisify(_exec);
 
@@ -157,7 +158,7 @@ async function syncAgentPresenceFromSessions({ projectId, throttleMs = 30_000 })
   lastPresenceSyncMs = now;
 
   try {
-    const { stdout } = await exec('clawdbot sessions --json --active 10080');
+        const { stdout } = await execExecutor('sessions --json --active 10080');
     const data = JSON.parse(stdout || '{"sessions": []}');
 
     const sessions = (data.sessions || []).map((s) => {
@@ -345,7 +346,7 @@ const server = http.createServer(async (req, res) => {
       let mainSessions = null;
 
       try {
-        const { stdout } = await exec('clawdbot sessions --json --active 10080');
+        const { stdout } = await execExecutor('sessions --json --active 10080');
         const data = JSON.parse(stdout || '{"count":0,"sessions":[]}');
 
         const sessions = Array.isArray(data.sessions) ? data.sessions : [];
@@ -444,9 +445,11 @@ const server = http.createServer(async (req, res) => {
       // Minimal v1: only the primary agent profile.
       let skillCount = null;
       try {
-        const skillsDir = '/opt/homebrew/lib/node_modules/clawdbot/skills';
-        const entries = await readdir(skillsDir, { withFileTypes: true });
-        skillCount = entries.filter((e) => e.isDirectory()).length;
+        const skillsDir = process.env.EXECUTOR_SKILLS_DIR || null;
+        if (skillsDir) {
+          const entries = await readdir(skillsDir, { withFileTypes: true });
+          skillCount = entries.filter((e) => e.isDirectory()).length;
+        }
       } catch {
         // ignore
       }
@@ -579,7 +582,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/skills') {
       // v1: list installed skills from the local node_modules skills folder.
       try {
-        const skillsDir = '/opt/homebrew/lib/node_modules/clawdbot/skills';
+        const skillsDir = process.env.EXECUTOR_SKILLS_DIR || null;
+        if (!skillsDir) return sendJson(res, 200, []);
         const entries = await readdir(skillsDir, { withFileTypes: true });
         const skills = [];
         for (const ent of entries) {
@@ -610,7 +614,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/sessions') {
       try {
-        const { stdout } = await exec('clawdbot sessions --json --active 10080');
+        const { stdout } = await execExecutor('sessions --json --active 10080');
         const data = JSON.parse(stdout || '{"sessions": []}');
 
         const normalizeAgentKey = (raw) => {
@@ -692,7 +696,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/cron') {
       try {
         // Cron list can take longer than the default gateway timeout.
-        const { stdout } = await exec('clawdbot cron list --json --timeout 60000');
+        const { stdout } = await execExecutor('cron list --json --timeout 60000', { timeout: 65000 });
         const data = JSON.parse(stdout || '{"jobs": []}');
         const jobs = (data.jobs || []).map((j) => ({
           id: j.id || j.jobId || j.name,
@@ -715,18 +719,18 @@ const server = http.createServer(async (req, res) => {
       const [, jobId, action] = cronToggleMatch;
       try {
         if (action === 'enable') {
-          await exec(`clawdbot cron enable ${JSON.stringify(jobId)} --timeout 60000`);
+          await execExecutor(`cron enable ${JSON.stringify(jobId)} --timeout 60000`);
           return sendJson(res, 200, { ok: true, enabled: true });
         }
         if (action === 'disable') {
-          await exec(`clawdbot cron disable ${JSON.stringify(jobId)} --timeout 60000`);
+          await execExecutor(`cron disable ${JSON.stringify(jobId)} --timeout 60000`);
           return sendJson(res, 200, { ok: true, enabled: false });
         }
 
         // toggle: expects JSON body { enabled: boolean }
         const body = await readBodyJson(req);
         const enabled = Boolean(body.enabled);
-        await exec(`clawdbot cron ${enabled ? 'enable' : 'disable'} ${JSON.stringify(jobId)} --timeout 60000`);
+        await execExecutor(`cron ${enabled ? 'enable' : 'disable'} ${JSON.stringify(jobId)} --timeout 60000`);
         return sendJson(res, 200, { ok: true, enabled });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
@@ -738,8 +742,8 @@ const server = http.createServer(async (req, res) => {
       const [, jobId] = cronRunsMatch;
       try {
         const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '25')));
-        const { stdout } = await exec(
-          `clawdbot cron runs --id ${JSON.stringify(jobId)} --limit ${JSON.stringify(String(limit))} --timeout 60000`
+        const { stdout } = await execExecutor(
+          `cron runs --id ${JSON.stringify(jobId)} --limit ${JSON.stringify(String(limit))} --timeout 60000`
         );
         const data = JSON.parse(stdout || '{"entries": []}');
         return sendJson(res, 200, data);
@@ -760,7 +764,7 @@ const server = http.createServer(async (req, res) => {
           actor: 'agent:main:main',
         });
 
-        await exec(`clawdbot cron run ${JSON.stringify(jobId)} --timeout 60000`);
+        await execExecutor(`cron run ${JSON.stringify(jobId)} --timeout 60000`);
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
@@ -794,12 +798,12 @@ const server = http.createServer(async (req, res) => {
           args.push(body.enabled ? '--enable' : '--disable');
         }
 
-        const cmd =
-          `clawdbot cron edit ${JSON.stringify(jobId)} ` +
+        const cmdArgs =
+          `cron edit ${JSON.stringify(jobId)} ` +
           args.map((a) => (a.startsWith('--') ? a : JSON.stringify(a))).join(' ') +
           ' --timeout 60000';
 
-        await exec(cmd);
+        await execExecutor(cmdArgs);
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
@@ -948,11 +952,50 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/restart') {
       // Restart the gateway (best effort). If this fails, report the error.
       try {
-        await exec('clawdbot gateway restart');
+        await execExecutor('gateway restart');
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
+    }
+
+    // GET /api/executor-check — non-destructive smoke test
+    if (req.method === 'GET' && url.pathname === '/api/executor-check') {
+      const result = { binary: null, version: null, checks: {} };
+      try {
+        const bin = await resolveExecutorBin();
+        result.binary = bin;
+      } catch (e) {
+        result.checks.resolve = { ok: false, error: e.message };
+        return sendJson(res, 200, result);
+      }
+
+      // --version
+      try {
+        const { stdout } = await execExecutor('--version', { timeout: 10000 });
+        result.version = stdout.trim();
+        result.checks.version = { ok: true, output: stdout.trim() };
+      } catch (e) {
+        result.checks.version = { ok: false, error: String(e?.message || e) };
+      }
+
+      // sessions (minimal, read-only)
+      try {
+        await execExecutor('sessions --json --active 1', { timeout: 10000 });
+        result.checks.sessions = { ok: true };
+      } catch (e) {
+        result.checks.sessions = { ok: false, error: String(e?.message || e) };
+      }
+
+      // cron list (read-only)
+      try {
+        await execExecutor('cron list --json --timeout 10000', { timeout: 15000 });
+        result.checks.cron = { ok: true };
+      } catch (e) {
+        result.checks.cron = { ok: false, error: String(e?.message || e) };
+      }
+
+      return sendJson(res, 200, result);
     }
 
     return notFound(res);
