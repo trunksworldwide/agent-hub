@@ -1,8 +1,10 @@
-import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive } from 'lucide-react';
+import { useEffect } from 'react';
+import { RefreshCw, RotateCcw, Server, Cpu, HardDrive, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HealthPanel } from '@/components/settings/HealthPanel';
 import { useClawdOffice } from '@/lib/store';
-import { restartSystem, getStatus } from '@/lib/api';
+import { getStatus } from '@/lib/api';
+import { testControlApi } from '@/lib/control-api';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -25,8 +27,27 @@ export function ConfigPage() {
     isRefreshing,
     setIsRefreshing,
     setLastRefresh,
+    controlApiUrl,
+    executorCheck,
+    setExecutorCheck,
   } = useClawdOffice();
   const { toast } = useToast();
+
+  // Auto-fetch status + executor check on mount
+  useEffect(() => {
+    getStatus()
+      .then((s) => {
+        setStatus(s);
+        setLastRefresh(new Date());
+      })
+      .catch(() => {});
+
+    if (controlApiUrl) {
+      testControlApi(controlApiUrl)
+        .then(setExecutorCheck)
+        .catch(() => setExecutorCheck(null));
+    }
+  }, [controlApiUrl]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -34,6 +55,14 @@ export function ConfigPage() {
       const newStatus = await getStatus();
       setStatus(newStatus);
       setLastRefresh(new Date());
+      if (controlApiUrl) {
+        try {
+          const check = await testControlApi(controlApiUrl);
+          setExecutorCheck(check);
+        } catch {
+          setExecutorCheck(null);
+        }
+      }
       toast({
         title: 'Refreshed',
         description: 'Status updated.',
@@ -46,6 +75,7 @@ export function ConfigPage() {
   const handleRestart = async () => {
     setIsRestarting(true);
     try {
+      const { restartSystem } = await import('@/lib/api');
       await restartSystem();
       toast({
         title: 'Restarted',
@@ -57,11 +87,20 @@ export function ConfigPage() {
     }
   };
 
+  const isOnline = executorCheck
+    ? Object.values(executorCheck.checks).every((c) => c.ok)
+    : status?.online ?? false;
+
   const configItems = [
-    { label: 'Environment', value: status?.environment || 'local', icon: Server },
-    { label: 'Port', value: status?.port?.toString() || '18789', icon: Database },
-    { label: 'Active Sessions', value: status?.activeSessions?.toString() || '0', icon: Cpu },
-    { label: 'Status', value: status?.online ? 'Online' : 'Offline', icon: HardDrive },
+    { label: 'Environment', value: status?.environment || 'supabase', icon: Server },
+    { label: 'OpenClaw', value: executorCheck ? `v${executorCheck.version}` : 'Unknown', icon: Package },
+    { label: 'Active Sessions', value: status?.activeSessions?.toString() || '—', icon: Cpu },
+    {
+      label: 'Status',
+      value: isOnline ? 'Online' : 'Offline',
+      icon: HardDrive,
+      color: isOnline ? 'text-primary' : 'text-destructive',
+    },
   ];
 
   return (
@@ -85,7 +124,9 @@ export function ConfigPage() {
                 <item.icon className="w-5 h-5 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">{item.label}</span>
               </div>
-              <p className="text-lg font-semibold">{item.value}</p>
+              <p className={`text-lg font-semibold ${'color' in item && item.color ? item.color : ''}`}>
+                {item.value}
+              </p>
             </div>
           ))}
         </div>
@@ -112,10 +153,9 @@ export function ConfigPage() {
             <Button
               variant="outline"
               onClick={() => {
-                // TODO: Implement Update Claw functionality
                 toast({
                   title: 'Coming soon',
-                  description: 'Update Claw functionality will be available soon.',
+                  description: 'Update OpenClaw functionality will be available soon.',
                 });
               }}
               className="gap-2"

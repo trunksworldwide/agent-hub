@@ -21,6 +21,8 @@ export function HealthPanel() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const { setExecutorCheck } = useClawdOffice();
+
   const handleTest = async () => {
     const url = urlInput.trim();
     if (!url) {
@@ -33,9 +35,11 @@ export function HealthPanel() {
     try {
       const r = await testControlApi(url);
       setResult(r);
+      setExecutorCheck(r);
       toast({ title: 'Connected', description: `${r.binary} v${r.version}` });
     } catch (e: any) {
       setError(e.message || 'Connection failed');
+      setExecutorCheck(null);
       toast({ title: 'Connection failed', description: e.message, variant: 'destructive' });
     } finally {
       setTesting(false);

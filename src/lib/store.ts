@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
 import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } from './project';
-import { getControlApiUrl, setControlApiUrl as persistControlApiUrl } from './control-api';
+import { getControlApiUrl, setControlApiUrl as persistControlApiUrl, type ExecutorCheckResult } from './control-api';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
@@ -60,6 +60,10 @@ interface ClawdOfficeState {
   // Control API URL (runtime-configurable)
   controlApiUrl: string;
   setControlApiUrl: (url: string) => void;
+
+  // Executor health check result (shared across components)
+  executorCheck: ExecutorCheckResult | null;
+  setExecutorCheck: (result: ExecutorCheckResult | null) => void;
 
   // UI state
   isRestarting: boolean;
@@ -173,6 +177,10 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
     persistControlApiUrl(url);
     set({ controlApiUrl: url });
   },
+
+  // Executor health check result
+  executorCheck: null,
+  setExecutorCheck: (result) => set({ executorCheck: result }),
 
   // UI state
   isRestarting: false,

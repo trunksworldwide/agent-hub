@@ -1,4 +1,13 @@
-### Connectivity / Health Panel: runtime-configurable Control API URL
+### Settings: real system state + remove mock data
+- **ConfigPage auto-fetches** status and executor health on mount — no more manual "Refresh" required to see Online/Offline.
+- **OpenClaw version card** replaces the old "Port" card, showing the version from `/api/executor-check`.
+- **Status card** now reflects real executor connectivity (green/red based on health check results).
+- **Executor check shared via Zustand** (`executorCheck` state) so HealthPanel and status cards stay in sync.
+- **Skills tab**: removed 7 hardcoded mock skills; now fetches from Control API `/api/skills` or shows empty state with guidance.
+- **Channels tab**: removed 3 hardcoded mock channels; now fetches from Control API `/api/channels` or shows empty state.
+- **Removed** `mockSkills`, `mockCronJobs`, `mockChannels` arrays from `api.ts`.
+
+
 - **Created `src/lib/control-api.ts`**: Runtime URL management — reads localStorage → VITE_API_BASE_URL → ''. Includes `testControlApi()` for `/api/executor-check`.
 - **Created `src/components/settings/HealthPanel.tsx`**: Card with URL input, Test/Save/Clear buttons, and diagnostic results (binary, version, sessions/cron pass/fail).
 - **Updated `src/lib/api.ts`**: `requestJson()` and `getStatus()` now use runtime URL getter instead of compile-time constant.
