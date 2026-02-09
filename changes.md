@@ -1,4 +1,9 @@
-### Settings: real system state + remove mock data
+### Cron actions: fallback-to-queue on direct API failure + stale mirror cleanup
+- **Toggle/Run/Delete** now automatically fall back to the Supabase request queue when the direct Control API call fails (e.g. "unknown cron job id" from stale entries).
+- **cron-mirror.mjs** now deletes mirror rows for jobs that no longer exist on the executor, preventing stale entries from accumulating.
+- Previously, a stale job ID in `cron_mirror` would cause an unrecoverable error toast; now it silently queues instead.
+
+
 - **ConfigPage auto-fetches** status and executor health on mount — no more manual "Refresh" required to see Online/Offline.
 - **OpenClaw version card** replaces the old "Port" card, showing the version from `/api/executor-check`.
 - **Status card** now reflects real executor connectivity (green/red based on health check results).
