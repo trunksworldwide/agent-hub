@@ -68,7 +68,7 @@ export function SkillsPage() {
   if (!loading && skills.length === 0 && pendingRequests.length === 0) {
     return (
       <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-        <div className="max-w-2xl">
+        <div className="w-full" style={{ maxWidth: '720px' }}>
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold">Skills</h1>
@@ -94,7 +94,7 @@ export function SkillsPage() {
 
     return (
       <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-        <div className="max-w-2xl">
+        <div className="w-full" style={{ maxWidth: '720px' }}>
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -157,10 +157,10 @@ export function SkillsPage() {
               return (
                 <div
                   key={skill.id}
-                  className="p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors cursor-pointer group"
+                  className="p-4 rounded-lg border border-border bg-card hover:bg-card/80 transition-colors cursor-pointer group overflow-hidden"
                   onClick={() => handleView(skill)}
                 >
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-4 overflow-hidden">
                     <div className="flex items-center gap-4 min-w-0 flex-1">
                       <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg shrink-0">
                         {skill.emoji || '🧩'}
