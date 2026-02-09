@@ -3,7 +3,12 @@
 import { supabase, hasSupabase } from './supabase';
 import { getSelectedProjectId } from './project';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+import { getControlApiUrl } from './control-api';
+
+// Dynamic getter — reads runtime-configurable URL (localStorage → env → '')
+const getApiBaseUrl = () => getControlApiUrl();
+// Keep a compat reference for existing checks
+const API_BASE_URL = getApiBaseUrl();
 const IS_DEV = import.meta.env.MODE === 'development';
 const ALLOW_MOCKS_ENV = import.meta.env.VITE_ALLOW_MOCKS === 'true';
 
@@ -414,7 +419,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // In dev, allow mock mode only when explicitly enabled.
 // Default is: NO MOCKS (to avoid confusing ghost agents in Lovable/remote builds).
-const USE_REMOTE = Boolean(API_BASE_URL);
+const USE_REMOTE = Boolean(getApiBaseUrl());
 const ALLOW_MOCKS = IS_DEV && !USE_REMOTE && ALLOW_MOCKS_ENV;
 
 function getProjectId(): string {
@@ -422,12 +427,13 @@ function getProjectId(): string {
 }
 
 async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
-  if (!API_BASE_URL) {
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
     throw new Error(
-      'Missing VITE_API_BASE_URL. This build is configured for real data only (no mocks).'
+      'Missing Control API URL. Set it in Config → Connectivity or via VITE_API_BASE_URL.'
     );
   }
-  const url = `${API_BASE_URL}${p}`;
+  const url = `${baseUrl}${p}`;
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -447,7 +453,7 @@ async function requestJson<T>(p: string, init?: RequestInit): Promise<T> {
 export async function getStatus(): Promise<SystemStatus> {
   // If Supabase is configured but we don't have a Control API base URL,
   // treat Supabase connectivity as "online" so the UI can still run.
-  if (hasSupabase() && supabase && !API_BASE_URL) {
+  if (hasSupabase() && supabase && !getApiBaseUrl()) {
     try {
       // Lightweight health check.
       const { error } = await supabase.from('projects').select('id').limit(1);
@@ -1398,7 +1404,7 @@ export async function getCronDeleteRequests(limit = 20): Promise<CronDeleteReque
 export async function getCronJobs(): Promise<CronJob[]> {
   // Supabase-only deployments don't have cron management in the DB yet;
   // return empty so the Dashboard can load without a Control API.
-  if (hasSupabase() && !API_BASE_URL) return [];
+  if (hasSupabase() && !getApiBaseUrl()) return [];
 
   if (USE_REMOTE) return requestJson<CronJob[]>('/api/cron');
   if (!ALLOW_MOCKS) return requestJson<CronJob[]>('/api/cron');
@@ -2377,10 +2383,11 @@ export function getApiStatus(): {
   baseUrl: string | null;
   mode: 'supabase-only' | 'control-api' | 'mock';
 } {
-  if (API_BASE_URL) {
+  const currentUrl = getApiBaseUrl();
+  if (currentUrl) {
     return {
       connected: true,
-      baseUrl: API_BASE_URL,
+      baseUrl: currentUrl,
       mode: 'control-api',
     };
   }

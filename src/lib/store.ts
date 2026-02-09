@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
 import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } from './project';
+import { getControlApiUrl, setControlApiUrl as persistControlApiUrl } from './control-api';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
@@ -55,6 +56,10 @@ interface ClawdOfficeState {
   setFileSaving: (key: string, isSaving: boolean) => void;
   markFileSaved: (key: string) => void;
   resetFile: (key: string) => void;
+
+  // Control API URL (runtime-configurable)
+  controlApiUrl: string;
+  setControlApiUrl: (url: string) => void;
 
   // UI state
   isRestarting: boolean;
@@ -162,6 +167,13 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
     },
   })),
   
+  // Control API URL
+  controlApiUrl: getControlApiUrl(),
+  setControlApiUrl: (url) => {
+    persistControlApiUrl(url);
+    set({ controlApiUrl: url });
+  },
+
   // UI state
   isRestarting: false,
   setIsRestarting: (value) => set({ isRestarting: value }),

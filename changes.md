@@ -1,3 +1,10 @@
+### Connectivity / Health Panel: runtime-configurable Control API URL
+- **Created `src/lib/control-api.ts`**: Runtime URL management — reads localStorage → VITE_API_BASE_URL → ''. Includes `testControlApi()` for `/api/executor-check`.
+- **Created `src/components/settings/HealthPanel.tsx`**: Card with URL input, Test/Save/Clear buttons, and diagnostic results (binary, version, sessions/cron pass/fail).
+- **Updated `src/lib/api.ts`**: `requestJson()` and `getStatus()` now use runtime URL getter instead of compile-time constant.
+- **Updated `src/lib/store.ts`**: Added `controlApiUrl` and `setControlApiUrl` for reactive propagation.
+- **Updated `src/components/pages/ConfigPage.tsx`**: Renders HealthPanel between status cards and actions.
+
 ### Safe Migration: Clawdbot → OpenClaw (executor compatibility wrapper)
 - **Created `server/executor.mjs`**: Compatibility wrapper that resolves CLI binary (`openclaw` first, `clawdbot` fallback). Supports `EXECUTOR_BIN` env var for absolute path (launchd-safe). Uses `command -v` instead of `which`.
 - **Updated `server/index.mjs`**: All 11 `exec('clawdbot ...')` calls replaced with `execExecutor(...)`. Hardcoded skills paths replaced with `EXECUTOR_SKILLS_DIR` env var (returns empty gracefully when unset).
