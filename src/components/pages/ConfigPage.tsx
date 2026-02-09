@@ -1,5 +1,6 @@
-import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive, Download } from 'lucide-react';
+import { RefreshCw, RotateCcw, Server, Database, Cpu, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HealthPanel } from '@/components/settings/HealthPanel';
 import { useClawdOffice } from '@/lib/store';
 import { restartSystem, getStatus } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -87,6 +88,11 @@ export function ConfigPage() {
               <p className="text-lg font-semibold">{item.value}</p>
             </div>
           ))}
+        </div>
+
+        {/* Connectivity / Health */}
+        <div className="mb-8">
+          <HealthPanel />
         </div>
 
         {/* Actions */}
