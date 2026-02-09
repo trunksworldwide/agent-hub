@@ -1,158 +1,132 @@
 
 
-# Fix: Skills and Channels Server Endpoints (OpenClaw-Native)
+# Upgrade Skills Page into a Capabilities Manager
 
-## Problem
+## What changes
 
-The dashboard shows "online" but Skills and Channels are empty. This is a server-side issue in `server/index.mjs`:
+Transform the Skills tab from a plain list with broken buttons into an interactive capabilities dashboard with rich metadata, a working detail drawer, and a quick "Add Skill" flow.
 
-1. `/api/skills` returns `[]` when `EXECUTOR_SKILLS_DIR` is not set (line 586)
-2. `/api/channels` endpoint doesn't exist at all -- returns 404
+## Part 1: Expand the Skill data model
 
-The UI-side Supabase fallback we added works, but the mirror tables are also empty because nothing populates them. The real fix is making the server endpoints return actual data.
+The current `Skill` interface is too thin. OpenClaw's `skills list --json` returns much richer metadata (emoji, eligible, missing requirements, source, etc.) that we're currently discarding.
 
-## Solution
+**Expand the `Skill` interface** in `src/lib/api.ts`:
 
-### 1. Update `/api/skills` -- use OpenClaw CLI (lines 582-613)
+| New field | Type | Purpose |
+|-----------|------|---------|
+| emoji | string (optional) | Skill icon from SKILL.md frontmatter, fallback to category-based icons |
+| eligible | boolean (optional) | Whether all requirements are met |
+| disabled | boolean (optional) | Explicitly disabled by config |
+| blockedByAllowlist | boolean (optional) | Blocked by skill allowlist |
+| missing | object (optional) | `{ bins: string[], env: string[], config: string[], os: string[] }` |
+| source | string (optional) | "bundled", "installed", "local" |
+| homepage | string (optional) | Link to docs/repo |
 
-Replace the directory-scan-only approach with a CLI-first strategy:
+**Update the server endpoint** (`server/index.mjs` `/api/skills`) to pass through these fields from the CLI output instead of discarding them.
 
-- **Primary**: Call `execExecutor('skills list --json')` and parse the result
-- **Fallback 1**: Scan `EXECUTOR_SKILLS_DIR` if set (existing logic)
-- **Fallback 2**: Try common default paths (`/opt/homebrew/lib/node_modules/openclaw/skills`, `/opt/homebrew/lib/node_modules/clawdbot/skills`)
-- Only return `[]` if all strategies fail
+**Update the mirror table** helpers to store/retrieve the extra fields (add an `extra_json` column or expand individual columns on `skills_mirror`).
 
-This works out of the box without any env var configuration.
+---
 
-### 2. Add `GET /api/channels` (new route, after skills)
+## Part 2: Redesign Skills list cards
 
-Read channel config from `~/.openclaw/openclaw.json`:
+Replace the current uniform cards with status-aware skill cards.
 
-- Parse `config.channels` map
-- Normalize each entry into: `{ id, name, type, enabled, status, lastActivity }` plus any useful fields like `dmPolicy`, `groupPolicy`, `includeAttachments`, `mediaMaxMb`
-- If file missing or parse fails, return `[]` (not 404)
+**New card layout per skill:**
+- Left: emoji from metadata (fallback: category icon from Lucide, not a generic wrench)
+- Center: name, one-line description, source badge ("bundled" / "installed")
+- Right: status pill + action button
 
-Insert the new route after the `/api/skills` block (after line 613).
+**Status pills:**
+- "Ready" (green) -- eligible and not disabled
+- "Needs setup" (amber) -- not eligible, has missing requirements
+- "Blocked" (red) -- blocked by allowlist
+- "Disabled" (muted) -- explicitly disabled
 
-### 3. Mirror sync on fetch
+**Sorting:** Ready first, then Needs setup, then Blocked/Disabled. Alphabetical within each group.
 
-After both endpoints return data, upsert results into `skills_mirror` and `channels_mirror` (best-effort, non-blocking) so the Supabase fallback stays populated for when the executor is offline.
+**Timestamps:** Use relative format ("2h ago") via the existing `date-fns` `formatDistanceToNow`.
 
-## Technical Details
+---
 
-### File: `server/index.mjs`
+## Part 3: Skill Detail Drawer (make "View" work)
 
-**`/api/skills` (lines 582-613) -- replace entirely:**
+Create a new component `src/components/settings/SkillDetailDrawer.tsx` using the existing `Sheet` component (consistent with how agent details work).
 
-```javascript
-if (req.method === 'GET' && url.pathname === '/api/skills') {
-  try {
-    let skills = [];
+**Drawer contents:**
+- **Header:** emoji + skill name + status pill
+- **Description section:** full description text
+- **Readiness section** (only if not eligible):
+  - Missing binaries with suggested install commands in copyable code blocks (e.g. `brew install op`)
+  - Missing environment variables with `export VAR=value` snippets
+  - Missing config items
+  - OS compatibility notes
+- **Info section:** source, version, last updated (relative)
+- **Footer:** Close button. If not eligible, a "Setup help" link that scrolls to the readiness section.
 
-    // Strategy 1: OpenClaw CLI
-    try {
-      const { stdout } = await execExecutor('skills list --json');
-      const parsed = JSON.parse(stdout || '{}');
-      const list = parsed.skills || (Array.isArray(parsed) ? parsed : []);
-      if (list.length > 0) {
-        skills = list.map(s => ({
-          id: s.name || s.id,
-          name: s.name || s.id,
-          slug: s.slug || s.name || s.id,
-          description: s.description || '',
-          version: s.version || 'installed',
-          installed: true,
-          lastUpdated: s.lastUpdated || new Date().toISOString(),
-        }));
-      }
-    } catch { /* CLI doesn't support skills list, fall through */ }
+No "Enable/Disable" or "Remove" buttons unless the backend supports it. Honest UI -- don't promise what isn't wired.
 
-    // Strategy 2: Directory scan
-    if (skills.length === 0) {
-      const dirs = [
-        process.env.EXECUTOR_SKILLS_DIR,
-        '/opt/homebrew/lib/node_modules/openclaw/skills',
-        '/opt/homebrew/lib/node_modules/clawdbot/skills',
-      ].filter(Boolean);
+---
 
-      for (const skillsDir of dirs) {
-        // ... existing directory scan logic (read SKILL.md files) ...
-        if (skills.length > 0) break;
-      }
-    }
+## Part 4: Add Skill flow
 
-    // Best-effort: sync to Supabase mirror
-    syncSkillsMirror(projectId, skills);
+Add an "Add Skill" button in the Skills page header.
 
-    return sendJson(res, 200, skills);
-  } catch (err) {
-    return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
-  }
-}
-```
+**Add Skill dialog** (`src/components/settings/AddSkillDialog.tsx`):
+- Single text input: "Paste a skill name, ClawdHub slug, or git URL"
+- Examples shown as placeholder/helper text
+- Submit creates a skill install request
 
-**New `/api/channels` route (insert after skills block):**
+**Backend:**
+- Add `POST /api/skills/install` to `server/index.mjs`
+- Runs `openclaw skill install <identifier>` via `execExecutor`
+- Returns success/failure + refreshes the skill list
+- If the Control API is unavailable, store the request in a `skill_requests` Supabase table (request queue pattern) for the executor to pick up later
 
-```javascript
-if (req.method === 'GET' && url.pathname === '/api/channels') {
-  try {
-    let channels = [];
-    const configPath = path.join(
-      process.env.HOME || '/root',
-      '.openclaw',
-      'openclaw.json'
-    );
-    const st = await safeStat(configPath);
-    if (st) {
-      const raw = await readFile(configPath, 'utf8');
-      const config = JSON.parse(raw);
-      const channelsMap = config.channels || {};
-      channels = Object.entries(channelsMap).map(([id, cfg]) => ({
-        id,
-        name: id.charAt(0).toUpperCase() + id.slice(1),
-        type: 'messaging',
-        enabled: cfg.enabled !== false,
-        status: cfg.enabled !== false ? 'connected' : 'disconnected',
-        lastActivity: '',
-        includeAttachments: cfg.includeAttachments || false,
-        mediaMaxMb: cfg.mediaMaxMb || null,
-        dmPolicy: cfg.dmPolicy || null,
-        groupPolicy: cfg.groupPolicy || null,
-      }));
-    }
+**UI after submit:**
+- Shows a brief loading state
+- On success: refreshes the skills list, shows a toast
+- On failure: shows the error message from the CLI
 
-    // Best-effort: sync to Supabase mirror
-    syncChannelsMirror(projectId, channels);
+---
 
-    return sendJson(res, 200, channels);
-  } catch (err) {
-    return sendJson(res, 200, []); // Graceful empty on error
-  }
-}
-```
+## Part 5: Database changes
 
-**New mirror sync helpers (add near top, after existing Supabase helpers):**
+**Migration:** Add an `extra_json` JSONB column to `skills_mirror` to store the rich metadata (emoji, eligible, missing, source, etc.) without needing many new columns.
 
-- `syncSkillsMirror(projectId, skills)` -- upserts into `skills_mirror`, throttled
-- `syncChannelsMirror(projectId, channels)` -- upserts into `channels_mirror`, throttled
+**New table: `skill_requests`** (follows request-queue pattern):
 
-Both use the existing `getSupabase()` client and are fire-and-forget (non-blocking, error-swallowing).
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| project_id | text | not null |
+| identifier | text | not null (what the user pasted) |
+| status | text | "pending" / "running" / "done" / "failed" |
+| result_message | text | nullable |
+| created_at | timestamptz | default now() |
+| updated_at | timestamptz | default now() |
 
-### File: `changes.md`
+RLS: authenticated users can read/insert for their project.
 
-Log the changes.
+---
 
-## File Summary
+## File summary
 
 | File | Action |
 |------|--------|
-| `server/index.mjs` | Replace skills endpoint with CLI-first strategy, add channels endpoint, add mirror sync helpers |
+| `supabase/migrations/...` | Add `extra_json` to `skills_mirror`, create `skill_requests` table |
+| `src/lib/api.ts` | Expand `Skill` interface, update mirror helpers, add `installSkill()` function |
+| `server/index.mjs` | Pass through rich metadata in `/api/skills`, add `POST /api/skills/install` |
+| `src/components/pages/SkillsPage.tsx` | Redesign cards, add sorting, wire View + Add Skill |
+| `src/components/settings/SkillDetailDrawer.tsx` | New -- detail drawer with readiness info |
+| `src/components/settings/AddSkillDialog.tsx` | New -- paste-to-add dialog |
+| `src/integrations/supabase/types.ts` | Update generated types |
 | `changes.md` | Log changes |
 
-## What This Does NOT Change
+## What this does NOT change
 
-- UI components (no page changes)
-- Supabase tables (already created)
-- `src/lib/api.ts` (fallback logic already in place)
+- Channels page (separate effort)
+- Existing Control API fallback logic
 - Other server endpoints
+- Agent or task flows
 
