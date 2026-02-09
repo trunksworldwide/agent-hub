@@ -1,132 +1,83 @@
 
 
-# Upgrade Skills Page into a Capabilities Manager
+# Fix Scheduled Job Deletion
 
-## What changes
+## The Root Cause (Two Problems)
 
-Transform the Skills tab from a plain list with broken buttons into an interactive capabilities dashboard with rich metadata, a working detail drawer, and a quick "Add Skill" flow.
+### Problem 1: OpenClaw keeps recreating deleted jobs
+Your Mac mini's `openclaw cron rm` command runs and sometimes succeeds (`removed: true`), but the jobs reappear. The most recent delete attempts all return `removed: false` -- meaning OpenClaw acknowledges the request but the job still exists. Something on your Mac mini (a config file, startup script, or OpenClaw's own persistence) is recreating these jobs.
 
-## Part 1: Expand the Skill data model
+**You need to investigate this on your Mac mini.** Try running manually:
+```
+openclaw cron rm f6eceee5-68d8-4b41-ac7d-3e4848665000
+openclaw cron list --all --json
+```
+If the job is still there after `rm`, the issue is in OpenClaw's job storage. Check if there's a cron config file that re-registers jobs on startup.
 
-The current `Skill` interface is too thin. OpenClaw's `skills list --json` returns much richer metadata (emoji, eligible, missing requirements, source, etc.) that we're currently discarding.
+### Problem 2: The UI doesn't handle failed deletes properly
+Even when the executor reports `removed: false`, the UI marks it as "done" and stops showing "Deletion pending". Then the mirror re-syncs the job and it pops right back with no explanation. The UI needs to:
 
-**Expand the `Skill` interface** in `src/lib/api.ts`:
+1. Detect when a delete completed but the job wasn't actually removed
+2. Keep showing the job as "delete failed" instead of silently restoring it
+3. Hide jobs from the list when deletion truly succeeded (before the mirror cleanup catches up)
 
-| New field | Type | Purpose |
-|-----------|------|---------|
-| emoji | string (optional) | Skill icon from SKILL.md frontmatter, fallback to category-based icons |
-| eligible | boolean (optional) | Whether all requirements are met |
-| disabled | boolean (optional) | Explicitly disabled by config |
-| blockedByAllowlist | boolean (optional) | Blocked by skill allowlist |
-| missing | object (optional) | `{ bins: string[], env: string[], config: string[], os: string[] }` |
-| source | string (optional) | "bundled", "installed", "local" |
-| homepage | string (optional) | Link to docs/repo |
+## Plan
 
-**Update the server endpoint** (`server/index.mjs` `/api/skills`) to pass through these fields from the CLI output instead of discarding them.
+### Step 1: Improve delete result handling in the UI
+In `CronPage.tsx`, update the `pendingDeletes` logic:
+- Track not just `queued`/`running` deletes, but also recent `done` deletes
+- If a delete completed with `removed: true`, hide the job from the list entirely (the mirror will clean it up on next sync)
+- If a delete completed with `removed: false`, show a "Delete failed" badge instead of silently restoring the job
 
-**Update the mirror table** helpers to store/retrieve the extra fields (add an `extra_json` column or expand individual columns on `skills_mirror`).
+### Step 2: Add a "delete failed" state to the job row
+In the `CronJobRow` component:
+- Add a new visual state for "delete failed" -- a red badge with an explanation
+- Add a "Retry delete" button so you can try again without opening dialogs
 
----
+### Step 3: Filter out successfully deleted jobs
+In the `effectiveJobs` or `filteredJobs` memo:
+- If there's a completed delete request with `removed: true` for a job, filter it out of the list
+- This prevents the ghost job from flashing back before the mirror catches up
 
-## Part 2: Redesign Skills list cards
+### Step 4: Parse delete result properly
+The `result` field from the executor contains `stdoutTail` with JSON. The code needs to parse this to extract the `removed` boolean and use it for UI decisions.
 
-Replace the current uniform cards with status-aware skill cards.
+## Technical Details
 
-**New card layout per skill:**
-- Left: emoji from metadata (fallback: category icon from Lucide, not a generic wrench)
-- Center: name, one-line description, source badge ("bundled" / "installed")
-- Right: status pill + action button
+### Files to modify
+- `src/components/pages/CronPage.tsx` -- delete state management, job filtering, retry UI
+- `src/lib/api.ts` -- add a parsed `removed` field to the `CronDeleteRequest` type
 
-**Status pills:**
-- "Ready" (green) -- eligible and not disabled
-- "Needs setup" (amber) -- not eligible, has missing requirements
-- "Blocked" (red) -- blocked by allowlist
-- "Disabled" (muted) -- explicitly disabled
+### Changes to `CronDeleteRequest` type (api.ts)
+Add an optional `removed` field derived from parsing `result.stdoutTail`:
+```typescript
+export interface CronDeleteRequest {
+  // ... existing fields
+  removed?: boolean; // parsed from result
+}
+```
 
-**Sorting:** Ready first, then Needs setup, then Blocked/Disabled. Alphabetical within each group.
+### Changes to `getCronDeleteRequests` (api.ts)
+Parse the `result.stdoutTail` JSON to extract the `removed` boolean when mapping rows.
 
-**Timestamps:** Use relative format ("2h ago") via the existing `date-fns` `formatDistanceToNow`.
+### Changes to `CronPage.tsx`
 
----
+**pendingDeletes logic** -- replace the simple Set with a Map that tracks state:
+```text
+Map<jobId, 'pending' | 'failed' | 'removed'>
+```
 
-## Part 3: Skill Detail Drawer (make "View" work)
+- `queued` or `running` status -> `'pending'`
+- `done` with `removed: true` -> `'removed'` (hide job from list)
+- `done` with `removed: false` -> `'failed'` (show error badge + retry)
 
-Create a new component `src/components/settings/SkillDetailDrawer.tsx` using the existing `Sheet` component (consistent with how agent details work).
+**filteredJobs** -- exclude jobs in `'removed'` state.
 
-**Drawer contents:**
-- **Header:** emoji + skill name + status pill
-- **Description section:** full description text
-- **Readiness section** (only if not eligible):
-  - Missing binaries with suggested install commands in copyable code blocks (e.g. `brew install op`)
-  - Missing environment variables with `export VAR=value` snippets
-  - Missing config items
-  - OS compatibility notes
-- **Info section:** source, version, last updated (relative)
-- **Footer:** Close button. If not eligible, a "Setup help" link that scrolls to the readiness section.
+**CronJobRow** -- show "Delete failed" badge with retry button when state is `'failed'`.
 
-No "Enable/Disable" or "Remove" buttons unless the backend supports it. Honest UI -- don't promise what isn't wired.
-
----
-
-## Part 4: Add Skill flow
-
-Add an "Add Skill" button in the Skills page header.
-
-**Add Skill dialog** (`src/components/settings/AddSkillDialog.tsx`):
-- Single text input: "Paste a skill name, ClawdHub slug, or git URL"
-- Examples shown as placeholder/helper text
-- Submit creates a skill install request
-
-**Backend:**
-- Add `POST /api/skills/install` to `server/index.mjs`
-- Runs `openclaw skill install <identifier>` via `execExecutor`
-- Returns success/failure + refreshes the skill list
-- If the Control API is unavailable, store the request in a `skill_requests` Supabase table (request queue pattern) for the executor to pick up later
-
-**UI after submit:**
-- Shows a brief loading state
-- On success: refreshes the skills list, shows a toast
-- On failure: shows the error message from the CLI
-
----
-
-## Part 5: Database changes
-
-**Migration:** Add an `extra_json` JSONB column to `skills_mirror` to store the rich metadata (emoji, eligible, missing, source, etc.) without needing many new columns.
-
-**New table: `skill_requests`** (follows request-queue pattern):
-
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK |
-| project_id | text | not null |
-| identifier | text | not null (what the user pasted) |
-| status | text | "pending" / "running" / "done" / "failed" |
-| result_message | text | nullable |
-| created_at | timestamptz | default now() |
-| updated_at | timestamptz | default now() |
-
-RLS: authenticated users can read/insert for their project.
-
----
-
-## File summary
-
-| File | Action |
-|------|--------|
-| `supabase/migrations/...` | Add `extra_json` to `skills_mirror`, create `skill_requests` table |
-| `src/lib/api.ts` | Expand `Skill` interface, update mirror helpers, add `installSkill()` function |
-| `server/index.mjs` | Pass through rich metadata in `/api/skills`, add `POST /api/skills/install` |
-| `src/components/pages/SkillsPage.tsx` | Redesign cards, add sorting, wire View + Add Skill |
-| `src/components/settings/SkillDetailDrawer.tsx` | New -- detail drawer with readiness info |
-| `src/components/settings/AddSkillDialog.tsx` | New -- paste-to-add dialog |
-| `src/integrations/supabase/types.ts` | Update generated types |
-| `changes.md` | Log changes |
-
-## What this does NOT change
-
-- Channels page (separate effort)
-- Existing Control API fallback logic
-- Other server endpoints
-- Agent or task flows
+## What you need to do on your Mac mini
+After this UI fix, deletion will at least show you clearly when it fails. But to actually make jobs stay deleted, you need to figure out why OpenClaw is recreating them. Check:
+1. Is there a cron config file that registers jobs on openclaw startup?
+2. Does `openclaw cron rm <id>` actually persist the removal, or does it only remove from memory?
+3. Is there a `cron.json` or similar file in your OpenClaw config directory?
 
