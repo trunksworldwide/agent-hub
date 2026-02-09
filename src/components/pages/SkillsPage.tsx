@@ -185,7 +185,6 @@ export function SkillsPage() {
                         variant="outline"
                         size="sm"
                         onClick={(e) => { e.stopPropagation(); handleView(skill); }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         View
                       </Button>
