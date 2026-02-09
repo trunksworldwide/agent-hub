@@ -598,9 +598,40 @@ export type Database = {
         }
         Relationships: []
       }
+      skill_requests: {
+        Row: {
+          created_at: string
+          id: string
+          identifier: string
+          project_id: string
+          result_message: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          identifier: string
+          project_id: string
+          result_message?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          identifier?: string
+          project_id?: string
+          result_message?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       skills_mirror: {
         Row: {
           description: string
+          extra_json: Json | null
           id: string
           installed: boolean
           last_updated: string
@@ -612,6 +643,7 @@ export type Database = {
         }
         Insert: {
           description?: string
+          extra_json?: Json | null
           id?: string
           installed?: boolean
           last_updated?: string
@@ -623,6 +655,7 @@ export type Database = {
         }
         Update: {
           description?: string
+          extra_json?: Json | null
           id?: string
           installed?: boolean
           last_updated?: string

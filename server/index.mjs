@@ -160,6 +160,15 @@ async function syncSkillsMirror(projectId, skills, throttleMs = 60_000) {
       installed: s.installed !== false,
       last_updated: s.lastUpdated || new Date().toISOString(),
       synced_at: new Date().toISOString(),
+      extra_json: {
+        emoji: s.emoji || null,
+        eligible: s.eligible ?? true,
+        disabled: s.disabled || false,
+        blockedByAllowlist: s.blockedByAllowlist || false,
+        missing: s.missing || null,
+        source: s.source || null,
+        homepage: s.homepage || null,
+      },
     }));
     await supabase.from('skills_mirror').upsert(rows, { onConflict: 'project_id,skill_id' });
   } catch (e) {
@@ -644,6 +653,14 @@ const server = http.createServer(async (req, res) => {
               version: s.version || 'installed',
               installed: true,
               lastUpdated: s.lastUpdated || new Date().toISOString(),
+              // Rich metadata from OpenClaw CLI
+              emoji: s.emoji || undefined,
+              eligible: s.eligible !== undefined ? s.eligible : true,
+              disabled: s.disabled || false,
+              blockedByAllowlist: s.blockedByAllowlist || false,
+              missing: s.missing || undefined,
+              source: s.source || 'bundled',
+              homepage: s.homepage || undefined,
             }));
           }
         } catch { /* CLI doesn't support skills list, fall through */ }
@@ -669,6 +686,8 @@ const server = http.createServer(async (req, res) => {
                 const firstLines = content.split('\n').slice(0, 40).join('\n');
                 const descMatch = firstLines.match(/description:\s*(.*)/);
                 const desc = descMatch ? descMatch[1].trim() : '';
+                const emojiMatch = firstLines.match(/emoji:\s*(.*)/);
+                const emoji = emojiMatch ? emojiMatch[1].trim() : undefined;
                 skills.push({
                   id: skillName,
                   name: skillName,
@@ -677,6 +696,9 @@ const server = http.createServer(async (req, res) => {
                   version: 'local',
                   installed: true,
                   lastUpdated: st.mtime.toISOString(),
+                  emoji,
+                  eligible: true,
+                  source: 'local',
                 });
               }
               if (skills.length > 0) break;
@@ -684,10 +706,28 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Best-effort: sync to Supabase mirror
+        // Best-effort: sync to Supabase mirror (with extra_json)
         syncSkillsMirror(projectId, skills);
 
         return sendJson(res, 200, skills);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/skills/install') {
+      try {
+        const body = await readBodyJson(req);
+        const identifier = String(body.identifier || '').trim();
+        if (!identifier) return sendJson(res, 400, { ok: false, error: 'missing_identifier' });
+
+        // Sanitize: only allow alphanumeric, hyphens, underscores, slashes, dots, colons, @
+        if (!/^[@a-zA-Z0-9._\-/:]+$/.test(identifier)) {
+          return sendJson(res, 400, { ok: false, error: 'invalid_identifier' });
+        }
+
+        const { stdout, stderr } = await execExecutor(`skill install ${identifier}`, { timeout: 120_000 });
+        return sendJson(res, 200, { ok: true, output: stdout || stderr });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }

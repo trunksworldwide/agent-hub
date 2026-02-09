@@ -1,4 +1,15 @@
-### Skills & Channels: OpenClaw-native server endpoints + mirror sync
+### Skills: Capabilities Manager upgrade (rich metadata, detail drawer, add skill)
+- **Expanded `Skill` interface** with `emoji`, `eligible`, `disabled`, `blockedByAllowlist`, `missing` (bins/env/config/os), `source`, `homepage`.
+- **Server `/api/skills`** now passes through rich metadata from `openclaw skills list --json` and directory scan fallback parses emoji from SKILL.md frontmatter.
+- **Server `POST /api/skills/install`**: New endpoint runs `openclaw skill install <identifier>` with input sanitization.
+- **Mirror sync** now includes `extra_json` column for rich metadata persistence.
+- **DB migration**: Added `extra_json` JSONB column to `skills_mirror`, created `skill_requests` table (request queue pattern).
+- **SkillsPage redesigned**: Status-aware cards (Ready/Needs setup/Blocked/Disabled), sorted by readiness then alphabetical, emoji from metadata (fallback 🧩), source badges, relative timestamps.
+- **SkillDetailDrawer**: Right-side drawer showing full description, missing requirements with copyable fix commands (brew install, export), status pills, source/version info, homepage links.
+- **AddSkillDialog**: Paste a ClawdHub slug, npm package, or git URL to install. Falls back to Supabase request queue when Control API is unavailable.
+- **Pending requests**: Shows queued install requests on the Skills page.
+
+
 - **`/api/skills`**: Now uses `openclaw skills list --json` (CLI-first) instead of requiring `EXECUTOR_SKILLS_DIR`. Falls back to directory scan at common paths if CLI fails.
 - **`/api/channels`**: New endpoint reads `~/.openclaw/openclaw.json` channels config and returns normalized array. Returns `[]` gracefully if file missing (no more 404).
 - **Mirror sync**: Both endpoints now best-effort upsert results into `skills_mirror` and `channels_mirror` Supabase tables (throttled, non-blocking) so the dashboard shows data even when executor is offline.
