@@ -1,173 +1,199 @@
 
 
-# Fix Cron Jobs: Auto-Assign Existing Jobs + Enable Queue-Based Editing
+# Safe Migration: Clawdbot to OpenClaw (Refined with Bot Feedback)
 
-## Problem Summary
+## What We're Doing
 
-1. **All existing jobs show "Needs assignment"** because they were created before the assignment feature - their `target_agent_key` is NULL in the database
+Updating the server and UI so the system works with the new `openclaw` CLI binary while keeping backward compatibility with `clawdbot`. No database changes. No API shape changes. No internal code renames.
 
-2. **Users cannot edit instructions** because the Edit button only appears when the Control API is connected. In remote/mirror mode, the button is hidden entirely.
+---
 
-## Solution Overview
+## Phase 1: Create Executor Wrapper (`server/executor.mjs`)
 
-### Part 1: Auto-Assign Existing Jobs to Trunks
+A single utility that all CLI calls go through.
 
-Run a one-time update to assign all existing unassigned cron jobs to the default agent (Trunks):
+### Key design decisions (incorporating bot feedback):
 
-```sql
-UPDATE cron_mirror 
-SET target_agent_key = 'agent:main:main', 
-    job_intent = 'custom',
-    updated_at = now()
-WHERE project_id = 'front-office' 
-  AND target_agent_key IS NULL;
-```
+- Use `command -v` (POSIX, launchd-safe) instead of `which`
+- Support absolute path via `EXECUTOR_BIN` env var (best for launchd)
+- Try `openclaw` first, then `clawdbot`
+- Cache the resolved binary after first successful check
+- Clear error messages when neither binary is found
 
-This immediately fixes the "Needs assignment" display for all current jobs.
+```javascript
+// server/executor.mjs
+import { exec as _exec } from 'node:child_process';
+import { promisify } from 'node:util';
 
-### Part 2: Enable Queue-Based Job Editing (Offline Mode)
+const execAsync = promisify(_exec);
+const ENV_BIN = process.env.EXECUTOR_BIN || null;
+let _resolved = ENV_BIN;
 
-Currently, the Edit feature requires the Control API. We need to extend it to work via the patch queue when offline:
+export async function resolveExecutorBin() {
+  if (_resolved) return _resolved;
 
-**Changes to CronPage.tsx:**
-
-1. **Always show the Edit button** (not just when controlApiConnected)
-
-2. **Add target agent and intent fields** to the Edit dialog (missing currently)
-
-3. **Update handleSaveEdit** to use queue pattern when offline:
-
-```typescript
-const handleSaveEdit = async () => {
-  if (!editingJob || savingEdit) return;
-  setSavingEdit(true);
-  
-  try {
-    // Encode agent + intent into instructions for durability
-    const encodedInstructions = encodeJobHeaders(
-      editTargetAgent || null,
-      editJobIntent || null,
-      editInstructions || ''
-    );
-    
-    if (controlApiConnected) {
-      // Direct edit via Control API
-      await editCronJob(editingJob.jobId, {
-        name: editName,
-        schedule: editSchedule,
-        instructions: encodedInstructions,
-      });
-      toast({ title: 'Job updated' });
-    } else {
-      // Queue patch request for offline execution
-      const result = await queueCronPatchRequest(editingJob.jobId, {
-        name: editName,
-        scheduleExpr: editSchedule,
-        instructions: encodedInstructions,
-        targetAgentKey: editTargetAgent || undefined,
-        jobIntent: editJobIntent || undefined,
-      });
-      if (result.ok) {
-        toast({ 
-          title: 'Edit queued', 
-          description: 'Changes will apply when the executor picks up the request.' 
-        });
-      }
-    }
-    
-    setEditingJob(null);
-    await loadJobs();
-  } catch (err) {
-    // ... error handling
+  for (const bin of ['openclaw', 'clawdbot']) {
+    try {
+      await execAsync(`command -v ${bin}`);
+      _resolved = bin;
+      console.log(`[executor] Resolved binary: ${bin}`);
+      return bin;
+    } catch { /* not found */ }
   }
-};
+
+  throw new Error(
+    'Neither "openclaw" nor "clawdbot" found in PATH. ' +
+    'Set EXECUTOR_BIN=/absolute/path/to/openclaw in your environment.'
+  );
+}
+
+export async function execExecutor(args, opts = {}) {
+  const bin = await resolveExecutorBin();
+  const cmd = `${bin} ${args}`;
+  return execAsync(cmd, { timeout: opts.timeout || 30000, ...opts });
+}
 ```
 
-4. **Update openEdit** to populate new fields:
+---
 
-```typescript
-const openEdit = (job: CronMirrorJob) => {
-  setEditingJob(job);
-  setEditName(job.name || '');
-  setEditSchedule(job.scheduleExpr || '');
-  // Parse instructions to get body without headers
-  const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
-  setEditInstructions(body);
-  setEditTargetAgent(targetAgent || job.targetAgentKey || '');
-  setEditJobIntent((intent || job.jobIntent || 'custom') as JobIntent);
-};
+## Phase 2: Replace All CLI Calls in `server/index.mjs`
+
+Replace every `exec('clawdbot ...')` with `execExecutor(...)`:
+
+| Line | Current | New |
+|------|---------|-----|
+| 160 | `exec('clawdbot sessions --json --active 10080')` | `execExecutor('sessions --json --active 10080')` |
+| 348 | `exec('clawdbot sessions --json --active 10080')` | `execExecutor('sessions --json --active 10080')` |
+| 613 | `exec('clawdbot sessions --json --active 10080')` | `execExecutor('sessions --json --active 10080')` |
+| 695 | `exec('clawdbot cron list --json --timeout 60000')` | `execExecutor('cron list --json --timeout 60000', { timeout: 65000 })` |
+| 718 | `exec('clawdbot cron enable ...')` | `execExecutor('cron enable ...')` |
+| 722 | `exec('clawdbot cron disable ...')` | `execExecutor('cron disable ...')` |
+| 729 | `exec('clawdbot cron enable/disable ...')` | `execExecutor(...)` |
+| 741-742 | `exec('clawdbot cron runs ...')` | `execExecutor('cron runs ...')` |
+| 763 | `exec('clawdbot cron run ...')` | `execExecutor('cron run ...')` |
+| 798 | `exec('clawdbot cron edit ...')` | `execExecutor('cron edit ...')` |
+| 951 | `exec('clawdbot gateway restart')` | `execExecutor('gateway restart')` |
+
+Total: 11 replacements, all mechanical.
+
+---
+
+## Phase 3: Make Skills Path Configurable
+
+Two hardcoded paths at lines 447 and 582:
+```
+/opt/homebrew/lib/node_modules/clawdbot/skills
 ```
 
-5. **Enhance Edit Dialog** with agent/intent dropdowns matching the Create dialog
+Replace with:
+```javascript
+const SKILLS_DIR = process.env.EXECUTOR_SKILLS_DIR || null;
 
----
-
-## Technical Implementation
-
-### File Changes
-
-| File | Changes |
-|------|---------|
-| Database | One-time UPDATE to assign existing jobs to Trunks |
-| `src/components/pages/CronPage.tsx` | Add edit state for agent/intent, update openEdit and handleSaveEdit, show Edit button always, enhance Edit dialog UI |
-
-### New State Variables
-
-```typescript
-// Add to existing edit dialog state
-const [editTargetAgent, setEditTargetAgent] = useState('');
-const [editJobIntent, setEditJobIntent] = useState<JobIntent>('custom');
+// In the handler, if SKILLS_DIR is not set, skip or return empty
+if (!SKILLS_DIR) {
+  return sendJson(res, 200, []);  // or { skillCount: null }
+}
 ```
 
-### Updated Edit Dialog UI
-
-The Edit dialog will include:
-- Job Name (existing)
-- Schedule (existing, but use human-friendly editor instead of raw cron)
-- Target Agent dropdown (new)
-- Job Intent dropdown (new)
-- Instructions textarea (existing)
-- Offline mode warning banner
-
-### API Layer
-
-The existing `queueCronPatchRequest` already supports patching:
-- `name`
-- `scheduleExpr`
-- `instructions`
-- `targetAgentKey`
-- `jobIntent`
-
-No API changes needed.
+This avoids guessing the install location entirely. Users set `EXECUTOR_SKILLS_DIR` if they want skills to work, or we return empty gracefully.
 
 ---
 
-## Implementation Order
+## Phase 4: Add Smoke Test Endpoint (`/api/executor-check`)
 
-1. Run database update to auto-assign existing jobs to Trunks
-2. Add `editTargetAgent` and `editJobIntent` state variables
-3. Update `openEdit` to parse and populate agent/intent from job
-4. Update `handleSaveEdit` to use queue pattern when offline
-5. Remove the `controlApiConnected &&` condition from Edit button
-6. Enhance Edit dialog with agent/intent dropdowns
-7. Add human-friendly schedule editor to Edit dialog (optional, can use raw cron for now)
-8. Add offline mode warning banner to Edit dialog
+Non-destructive, read-only checks:
+
+```javascript
+// GET /api/executor-check
+{
+  "binary": "openclaw",           // which binary resolved
+  "version": "0.4.2",             // from --version
+  "checks": {
+    "sessions": { "ok": true },
+    "cron": { "ok": true },
+    "version": { "ok": true, "output": "openclaw 0.4.2" }
+  }
+}
+```
+
+Runs only:
+- `<bin> --version`
+- `<bin> sessions --json --active 1` (minimal, read-only)
+- `<bin> cron list --json --timeout 10000` (read-only)
+
+No restart, no stop, no start. Purely diagnostic.
 
 ---
 
-## Expected Outcome
+## Phase 5: Update UI Labels (Cosmetic)
 
-1. All existing jobs immediately show "Trunks" instead of "Needs assignment"
-2. Users can click Edit on any job even when the Mac mini is offline
-3. Edits are queued and applied when the executor picks them up
-4. Instructions are editable with agent/intent metadata preserved
-5. The queue pattern remains consistent across all operations (run, toggle, delete, edit, create)
+| File | Change |
+|------|--------|
+| `ConfigPage.tsx` line 134 | "Restart ClawdOffice?" becomes "Restart OpenClaw?" |
+| `ConfigPage.tsx` lines 160-172 | Remove hardcoded `~/clawdbot/` paths. Replace with a note: "Configuration files are managed in your OpenClaw workspace directory." |
+| `ConfigPage.tsx` line 110 | "Update Claw" button text becomes "Update OpenClaw" |
+| `server/index.mjs` line 965 | Console log: "ClawdOS Control API" stays (ClawdOS is our brand) |
+
+**NOT renaming:**
+- `useClawdOffice` (internal, 20+ files, zero user impact)
+- `ClawdOS` brand name (our product, not OpenClaw's)
+- Supabase tables, API routes, project IDs
 
 ---
 
-## Out of Scope
+## Phase 6: Update `.env.example` and Docs
 
-- Human-friendly schedule editor in Edit dialog (keep raw cron input for v1)
-- Bulk editing of multiple jobs
-- Undo/revert of edits
+`.env.example` additions:
+```
+# Executor binary (absolute path recommended for launchd)
+# EXECUTOR_BIN=/opt/homebrew/bin/openclaw
+
+# Skills directory (only needed if you want skills listing)
+# EXECUTOR_SKILLS_DIR=/opt/homebrew/lib/node_modules/openclaw/skills
+```
+
+`README.md` and `docs/OVERVIEW.md`:
+- Replace "Clawdbot" with "OpenClaw" in descriptions
+- Update CLI command examples (`clawdbot` to `openclaw`)
+- Keep `ClawdOS` references (our brand)
+
+---
+
+## File Summary
+
+| File | Action |
+|------|--------|
+| `server/executor.mjs` | **Create** -- compatibility wrapper |
+| `server/index.mjs` | **Edit** -- import wrapper, replace 11 CLI calls, make skills path configurable, add `/api/executor-check` |
+| `src/components/pages/ConfigPage.tsx` | **Edit** -- update UI labels and file path display |
+| `.env.example` | **Edit** -- add EXECUTOR_BIN and EXECUTOR_SKILLS_DIR |
+| `README.md` | **Edit** -- update naming |
+| `docs/OVERVIEW.md` | **Edit** -- update naming and CLI examples |
+| `changes.md` | **Edit** -- log the migration |
+
+---
+
+## Safe Update Sequence (After Code Deploy)
+
+This is the recommended order for updating OpenClaw on the Mac mini:
+
+```text
+1. Install OpenClaw alongside clawdbot:
+   npm install -g openclaw@latest
+
+2. Verify it installed:
+   openclaw --version
+
+3. Set env var (in your launchd plist or .env):
+   EXECUTOR_BIN=/opt/homebrew/bin/openclaw
+
+4. Restart the Control API server (server/index.mjs)
+
+5. Hit /api/executor-check to verify everything passes
+
+6. Only after all checks pass: optionally uninstall clawdbot
+   npm uninstall -g clawdbot
+```
+
+Do NOT stop the running gateway until you've confirmed the new binary works. The wrapper will auto-detect `openclaw` if `EXECUTOR_BIN` is set, so no gateway restart is needed for the Control API to switch over.
 
