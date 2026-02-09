@@ -135,7 +135,7 @@ export function DocumentsPage() {
 
   return (
     <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">

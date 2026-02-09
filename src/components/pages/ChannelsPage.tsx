@@ -25,7 +25,7 @@ export function ChannelsPage() {
   if (!loading && channels.length === 0) {
     return (
       <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl">
           <div className="mb-6">
             <h1 className="text-2xl font-semibold">Channels</h1>
             <p className="text-muted-foreground">
@@ -47,7 +47,7 @@ export function ChannelsPage() {
 
   return (
     <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold">Channels</h1>
           <p className="text-muted-foreground">
