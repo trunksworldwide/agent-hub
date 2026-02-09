@@ -151,6 +151,17 @@ async function mirrorCronList() {
   );
   if (fpErr) throw fpErr;
 
+  // Clean up stale mirror rows for jobs that no longer exist on executor
+  const currentJobIds = jobs.map(j => String(j.id));
+  currentJobIds.push(stateJobId); // keep the state row
+  const { error: delErr } = await sb
+    .from('cron_mirror')
+    .delete()
+    .eq('project_id', PROJECT_ID)
+    .not('job_id', 'in', `(${currentJobIds.join(',')})`);
+  if (delErr) console.error('[cron-mirror] stale row cleanup failed', delErr);
+  else console.log('[cron-mirror] cleanup done, keeping', currentJobIds.length, 'rows');
+
   return { changed: true, count: jobs.length };
 }
 

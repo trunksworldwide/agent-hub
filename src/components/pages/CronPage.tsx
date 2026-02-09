@@ -640,11 +640,33 @@ export function CronPage() {
 
   // Toggle job enabled - via Control API or queue request
   const handleToggle = async (job: CronMirrorJob) => {
+    const doQueueFallback = async () => {
+      setPendingToggles((prev) => new Set(prev).add(job.jobId));
+      try {
+        const result = await queueCronPatchRequest(job.jobId, { enabled: !job.enabled });
+        if (result.ok) {
+          setMirrorJobs(mirrorJobs.map(j =>
+            j.jobId === job.jobId ? { ...j, enabled: !j.enabled } : j
+          ));
+          toast({
+            title: 'Toggle queued',
+            description: `${job.name} will be ${job.enabled ? 'disabled' : 'enabled'} when the executor picks up the request.`,
+          });
+        } else {
+          throw new Error(result.error || 'Failed to queue toggle');
+        }
+      } finally {
+        setPendingToggles((prev) => {
+          const next = new Set(prev);
+          next.delete(job.jobId);
+          return next;
+        });
+      }
+    };
+
     if (controlApiConnected) {
-      // Direct toggle via Control API
       try {
         await toggleCronJob(job.jobId, !job.enabled);
-        // Optimistic update
         setMirrorJobs(mirrorJobs.map(j =>
           j.jobId === job.jobId ? { ...j, enabled: !j.enabled } : j
         ));
@@ -652,41 +674,27 @@ export function CronPage() {
           title: job.enabled ? 'Job disabled' : 'Job enabled',
           description: `${job.name} has been ${job.enabled ? 'disabled' : 'enabled'}.`,
         });
-      } catch (err: any) {
-        toast({
-          title: 'Failed to toggle job',
-          description: String(err?.message || err),
-          variant: 'destructive',
-        });
+      } catch (directErr: any) {
+        // Direct API failed (e.g. unknown job ID) — fall back to Supabase queue
+        console.warn('[CronPage] Direct toggle failed, falling back to queue:', directErr?.message);
+        try {
+          await doQueueFallback();
+        } catch (fallbackErr: any) {
+          toast({
+            title: 'Failed to toggle job',
+            description: String(fallbackErr?.message || fallbackErr),
+            variant: 'destructive',
+          });
+        }
       }
     } else {
-      // Queue toggle request for offline execution
-      setPendingToggles((prev) => new Set(prev).add(job.jobId));
       try {
-        const result = await queueCronPatchRequest(job.jobId, { enabled: !job.enabled });
-        if (result.ok) {
-          // Optimistic update
-          setMirrorJobs(mirrorJobs.map(j =>
-            j.jobId === job.jobId ? { ...j, enabled: !j.enabled } : j
-          ));
-          toast({
-            title: 'Toggle queued',
-            description: `${job.name} will be ${job.enabled ? 'disabled' : 'enabled'} when the Mac mini executor picks up the request.`,
-          });
-        } else {
-          throw new Error(result.error || 'Failed to queue toggle');
-        }
+        await doQueueFallback();
       } catch (err: any) {
         toast({
           title: 'Failed to queue toggle',
           description: String(err?.message || err),
           variant: 'destructive',
-        });
-      } finally {
-        setPendingToggles((prev) => {
-          const next = new Set(prev);
-          next.delete(job.jobId);
-          return next;
         });
       }
     }
@@ -883,28 +891,34 @@ export function CronPage() {
   // Run job: Control API direct or queue request
   const handleRunNow = async (job: CronMirrorJob) => {
     setRunningJob(job.jobId);
+    const doQueueRun = async () => {
+      const result = await queueCronRunRequest(job.jobId);
+      if (result.ok) {
+        toast({
+          title: 'Run request queued',
+          description: `${job.name} will run when the executor picks it up.`,
+        });
+        const requests = await getCronRunRequests(20);
+        setRunRequests(requests);
+      } else {
+        throw new Error(result.error || 'Failed to queue request');
+      }
+    };
+
     try {
       if (controlApiConnected) {
-        // Direct execution via Control API
-        await runCronJob(job.jobId);
-        toast({
-          title: 'Job started',
-          description: `${job.name} is now running.`,
-        });
-      } else {
-        // Queue request for Mac mini worker
-        const result = await queueCronRunRequest(job.jobId);
-        if (result.ok) {
+        try {
+          await runCronJob(job.jobId);
           toast({
-            title: 'Run request queued',
-            description: `${job.name} will run when the Mac mini worker picks it up.`,
+            title: 'Job started',
+            description: `${job.name} is now running.`,
           });
-          // Reload requests
-          const requests = await getCronRunRequests(20);
-          setRunRequests(requests);
-        } else {
-          throw new Error(result.error || 'Failed to queue request');
+        } catch (directErr: any) {
+          console.warn('[CronPage] Direct run failed, falling back to queue:', directErr?.message);
+          await doQueueRun();
         }
+      } else {
+        await doQueueRun();
       }
     } catch (err: any) {
       toast({
