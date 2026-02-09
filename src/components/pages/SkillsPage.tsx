@@ -68,7 +68,7 @@ export function SkillsPage() {
   if (!loading && skills.length === 0 && pendingRequests.length === 0) {
     return (
       <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-        <div className="max-w-3xl mx-auto w-full">
+        <div className="max-w-2xl">
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold">Skills</h1>
@@ -94,7 +94,7 @@ export function SkillsPage() {
 
     return (
       <div className="flex-1 p-6 overflow-auto scrollbar-thin">
-        <div className="max-w-3xl mx-auto w-full">
+        <div className="max-w-2xl">
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
