@@ -141,6 +141,53 @@ async function upsertSupabaseAgentStatus({
 }
 
 let lastPresenceSyncMs = 0;
+let lastSkillsSyncMs = 0;
+let lastChannelsSyncMs = 0;
+
+async function syncSkillsMirror(projectId, skills, throttleMs = 60_000) {
+  const now = Date.now();
+  if (now - lastSkillsSyncMs < throttleMs) return;
+  lastSkillsSyncMs = now;
+  try {
+    const supabase = getSupabase();
+    if (!supabase || skills.length === 0) return;
+    const rows = skills.map(s => ({
+      project_id: projectId,
+      skill_id: s.id || s.name,
+      name: s.name,
+      description: s.description || '',
+      version: s.version || '',
+      installed: s.installed !== false,
+      last_updated: s.lastUpdated || new Date().toISOString(),
+      synced_at: new Date().toISOString(),
+    }));
+    await supabase.from('skills_mirror').upsert(rows, { onConflict: 'project_id,skill_id' });
+  } catch (e) {
+    console.error('syncSkillsMirror failed (non-blocking):', e);
+  }
+}
+
+async function syncChannelsMirror(projectId, channels, throttleMs = 60_000) {
+  const now = Date.now();
+  if (now - lastChannelsSyncMs < throttleMs) return;
+  lastChannelsSyncMs = now;
+  try {
+    const supabase = getSupabase();
+    if (!supabase || channels.length === 0) return;
+    const rows = channels.map(ch => ({
+      project_id: projectId,
+      channel_id: ch.id,
+      name: ch.name || ch.id,
+      type: ch.type || 'messaging',
+      status: ch.status || (ch.enabled !== false ? 'connected' : 'disconnected'),
+      last_activity: ch.lastActivity || '',
+      synced_at: new Date().toISOString(),
+    }));
+    await supabase.from('channels_mirror').upsert(rows, { onConflict: 'project_id,channel_id' });
+  } catch (e) {
+    console.error('syncChannelsMirror failed (non-blocking):', e);
+  }
+}
 
 function normalizeAgentKey(raw) {
   const key = String(raw || '').trim();
@@ -580,35 +627,105 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/skills') {
-      // v1: list installed skills from the local node_modules skills folder.
       try {
-        const skillsDir = process.env.EXECUTOR_SKILLS_DIR || null;
-        if (!skillsDir) return sendJson(res, 200, []);
-        const entries = await readdir(skillsDir, { withFileTypes: true });
-        const skills = [];
-        for (const ent of entries) {
-          if (!ent.isDirectory()) continue;
-          const skillName = ent.name;
-          const fp = path.join(skillsDir, skillName, 'SKILL.md');
-          const st = await safeStat(fp);
-          if (!st) continue;
-          const content = await readFile(fp, 'utf8');
-          const firstLines = content.split('\n').slice(0, 40).join('\n');
-          const descMatch = firstLines.match(/description:\s*(.*)/);
-          const desc = descMatch ? descMatch[1].trim() : '';
-          skills.push({
-            id: skillName,
-            name: skillName,
-            slug: skillName,
-            description: desc,
-            version: 'local',
-            installed: true,
-            lastUpdated: st.mtime.toISOString(),
-          });
+        let skills = [];
+
+        // Strategy 1: OpenClaw CLI (preferred — works out of the box)
+        try {
+          const { stdout } = await execExecutor('skills list --json');
+          const parsed = JSON.parse(stdout || '{}');
+          const list = parsed.skills || (Array.isArray(parsed) ? parsed : []);
+          if (list.length > 0) {
+            skills = list.map(s => ({
+              id: s.name || s.id,
+              name: s.name || s.id,
+              slug: s.slug || s.name || s.id,
+              description: s.description || '',
+              version: s.version || 'installed',
+              installed: true,
+              lastUpdated: s.lastUpdated || new Date().toISOString(),
+            }));
+          }
+        } catch { /* CLI doesn't support skills list, fall through */ }
+
+        // Strategy 2: Directory scan (fallback)
+        if (skills.length === 0) {
+          const dirs = [
+            process.env.EXECUTOR_SKILLS_DIR,
+            '/opt/homebrew/lib/node_modules/openclaw/skills',
+            '/opt/homebrew/lib/node_modules/clawdbot/skills',
+          ].filter(Boolean);
+
+          for (const skillsDir of dirs) {
+            try {
+              const entries = await readdir(skillsDir, { withFileTypes: true });
+              for (const ent of entries) {
+                if (!ent.isDirectory()) continue;
+                const skillName = ent.name;
+                const fp = path.join(skillsDir, skillName, 'SKILL.md');
+                const st = await safeStat(fp);
+                if (!st) continue;
+                const content = await readFile(fp, 'utf8');
+                const firstLines = content.split('\n').slice(0, 40).join('\n');
+                const descMatch = firstLines.match(/description:\s*(.*)/);
+                const desc = descMatch ? descMatch[1].trim() : '';
+                skills.push({
+                  id: skillName,
+                  name: skillName,
+                  slug: skillName,
+                  description: desc,
+                  version: 'local',
+                  installed: true,
+                  lastUpdated: st.mtime.toISOString(),
+                });
+              }
+              if (skills.length > 0) break;
+            } catch { /* directory not found, try next */ }
+          }
         }
+
+        // Best-effort: sync to Supabase mirror
+        syncSkillsMirror(projectId, skills);
+
         return sendJson(res, 200, skills);
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/channels') {
+      try {
+        let channels = [];
+        const configPath = path.join(
+          process.env.HOME || '/root',
+          '.openclaw',
+          'openclaw.json'
+        );
+        const st = await safeStat(configPath);
+        if (st) {
+          const raw = await readFile(configPath, 'utf8');
+          const config = JSON.parse(raw);
+          const channelsMap = config.channels || {};
+          channels = Object.entries(channelsMap).map(([id, cfg]) => ({
+            id,
+            name: id.charAt(0).toUpperCase() + id.slice(1),
+            type: 'messaging',
+            enabled: cfg.enabled !== false,
+            status: cfg.enabled !== false ? 'connected' : 'disconnected',
+            lastActivity: '',
+            includeAttachments: cfg.includeAttachments || false,
+            mediaMaxMb: cfg.mediaMaxMb || null,
+            dmPolicy: cfg.dmPolicy || null,
+            groupPolicy: cfg.groupPolicy || null,
+          }));
+        }
+
+        // Best-effort: sync to Supabase mirror
+        syncChannelsMirror(projectId, channels);
+
+        return sendJson(res, 200, channels);
+      } catch (err) {
+        return sendJson(res, 200, []); // Graceful empty on error
       }
     }
 
