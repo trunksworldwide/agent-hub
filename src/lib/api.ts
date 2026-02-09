@@ -382,15 +382,7 @@ const mockSessions: Session[] = [
   { id: 's3', label: 'Email Draft: Weekly Update', status: 'completed', lastMessage: 'Draft ready for review.', startedAt: '2 hours ago', agentId: 'trunks' },
 ];
 
-const mockSkills: Skill[] = [
-  { id: 'web-browse', name: 'Web Browser', slug: 'web-browse', description: 'Browse and extract content from websites', version: '2.1.0', installed: true, lastUpdated: '3 days ago' },
-  { id: 'code-exec', name: 'Code Executor', slug: 'code-exec', description: 'Execute code in sandboxed environments', version: '1.8.2', installed: true, lastUpdated: '1 week ago' },
-  { id: 'file-mgmt', name: 'File Manager', slug: 'file-mgmt', description: 'Read, write, and organize files', version: '1.5.0', installed: true, lastUpdated: '2 weeks ago' },
-  { id: 'calendar', name: 'Calendar', slug: 'calendar', description: 'Manage calendar events and reminders', version: '1.2.1', installed: true, lastUpdated: '1 month ago' },
-  { id: 'email', name: 'Email', slug: 'email', description: 'Send, receive, and manage emails', version: '2.0.0', installed: true, lastUpdated: '5 days ago' },
-  { id: 'github', name: 'GitHub', slug: 'github', description: 'Interact with GitHub repos, issues, PRs', version: '1.4.0', installed: false, lastUpdated: '2 weeks ago' },
-  { id: 'slack', name: 'Slack', slug: 'slack', description: 'Send messages and manage Slack workspace', version: '1.1.0', installed: false, lastUpdated: '1 month ago' },
-];
+const mockSkills: Skill[] = [];
 
 const mockTools: Tool[] = [
   { id: 'browser', name: 'Browser', description: 'Navigate and extract web content', configured: true, icon: '🌐' },
@@ -399,19 +391,6 @@ const mockTools: Tool[] = [
   { id: 'reminders', name: 'Reminders', description: 'Set and manage reminders', configured: true, icon: '⏰' },
   { id: 'whisper', name: 'Whisper', description: 'Speech-to-text transcription', configured: false, icon: '🎤' },
   { id: 'vision', name: 'Vision', description: 'Analyze images and screenshots', configured: true, icon: '👁️' },
-];
-
-const mockCronJobs: CronJob[] = [
-  { id: 'daily-summary', name: 'Daily Summary', schedule: '0 18 * * *', enabled: true, nextRun: 'Today 6:00 PM', lastRunStatus: 'success', instructions: 'Compile a summary of all activities today and send via email.' },
-  { id: 'inbox-check', name: 'Inbox Check', schedule: '*/30 * * * *', enabled: true, nextRun: 'In 15 min', lastRunStatus: 'success', instructions: 'Check for important emails and flag urgent ones.' },
-  { id: 'backup-memory', name: 'Backup Memory', schedule: '0 0 * * *', enabled: true, nextRun: 'Tomorrow 12:00 AM', lastRunStatus: 'success', instructions: 'Backup all memory files to external storage.' },
-  { id: 'weekly-report', name: 'Weekly Report', schedule: '0 9 * * 1', enabled: false, nextRun: 'Monday 9:00 AM', lastRunStatus: null, instructions: 'Generate and send weekly productivity report.' },
-];
-
-const mockChannels: Channel[] = [
-  { id: 'imessage', name: 'iMessage', type: 'messaging', status: 'connected', lastActivity: '5 min ago' },
-  { id: 'email', name: 'Email', type: 'email', status: 'connected', lastActivity: '1 hour ago' },
-  { id: 'slack', name: 'Slack', type: 'messaging', status: 'disconnected', lastActivity: '2 days ago' },
 ];
 
 // Simulated delay for realistic feel (used only in mock mode)
@@ -1026,11 +1005,15 @@ export async function getSessions(agentId?: string): Promise<Session[]> {
 }
 
 export async function getSkills(): Promise<Skill[]> {
-  if (USE_REMOTE) return requestJson<Skill[]>('/api/skills');
-  if (!ALLOW_MOCKS) return requestJson<Skill[]>('/api/skills');
-
-  await delay(150);
-  return mockSkills;
+  const base = getApiBaseUrl();
+  if (base) {
+    try {
+      return await requestJson<Skill[]>('/api/skills');
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 export async function getTools(): Promise<Tool[]> {
@@ -1406,11 +1389,15 @@ export async function getCronJobs(): Promise<CronJob[]> {
   // return empty so the Dashboard can load without a Control API.
   if (hasSupabase() && !getApiBaseUrl()) return [];
 
-  if (USE_REMOTE) return requestJson<CronJob[]>('/api/cron');
-  if (!ALLOW_MOCKS) return requestJson<CronJob[]>('/api/cron');
-
-  await delay(150);
-  return mockCronJobs;
+  const base = getApiBaseUrl();
+  if (base) {
+    try {
+      return await requestJson<CronJob[]>('/api/cron');
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ ok: boolean; enabled?: boolean }> {
@@ -1981,8 +1968,15 @@ export async function getGlobalActivity(limit = 10): Promise<GlobalActivityItem[
 }
 
 export async function getChannels(): Promise<Channel[]> {
-  await delay(100);
-  return mockChannels;
+  const base = getApiBaseUrl();
+  if (base) {
+    try {
+      return await requestJson<Channel[]>('/api/channels');
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 // ============= Documents API =============

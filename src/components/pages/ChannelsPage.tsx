@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
+import { WifiOff } from 'lucide-react';
 import { getChannels, type Channel } from '@/lib/api';
+import { useClawdOffice } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 export function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { controlApiUrl } = useClawdOffice();
 
   useEffect(() => {
-    getChannels().then(setChannels);
-  }, []);
+    setLoading(true);
+    getChannels().then(setChannels).finally(() => setLoading(false));
+  }, [controlApiUrl]);
 
   const getChannelIcon = (type: string) => {
     const icons: Record<string, string> = {
@@ -16,6 +21,29 @@ export function ChannelsPage() {
     };
     return icons[type] || '📡';
   };
+
+  if (!loading && channels.length === 0) {
+    return (
+      <div className="flex-1 p-6 overflow-auto scrollbar-thin">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold">Channels</h1>
+            <p className="text-muted-foreground">
+              Configured messaging and communication channels.
+            </p>
+          </div>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <WifiOff className="w-12 h-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">No channels configured</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Connect to your Mac mini via the Control API to view active channels.
+              Go to <strong>System → Connectivity</strong> to configure the connection.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 p-6 overflow-auto scrollbar-thin">
@@ -59,12 +87,6 @@ export function ChannelsPage() {
               </div>
             </div>
           ))}
-        </div>
-
-        <div className="mt-8 p-4 rounded-lg border border-dashed border-border bg-muted/20 text-center">
-          <p className="text-muted-foreground">
-            Channel management coming soon. For now, channels are configured via the control API.
-          </p>
         </div>
       </div>
     </div>
