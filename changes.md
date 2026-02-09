@@ -1,7 +1,10 @@
-### Cron actions: fallback-to-queue on direct API failure + stale mirror cleanup
-- **Toggle/Run/Delete** now automatically fall back to the Supabase request queue when the direct Control API call fails (e.g. "unknown cron job id" from stale entries).
+### Cron toggle/run: fail loudly when Control API is connected + pending patch overlay
+- **Toggle/Run** no longer silently fall back to the Supabase queue when the Control API is connected and the direct call fails. Instead, a destructive error toast is shown and the UI state stays unchanged so the toggle accurately reflects reality.
+- **Pending patch overlay**: On page load, pending `cron_job_patch_requests` (queued/running) are fetched and merged on top of mirror data via `effectiveJobs` useMemo. This prevents toggles from reverting on page reload when the executor hasn't processed the patch yet.
+- Offline/queue mode (Control API disconnected) continues to work as before.
+
+### Cron actions: fallback-to-queue on direct API failure + stale mirror cleanup (legacy)
 - **cron-mirror.mjs** now deletes mirror rows for jobs that no longer exist on the executor, preventing stale entries from accumulating.
-- Previously, a stale job ID in `cron_mirror` would cause an unrecoverable error toast; now it silently queues instead.
 
 
 - **ConfigPage auto-fetches** status and executor health on mount — no more manual "Refresh" required to see Online/Offline.

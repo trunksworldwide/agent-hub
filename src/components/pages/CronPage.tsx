@@ -30,6 +30,7 @@ import {
   queueCronCreateRequest,
   queueCronDeleteRequest,
   getCronDeleteRequests,
+  getCronPatchRequests,
   getAgents,
   updateCronJobAgent,
   type CronJob,
@@ -37,6 +38,7 @@ import {
   type CronMirrorJob,
   type CronRunRequest,
   type CronDeleteRequest,
+  type CronPatchRequest,
   type Agent,
 } from '@/lib/api';
 import {
@@ -484,6 +486,9 @@ export function CronPage() {
   // Pending toggle requests (for offline mode)
   const [pendingToggles, setPendingToggles] = useState<Set<string>>(new Set());
 
+  // Pending patch requests (for overlay on mirror data)
+  const [patchRequests, setPatchRequests] = useState<CronPatchRequest[]>([]);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
@@ -513,9 +518,33 @@ export function CronPage() {
     return null;
   };
 
+  // Overlay pending patches on mirror data so UI reflects intended state
+  const effectiveJobs = useMemo(() => {
+    return mirrorJobs.map(job => {
+      // Find the most recent pending patch for this job
+      const pendingPatch = patchRequests.find(
+        p => p.jobId === job.jobId && (p.status === 'queued' || p.status === 'running')
+      );
+      if (!pendingPatch) return job;
+      // Merge patch_json fields on top of mirror state
+      const patch = pendingPatch.patchJson || {};
+      return {
+        ...job,
+        ...(typeof patch.enabled === 'boolean' ? { enabled: patch.enabled } : {}),
+        ...(patch.name ? { name: patch.name } : {}),
+        ...(patch.scheduleExpr ? { scheduleExpr: patch.scheduleExpr } : {}),
+        ...(patch.scheduleKind ? { scheduleKind: patch.scheduleKind } : {}),
+        ...(patch.tz ? { tz: patch.tz } : {}),
+        ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
+        ...(patch.targetAgentKey !== undefined ? { targetAgentKey: patch.targetAgentKey } : {}),
+        ...(patch.jobIntent ? { jobIntent: patch.jobIntent } : {}),
+      };
+    });
+  }, [mirrorJobs, patchRequests]);
+
   // Filter jobs
   const filteredJobs = useMemo(() => {
-    return mirrorJobs.filter((job) => {
+    return effectiveJobs.filter((job) => {
       // Search filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -545,7 +574,7 @@ export function CronPage() {
 
       return true;
     });
-  }, [mirrorJobs, searchQuery, enabledFilter, agentFilter, intentFilter]);
+  }, [effectiveJobs, searchQuery, enabledFilter, agentFilter, intentFilter]);
 
   // Load jobs from Supabase cron_mirror
   const loadJobs = useCallback(async () => {
@@ -553,14 +582,16 @@ export function CronPage() {
     setLoadingJobs(true);
     setLastError(null);
     try {
-      const [jobs, requests, delRequests] = await Promise.all([
+      const [jobs, requests, delRequests, patches] = await Promise.all([
         getCronMirrorJobs(),
         getCronRunRequests(20),
         getCronDeleteRequests(20),
+        getCronPatchRequests(50),
       ]);
       setMirrorJobs(jobs);
       setRunRequests(requests);
       setDeleteRequests(delRequests);
+      setPatchRequests(patches);
       setLastRefreshedAt(Date.now());
     } catch (err: any) {
       const message = String(err?.message || err);
@@ -675,17 +706,12 @@ export function CronPage() {
           description: `${job.name} has been ${job.enabled ? 'disabled' : 'enabled'}.`,
         });
       } catch (directErr: any) {
-        // Direct API failed (e.g. unknown job ID) — fall back to Supabase queue
-        console.warn('[CronPage] Direct toggle failed, falling back to queue:', directErr?.message);
-        try {
-          await doQueueFallback();
-        } catch (fallbackErr: any) {
-          toast({
-            title: 'Failed to toggle job',
-            description: String(fallbackErr?.message || fallbackErr),
-            variant: 'destructive',
-          });
-        }
+        // Fail loudly — do NOT fall back to queue when Control API is connected
+        toast({
+          title: 'Toggle failed',
+          description: String(directErr?.message || directErr),
+          variant: 'destructive',
+        });
       }
     } else {
       try {
@@ -914,8 +940,12 @@ export function CronPage() {
             description: `${job.name} is now running.`,
           });
         } catch (directErr: any) {
-          console.warn('[CronPage] Direct run failed, falling back to queue:', directErr?.message);
-          await doQueueRun();
+          // Fail loudly — do NOT fall back to queue when Control API is connected
+          toast({
+            title: 'Run failed',
+            description: String(directErr?.message || directErr),
+            variant: 'destructive',
+          });
         }
       } else {
         await doQueueRun();
