@@ -180,14 +180,7 @@ export function SkillsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <Badge variant={status.variant} className="gap-1 hidden sm:inline-flex">
-                        <StatusIcon className="h-3 w-3" />
-                        {status.label}
-                      </Badge>
-                      <div className="text-right text-xs text-muted-foreground hidden md:block">
-                        <div className="font-mono">v{skill.version}</div>
-                        {skill.lastUpdated && <div>{relativeTime(skill.lastUpdated)}</div>}
-                      </div>
+                      <CheckCircle className="h-4 w-4 text-success" />
                       <Button
                         variant="outline"
                         size="sm"
