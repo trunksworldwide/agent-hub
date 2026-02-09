@@ -1,3 +1,8 @@
+### Skills & Channels: OpenClaw-native server endpoints + mirror sync
+- **`/api/skills`**: Now uses `openclaw skills list --json` (CLI-first) instead of requiring `EXECUTOR_SKILLS_DIR`. Falls back to directory scan at common paths if CLI fails.
+- **`/api/channels`**: New endpoint reads `~/.openclaw/openclaw.json` channels config and returns normalized array. Returns `[]` gracefully if file missing (no more 404).
+- **Mirror sync**: Both endpoints now best-effort upsert results into `skills_mirror` and `channels_mirror` Supabase tables (throttled, non-blocking) so the dashboard shows data even when executor is offline.
+
 ### Skills & Channels: Supabase mirror fallback
 - Created `skills_mirror` and `channels_mirror` Supabase tables (mirror pattern, matching `cron_mirror`).
 - `getSkills()` and `getChannels()` now fall back to their respective mirror tables when the Control API is unavailable or fails, instead of returning empty arrays.
