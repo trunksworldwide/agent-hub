@@ -105,7 +105,25 @@ async function mirrorCronList() {
   const prev = stateRow?.schedule_expr || null;
   const changed = prev !== fingerprint;
 
-  if (!changed) return { changed: false, count: jobs.length };
+  if (!changed) {
+    // Even when the fingerprint hasn't changed, ensure stale rows are pruned.
+    // This keeps Supabase mirror consistent if a prior prune failed.
+    try {
+      const currentJobIds = jobs.map((j) => String(j.id)).filter(Boolean);
+      currentJobIds.push(stateJobId);
+      const inList = `(${currentJobIds.map((id) => JSON.stringify(String(id))).join(',')})`;
+      const { error: delErr } = await sb
+        .from('cron_mirror')
+        .delete()
+        .eq('project_id', PROJECT_ID)
+        .not('job_id', 'in', inList);
+      if (delErr) console.error('[cron-mirror] stale row cleanup failed', delErr);
+    } catch (e) {
+      console.error('[cron-mirror] stale row cleanup threw', e);
+    }
+
+    return { changed: false, count: jobs.length };
+  }
 
   const rows = jobs.map((j) => {
     const { schedule_kind, schedule_expr, tz } = scheduleToMirror(j);
