@@ -1,8 +1,8 @@
 # ClawdOS (agent-hub)
 
-ClawdOS is a mobile-friendly “control plane” dashboard for Clawdbot running on a Mac mini.
+ClawdOS is a mobile-friendly "control plane" dashboard for [OpenClaw](https://docs.openclaw.ai/) agents running on a Mac mini.
 
-It’s meant to make an agent system readable and editable:
+It's meant to make an agent system readable and editable:
 - instructions (Soul)
 - user config
 - memory (daily + long-term)
@@ -19,7 +19,7 @@ Docs:
 
 ## Repo layout
 - `src/` frontend (Vite + React + TypeScript + shadcn/ui)
-- `server/` minimal local Control API that connects the UI to the Clawdbot workspace
+- `server/` minimal local Control API that connects the UI to the OpenClaw workspace
 
 ## Run locally
 
@@ -52,4 +52,5 @@ Open:
 ## Notes
 - The Control API is intentionally an adapter layer (stability + security + easy future auth).
 - Edits to the agent brain files are auto-committed to git for audit/rollback.
+- The server uses a compatibility wrapper (`server/executor.mjs`) that prefers `openclaw` but falls back to `clawdbot`. Set `EXECUTOR_BIN` for explicit control.
 

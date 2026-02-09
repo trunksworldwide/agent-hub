@@ -1,4 +1,13 @@
-### Cron Agent Assignment: durable persistence + UI polish (schedule durability fix)
+### Safe Migration: Clawdbot → OpenClaw (executor compatibility wrapper)
+- **Created `server/executor.mjs`**: Compatibility wrapper that resolves CLI binary (`openclaw` first, `clawdbot` fallback). Supports `EXECUTOR_BIN` env var for absolute path (launchd-safe). Uses `command -v` instead of `which`.
+- **Updated `server/index.mjs`**: All 11 `exec('clawdbot ...')` calls replaced with `execExecutor(...)`. Hardcoded skills paths replaced with `EXECUTOR_SKILLS_DIR` env var (returns empty gracefully when unset).
+- **Added `/api/executor-check`**: Non-destructive smoke test endpoint that checks binary resolution, `--version`, sessions, and cron list. No restart/stop/start.
+- **Updated UI labels**: "Restart ClawdOffice?" → "Restart OpenClaw?", "Update Claw" → "Update OpenClaw", removed hardcoded `~/clawdbot/` paths from ConfigPage.
+- **Updated `.env.example`**: Added `EXECUTOR_BIN` and `EXECUTOR_SKILLS_DIR` commented examples.
+- **Updated docs**: README.md and docs/OVERVIEW.md now reference OpenClaw instead of Clawdbot. ClawdOS brand name preserved.
+- **Not renamed**: `useClawdOffice` store hook, `ClawdOS` brand, Supabase tables, API routes.
+
+
 - **Problem**: Jobs showed "Unassigned" even when agents were selected because agent info was only in DB columns, not the job payload itself.
 - **Solution**: Dual-path persistence — agent/intent now stored in **both** DB columns AND as `@agent:`/`@intent:` headers in instructions.
 - **New functions**: `encodeJobHeaders()` and `decodeJobHeaders()` in `schedule-utils.ts` handle header encoding/decoding.
