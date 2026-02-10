@@ -55,13 +55,8 @@ export function useBrainDocSubscription({
           table: 'brain_docs',
           filter: `project_id=eq.${projectId}`,
         },
-        (payload: RealtimePostgresChangesPayload<{
-          doc_type: string;
-          agent_key: string | null;
-          content: string;
-          updated_by: string | null;
-        }>) => {
-          const row = payload.new;
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          const row = payload.new as Record<string, unknown> | undefined;
 
           // DELETE events may not have `new`
           if (!row) return;
@@ -83,7 +78,7 @@ export function useBrainDocSubscription({
 
           if (!isDirtyRef.current) {
             // Editor is clean — silently update
-            onUpdateRef.current(row.content ?? '');
+            onUpdateRef.current((row.content as string) ?? '');
           } else {
             // Editor has unsaved changes — notify without overwriting
             toast({
