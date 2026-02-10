@@ -1,4 +1,9 @@
-### Memory: date rollover archival for daily memory
+### Brain doc editors: auto-refresh via Supabase Realtime
+- **New hook `useBrainDocSubscription`**: Subscribes to Realtime `UPDATE` events on `brain_docs` filtered by `project_id` and `doc_type`. When a remote change arrives and the editor is clean, content updates silently. If the editor has unsaved changes, a toast notifies the user instead of overwriting.
+- **SoulEditor, UserEditor, MemoryEditor**: All three editors now use the hook — SOUL.md, USER.md, MEMORY.md, and today's memory auto-refresh when `brain-doc-sync` pushes changes from the Mac mini.
+- Ignores updates where `updated_by = 'dashboard'` to avoid echo loops.
+
+
 - **brain-doc-sync.mjs**: Added `archiveDailyMemoryIfDateChanged()` — at midnight rollover, the current `memory_today` row is copied to a new `memory_day` row with a `<!-- date: YYYY-MM-DD -->` prefix before being overwritten with the new day's file. Prevents loss of previous day's memory data.
 
 ### Memory: daily sync + empty state UX + promote button + QMD awareness
