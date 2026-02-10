@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { getAgents, type Agent } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { StatusTooltip } from '@/components/ui/StatusTooltip';
+import { AgentOverview } from './agent-tabs/AgentOverview';
 import { SoulEditor } from './agent-tabs/SoulEditor';
 import { UserEditor } from './agent-tabs/UserEditor';
 import { MemoryEditor } from './agent-tabs/MemoryEditor';
@@ -15,6 +16,7 @@ import { SessionsView } from './agent-tabs/SessionsView';
 import { NewTaskDialog } from './dialogs/NewTaskDialog';
 
 const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[] = [
+  { id: 'overview', label: 'Overview', icon: '📋', tooltip: 'Agent profile, purpose, doc status, and actions.' },
   { id: 'soul', label: 'Soul', icon: '✨', tooltip: "Defines the agent's personality, behavior rules, and core truths." },
   { id: 'user', label: 'User', icon: '👤', tooltip: 'Who the user is: preferences, permissions, and profile.' },
   { id: 'memory', label: 'Memory', icon: '🧠', tooltip: 'Long-term notes and daily logs for continuity. Keep curated.' },
@@ -29,32 +31,45 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
 
+  const isPrimaryAgent = selectedAgentId === 'agent:main:main';
+
+  const loadAgents = async () => {
+    if (!selectedAgentId) {
+      setAgent(null);
+      return;
+    }
+    try {
+      const agentsData = await getAgents();
+      setAgents(agentsData);
+      setAgent(agentsData.find((a) => a.id === selectedAgentId) || null);
+    } catch (e) {
+      console.warn('Failed to load agent header info:', e);
+      setAgent(null);
+    }
+  };
+
   useEffect(() => {
     let alive = true;
-
     const load = async () => {
-      if (!selectedAgentId) {
-        setAgent(null);
-        return;
-      }
-
+      if (!selectedAgentId) { setAgent(null); return; }
       try {
         const agentsData = await getAgents();
         if (!alive) return;
         setAgents(agentsData);
-        setAgent(agentsData.find((a) => a.id === selectedAgentId) || null);
+        const found = agentsData.find((a) => a.id === selectedAgentId) || null;
+        setAgent(found);
+        // Default sub-agents to overview tab, primary to soul
+        if (found && selectedAgentId !== 'agent:main:main' && activeAgentTab === 'soul') {
+          setActiveAgentTab('overview');
+        }
       } catch (e) {
-        // Fail soft – editing agent files should still work even if roster fetch fails.
         console.warn('Failed to load agent header info:', e);
         if (!alive) return;
         setAgent(null);
       }
     };
-
     load();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [selectedAgentId, selectedProjectId]);
 
   if (!selectedAgentId) {
@@ -65,8 +80,6 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
     );
   }
 
-  // Project scoping: if an agent key is selected but doesn't exist in this project,
-  // show a soft error instead of rendering a broken header.
   if (!agent) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -85,10 +98,11 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
 
   const fileKey = `${selectedAgentId}-${activeAgentTab}`;
   const fileState = files[fileKey];
-  const isDirty = fileState?.isDirty || false;
 
   const renderTabContent = () => {
     switch (activeAgentTab) {
+      case 'overview':
+        return <AgentOverview agent={agent} onRefresh={loadAgents} />;
       case 'soul':
         return <SoulEditor />;
       case 'user':
@@ -104,16 +118,6 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
       default:
         return null;
     }
-  };
-
-  const getStatusBadge = (status: Agent['status'] | undefined) => {
-    const styles: Record<string, string> = {
-      working: 'badge-working',
-      idle: 'badge-idle',
-      offline: 'badge-offline',
-    };
-    if (!status) return 'badge-offline';
-    return styles[status] || 'badge-offline';
   };
 
   return (

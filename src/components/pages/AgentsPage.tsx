@@ -302,9 +302,14 @@ export function AgentsPage() {
                       />
                     </StatusTooltip>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
+                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                     {agent.role || 'Agent'}
                   </p>
+                  {agent.purposeText && (
+                    <p className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-2 italic">
+                      {agent.purposeText}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                     {agent.provisioned === false && agent.id !== 'agent:main:main' && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[11px] font-medium">

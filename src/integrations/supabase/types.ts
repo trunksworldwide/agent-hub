@@ -166,6 +166,7 @@ export type Database = {
           name: string
           project_id: string
           provisioned: boolean
+          purpose_text: string | null
           role: string | null
           workspace_path: string | null
         }
@@ -179,6 +180,7 @@ export type Database = {
           name: string
           project_id: string
           provisioned?: boolean
+          purpose_text?: string | null
           role?: string | null
           workspace_path?: string | null
         }
@@ -192,6 +194,7 @@ export type Database = {
           name?: string
           project_id?: string
           provisioned?: boolean
+          purpose_text?: string | null
           role?: string | null
           workspace_path?: string | null
         }

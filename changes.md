@@ -1,3 +1,12 @@
+### Sub-agent detail: distinct Overview tab, doc source indicators, purpose editor
+- **Database**: Added `purpose_text` column to `agents` table. Migrated Ricky's long role into `purpose_text`, set `role` to short label. Seeded agent-specific `brain_docs` rows (USER.md, MEMORY.md) for Ricky.
+- **New component `AgentOverview`**: Overview tab showing editable purpose/mission textarea, brain doc status (inherited vs override) with "Create override" buttons, and action buttons (Run Once, Schedule Digest).
+- **New component `DocSourceBanner`**: Subtle banner in Soul/User/Memory editors showing "Inherited (global)" or "Agent-specific docs" with a "Create agent override" button for sub-agents.
+- **AgentDetail**: Added Overview as a new tab (default for sub-agents, primary agent defaults to Soul). Imports and renders `AgentOverview`.
+- **API** (`src/lib/api.ts`): Added `purposeText` to `Agent` interface, `updateAgentPurpose()`, `createDocOverride()`, `getDocOverrideStatus()`, `scheduleAgentDigest()`.
+- **Store**: Added `'overview'` to `AgentTab` type.
+- **AgentsPage**: Cards now show short `role` label with `purposeText` as secondary italic text (line-clamp-2 each).
+
 ### Agent Provisioning: create runnable OpenClaw agents from the dashboard
 - **Database**: Added `agent_id_short`, `workspace_path`, `provisioned` columns to `agents` table. Created `agent_provision_requests` queue table.
 - **Control API** (`server/index.mjs`):

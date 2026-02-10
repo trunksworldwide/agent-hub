@@ -35,6 +35,9 @@ export interface Agent {
   agentIdShort?: string | null;
   workspacePath?: string | null;
 
+  // Purpose (long mission prompt, distinct from short role label)
+  purposeText?: string | null;
+
   // Presence/status fields (optional; populated when Supabase agent_status is configured)
   statusState?: 'idle' | 'working' | 'blocked' | 'sleeping';
   statusNote?: string | null;
@@ -818,7 +821,7 @@ export async function getAgents(): Promise<Agent[]> {
       await Promise.all([
         supabase
           .from('agents')
-          .select('agent_key,name,role,emoji,color,created_at,provisioned,agent_id_short,workspace_path')
+          .select('agent_key,name,role,emoji,color,created_at,provisioned,agent_id_short,workspace_path,purpose_text')
           .eq('project_id', projectId)
           .order('created_at', { ascending: true }),
         supabase
@@ -946,6 +949,7 @@ export async function getAgents(): Promise<Agent[]> {
         lastActivityAt: st?.last_activity_at ?? null,
         lastHeartbeatAt: st?.last_heartbeat_at ?? null,
         currentTaskId: st?.current_task_id ?? null,
+        purposeText: a.purpose_text ?? null,
       };
     });
   }
@@ -1125,6 +1129,97 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
   await delay(300);
   console.log(`[API] Saving ${type} for agent ${agentId}`);
   return { ok: true };
+}
+
+// ============= Agent Purpose & Doc Overrides =============
+
+export async function updateAgentPurpose(agentKey: string, purposeText: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+  try {
+    const { error } = await supabase
+      .from('agents')
+      .update({ purpose_text: purposeText } as any)
+      .eq('project_id', projectId)
+      .eq('agent_key', agentKey);
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function createDocOverride(agentKey: string, docType: AgentFile['type']): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+  try {
+    const { data: globalRow } = await supabase
+      .from('brain_docs')
+      .select('content')
+      .eq('project_id', projectId)
+      .eq('doc_type', docType)
+      .is('agent_key', null)
+      .maybeSingle();
+
+    const content = globalRow?.content || '';
+
+    const { error } = await supabase.from('brain_docs').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        doc_type: docType,
+        content,
+        updated_by: 'dashboard',
+      },
+      { onConflict: 'project_id,agent_key,doc_type' }
+    );
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function getDocOverrideStatus(agentKey: string): Promise<Record<string, 'global' | 'agent'>> {
+  if (!(hasSupabase() && supabase)) return {};
+  const projectId = getProjectId();
+  const docTypes: AgentFile['type'][] = ['soul', 'user', 'memory_long'];
+  const result: Record<string, 'global' | 'agent'> = {};
+
+  const { data: rows } = await supabase
+    .from('brain_docs')
+    .select('doc_type,agent_key')
+    .eq('project_id', projectId)
+    .in('doc_type', docTypes)
+    .or(`agent_key.eq.${agentKey},agent_key.is.null`);
+
+  for (const dt of docTypes) {
+    const hasAgent = (rows || []).some((r: any) => r.doc_type === dt && r.agent_key === agentKey);
+    result[dt] = hasAgent ? 'agent' : 'global';
+  }
+  return result;
+}
+
+export async function scheduleAgentDigest(agentKey: string, agentName: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+  try {
+    const { error } = await supabase.from('cron_create_requests').insert({
+      project_id: projectId,
+      name: `Daily Digest — ${agentName}`,
+      schedule_expr: '0 9 * * *',
+      schedule_kind: 'cron',
+      target_agent_key: agentKey,
+      job_intent: 'digest',
+      instructions: 'Summarize new findings and propose 1-3 tasks based on recent activity.',
+      requested_by: 'ui',
+      status: 'queued',
+    });
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
 }
 
 // ============= Memory Backend Status (QMD awareness) =============

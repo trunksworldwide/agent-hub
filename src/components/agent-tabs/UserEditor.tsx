@@ -5,6 +5,7 @@ import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useBrainDocSubscription } from '@/hooks/useBrainDocSubscription';
+import { DocSourceBanner } from './DocSourceBanner';
 
 export function UserEditor() {
   const { selectedAgentId, selectedProjectId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
@@ -171,6 +172,9 @@ export function UserEditor() {
           </Button>
         </div>
       </div>
+
+      {/* Doc source indicator */}
+      <DocSourceBanner source={fileState.source} docType="user" onOverrideCreated={() => void load()} />
 
       {/* Editor */}
       <div className="flex-1 overflow-auto scrollbar-thin">
