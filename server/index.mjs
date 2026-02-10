@@ -961,6 +961,29 @@ const server = http.createServer(async (req, res) => {
           ' --timeout 60000';
 
         await execExecutor(cmdArgs);
+
+        // Best-effort: immediately upsert changed fields into cron_mirror
+        // so the UI updates via realtime instead of waiting for the next mirror cycle.
+        try {
+          const supabase = getSupabase();
+          if (supabase) {
+            const projectId = getProjectIdFromReq(req);
+            const partial = {};
+            if (typeof body.name === 'string' && body.name.trim()) partial.name = body.name.trim();
+            if (typeof body.instructions === 'string') partial.instructions = body.instructions;
+            if (typeof body.enabled === 'boolean') partial.enabled = body.enabled;
+            if (Object.keys(partial).length > 0) {
+              await supabase
+                .from('cron_mirror')
+                .update(partial)
+                .eq('project_id', projectId)
+                .eq('job_id', jobId);
+            }
+          }
+        } catch (mirrorErr) {
+          console.error('[cron edit] best-effort mirror upsert failed:', mirrorErr);
+        }
+
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
