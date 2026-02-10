@@ -1,46 +1,42 @@
 
+# Per-Doc Override Without AI Regeneration
 
-# Fix "Regenerate with AI" + Auto-Generate Docs on Agent Creation
+## What changes
 
-## Problem
+Currently, clicking "Create override" on any single doc (Soul, User, or Memory) triggers AI generation of ALL three docs plus description. This is overkill -- the user just wants to make that one doc editable as an agent-specific copy.
 
-1. **"Regenerate with AI" button is broken** -- it only calls `createDocOverride(agent.id, 'soul')`, generating only SOUL.md. The toast misleadingly says "SOUL, USER, and MEMORY docs created."
-2. **No auto-generation on agent creation** -- new agents start with all docs inherited from Trunks. The user has to manually find and click override buttons.
+The fix: add a lightweight function that copies the inherited (global) doc content into an agent-specific row, making it an "override" without touching AI or other docs.
 
-## Changes
+## Implementation
 
-### 1. Fix "Regenerate with AI" in `AgentOverview.tsx`
+### 1. New function in `src/lib/api.ts`: `createSingleDocOverride`
 
-The inline `onClick` handler (lines 245-263) currently calls `createDocOverride(agent.id, 'soul')` -- only soul.
+A new function that:
+- Fetches the current global (inherited) content for the given `docType` from `brain_docs` where `agent_key IS NULL`
+- Writes it as an agent-specific row (with `agent_key` set) via disk-first sync, falling back to Supabase upsert
+- Returns `{ ok: true }` on success
 
-Fix: call `createDocOverride` for all three doc types (soul, user, memory_long). Since `createDocOverride` already calls the AI edge function and does disk-first sync, we just need to call it three times (or refactor it to accept multiple types).
+This is a simple copy operation -- no AI calls, no touching other doc types.
 
-However, looking at the current `createDocOverride` implementation, it already generates ALL docs in one edge function call (soul + user + memory + description) and writes all three rows. So the fix is simpler: the button just needs to call `createDocOverride` once with any type -- the function generates everything. But the UI only updates the status for the one type passed. 
+### 2. Update "Create override" button in `AgentOverview.tsx`
 
-**Actual fix**: After `createDocOverride` completes, refresh the full doc status (which it already does on line 252 with `getDocOverrideStatus`). The real bug is that `createDocOverride` in `api.ts` may only be writing the single doc type passed. Need to verify and fix the API layer.
+Change `handleCreateOverride` to call the new `createSingleDocOverride` instead of `createDocOverride`. The existing status update logic (`setDocStatus`) already correctly updates only the clicked doc type, so the "Inherited" badge will flip to "Override" for just that one doc.
 
-### 2. Verify/fix `createDocOverride` in `api.ts`
+### 3. Keep "Regenerate with AI" unchanged
 
-Ensure it generates and writes ALL three doc types (soul, user, memory_long) plus updates `agents.description`, regardless of which `docType` is passed. The edge function already returns all four outputs.
-
-### 3. Auto-generate on agent creation
-
-In the agent creation flow, after the agent row is inserted and provisioned, automatically call `createDocOverride` if the agent has a `purpose_text` set. This gives every new agent tailored docs from the start.
-
-The creation flow likely lives in a dialog component -- need to find it and add a post-creation step.
+The "Regenerate with AI" button continues to use `createDocOverride` which generates all three docs + description via the edge function. This is the correct behavior for full regeneration.
 
 ## Files to modify
 
 | File | Change |
 |------|--------|
-| `src/lib/api.ts` | Verify `createDocOverride` writes all 3 doc types + description from the single edge function response |
-| `src/components/agent-tabs/AgentOverview.tsx` | Fix "Regenerate with AI" onClick to properly trigger full regeneration and refresh all statuses |
-| Agent creation dialog (likely `src/components/dialogs/` or `AgentsPage.tsx`) | Add auto-generate step after agent creation when purpose_text is provided |
+| `src/lib/api.ts` | Add `createSingleDocOverride(agentKey, docType)` function that copies global content to agent-specific row |
+| `src/components/agent-tabs/AgentOverview.tsx` | Update `handleCreateOverride` to call new function instead of `createDocOverride` |
 
 ## What stays the same
 
-- Edge function (already generates all 4 outputs)
-- DocSourceBanner (works correctly as-is)
-- Individual "Create override" buttons on doc rows (fine for single-doc overrides)
+- "Regenerate with AI" button (still generates all docs)
+- Auto-generate on agent creation (still generates all docs)
+- DocSourceBanner override button in editors
+- Edge function
 - Disk-first sync logic
-
