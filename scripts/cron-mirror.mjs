@@ -261,15 +261,24 @@ async function processDeleteRequests() {
     const { code, stdout, stderr } = await runCmd(EXECUTOR_BIN, ['cron', 'rm', jobId], 60_000);
     const durationMs = Date.now() - startedAt;
 
+    const stdoutTail = stdout.slice(-4000);
+    const stderrTail = stderr.slice(-4000);
+
+    // Treat "already gone" as success to avoid ghost jobs.
+    // openclaw cron rm may return a non-zero code when the job is missing.
+    const looksMissing = /not\s+found|no\s+such/i.test(stderrTail) || /not\s+found|no\s+such/i.test(stdoutTail);
+    const removed = code === 0 || looksMissing;
+
     const result = {
       jobId,
       exitCode: code,
       durationMs,
-      stdoutTail: stdout.slice(-4000),
-      stderrTail: stderr.slice(-4000),
+      removed,
+      stdoutTail,
+      stderrTail,
     };
 
-    const nextStatus = code === 0 ? 'done' : 'error';
+    const nextStatus = removed ? 'done' : 'error';
     const { error: finErr } = await sb.from('cron_delete_requests').update({ status: nextStatus, result }).eq('id', reqId);
     if (finErr) throw finErr;
   }

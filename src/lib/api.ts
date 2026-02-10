@@ -1619,21 +1619,25 @@ export async function getCronDeleteRequests(limit = 20): Promise<CronDeleteReque
   if (error) throw error;
 
   return (data || []).map((row: any) => {
-    // Parse the `removed` boolean from result.stdoutTail when status is done
+    // Determine whether the executor actually removed the job.
+    // Newer cron-mirror writes result.removed explicitly; older versions only have stdout/stderr.
     let removed: boolean | undefined;
     if (row.status === 'done' && row.result) {
-      try {
-        const stdout = row.result?.stdoutTail || '';
-        // stdoutTail may contain JSON like {"removed":true,"id":"..."}
-        const parsed = JSON.parse(stdout);
-        if (typeof parsed?.removed === 'boolean') {
-          removed = parsed.removed;
-        }
-      } catch {
-        // If we can't parse, leave undefined — treat as ambiguous success
-        // (exit code 0 + done status is the best we have)
-        if (row.result?.exitCode === 0) {
-          removed = true;
+      if (typeof row.result?.removed === 'boolean') {
+        removed = row.result.removed;
+      } else {
+        try {
+          const stdout = row.result?.stdoutTail || '';
+          // Some older executors printed JSON like {"removed":true,"id":"..."}
+          const parsed = JSON.parse(stdout);
+          if (typeof parsed?.removed === 'boolean') {
+            removed = parsed.removed;
+          }
+        } catch {
+          // Fall back to exit code heuristics.
+          if (row.result?.exitCode === 0) {
+            removed = true;
+          }
         }
       }
     }
