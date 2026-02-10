@@ -793,6 +793,47 @@ export type Database = {
           },
         ]
       }
+      task_events: {
+        Row: {
+          author: string
+          content: string | null
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json | null
+          project_id: string
+          task_id: string
+        }
+        Insert: {
+          author: string
+          content?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          task_id: string
+        }
+        Update: {
+          author?: string
+          content?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_events_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_outputs: {
         Row: {
           content_text: string | null

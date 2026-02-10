@@ -1,9 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
-import { X, Send, Check, Play, XCircle, User, AlertTriangle, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, Play, XCircle, User, AlertTriangle, Loader2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -11,21 +10,19 @@ import {
   type Task, 
   type TaskStatus, 
   type Agent, 
-  type TaskComment,
   type TaskOutput,
   updateTask, 
-  getTaskComments, 
-  createTaskComment,
   createActivity,
   getTaskOutputs,
+  createTaskEvent,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
 import { RejectConfirmDialog } from './RejectConfirmDialog';
 import { BlockedReasonModal } from './BlockedReasonModal';
 import { TaskOutputSection } from './TaskOutputSection';
 import { AddOutputDialog } from './AddOutputDialog';
+import { TaskTimeline } from './TaskTimeline';
 
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'inbox', label: 'Inbox' },
@@ -46,49 +43,22 @@ interface TaskDetailSheetProps {
 
 export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdated }: TaskDetailSheetProps) {
   const { toast } = useToast();
-  const [comments, setComments] = useState<TaskComment[]>([]);
   const [outputs, setOutputs] = useState<TaskOutput[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [isLoadingOutputs, setIsLoadingOutputs] = useState(false);
-  const [isSendingComment, setIsSendingComment] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [showAddOutput, setShowAddOutput] = useState(false);
   const [pendingBlockedStatus, setPendingBlockedStatus] = useState<TaskStatus | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load comments and outputs when task changes
+  // Load outputs when task changes
   useEffect(() => {
     if (task?.id && open) {
-      loadComments();
       loadOutputs();
     } else {
-      setComments([]);
       setOutputs([]);
     }
   }, [task?.id, open]);
-
-  // Scroll to bottom when new comments arrive
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [comments.length]);
-
-  const loadComments = async () => {
-    if (!task?.id) return;
-    setIsLoadingComments(true);
-    try {
-      const data = await getTaskComments(task.id);
-      setComments(data);
-    } catch (e) {
-      console.error('Failed to load comments:', e);
-    } finally {
-      setIsLoadingComments(false);
-    }
-  };
 
   const loadOutputs = async () => {
     if (!task?.id) return;
@@ -103,38 +73,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
     }
   };
 
-  const handleSendComment = async () => {
-    if (!task?.id || !newComment.trim()) return;
-    setIsSendingComment(true);
-    try {
-      const result = await createTaskComment({
-        taskId: task.id,
-        content: newComment.trim(),
-      });
-      if (result.ok && result.comment) {
-        setComments((prev) => [...prev, result.comment!]);
-        setNewComment('');
-      } else {
-        throw new Error(result.error || 'Failed to send comment');
-      }
-    } catch (e) {
-      console.error('Failed to send comment:', e);
-      toast({
-        title: 'Failed to send comment',
-        description: String(e),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSendingComment(false);
-    }
-  };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendComment();
-    }
-  };
 
   const handleStatusChange = async (newStatus: TaskStatus) => {
     if (!task) return;
@@ -168,6 +107,15 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
       }
 
       await updateTask(task.id, patch);
+
+      // Write status_change event to the unified timeline
+      createTaskEvent({
+        taskId: task.id,
+        eventType: 'status_change',
+        content: null,
+        metadata: { old_status: task.status, new_status: newStatus },
+      }).catch(() => {}); // best-effort
+
       onTaskUpdated();
     } catch (e) {
       console.error('Failed to update status:', e);
@@ -187,13 +135,13 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
     // Perform status change
     await performStatusChange(pendingBlockedStatus, reason);
     
-    // Optionally post to thread
+    // Optionally post to thread via task_events
     if (postToThread) {
-      await createTaskComment({
+      await createTaskEvent({
         taskId: task.id,
+        eventType: 'comment',
         content: `🚧 Blocked: ${reason}`,
       });
-      await loadComments();
     }
 
     // Log activity
@@ -324,17 +272,6 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
     }
   };
 
-  const getAgentDisplay = (agentKey: string | null | undefined) => {
-    if (!agentKey) return null;
-    const agent = agents.find((a) => a.id === agentKey);
-    if (agent) {
-      return { emoji: agent.avatar || '🤖', name: agent.name };
-    }
-    if (agentKey === 'ui' || agentKey === 'dashboard') {
-      return { emoji: '👤', name: 'You' };
-    }
-    return { emoji: '🤖', name: agentKey };
-  };
 
   if (!task) return null;
 
@@ -515,70 +452,10 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
 
               <Separator />
 
-              {/* Thread */}
-              <div>
-                <h4 className="text-sm font-medium mb-3">Thread</h4>
-                <div 
-                  ref={scrollRef}
-                  className="space-y-3 max-h-64 overflow-y-auto mb-4"
-                >
-                  {isLoadingComments ? (
-                    <div className="text-center py-4 text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    </div>
-                  ) : comments.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      No comments yet
-                    </p>
-                  ) : (
-                    comments.map((comment) => {
-                      const author = getAgentDisplay(comment.authorAgentKey);
-                      return (
-                        <div
-                          key={comment.id}
-                          className="bg-muted/50 rounded-lg p-3"
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            {author && (
-                              <>
-                                <span className="text-sm">{author.emoji}</span>
-                                <span className="text-sm font-medium">{author.name}</span>
-                              </>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                          <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Composer */}
-                <div className="flex gap-2">
-                  <Textarea
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Add a comment... (Enter to send)"
-                    className="min-h-[60px] resize-none"
-                    disabled={isSendingComment}
-                  />
-                  <Button
-                    size="icon"
-                    onClick={handleSendComment}
-                    disabled={!newComment.trim() || isSendingComment}
-                  >
-                    {isSendingComment ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
+              {/* Unified Timeline */}
+              {task.id && (
+                <TaskTimeline taskId={task.id} agents={agents} />
+              )}
             </div>
           </ScrollArea>
         </SheetContent>

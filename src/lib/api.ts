@@ -311,6 +311,29 @@ export interface CreateTaskOutputInput {
   linkUrl?: string;
 }
 
+// ============= Task Events (unified timeline) =============
+
+export type TaskEventType = 'comment' | 'status_change' | 'output_added' | 'agent_update' | 'approval_request' | 'approval_resolved';
+
+export interface TaskEvent {
+  id: string;
+  projectId: string;
+  taskId: string;
+  eventType: TaskEventType;
+  author: string;
+  content: string | null;
+  metadata: Record<string, any> | null;
+  createdAt: string;
+}
+
+export interface CreateTaskEventInput {
+  taskId: string;
+  eventType: TaskEventType;
+  content?: string;
+  metadata?: Record<string, any>;
+  author?: string;
+}
+
 // Mock Data
 const mockAgents: Agent[] = [
   { id: 'trunks', name: 'Trunks', role: 'Primary Agent', status: 'idle', lastActive: '2 min ago', skillCount: 12, avatar: '🤖' },
@@ -3434,6 +3457,157 @@ export async function generateTaskLogSummary(taskId: string): Promise<{ ok: bool
     return { ok: true, summary };
   } catch (e: any) {
     console.error('generateTaskLogSummary failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ============= Task Events API (unified timeline) =============
+
+export async function getTaskEvents(taskId: string): Promise<TaskEvent[]> {
+  if (!hasSupabase() || !supabase) return [];
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('task_events')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    projectId: row.project_id,
+    taskId: row.task_id,
+    eventType: row.event_type,
+    author: row.author,
+    content: row.content,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function createTaskEvent(input: CreateTaskEventInput): Promise<{ ok: boolean; event?: TaskEvent; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+  const author = input.author || DASHBOARD_ACTOR_KEY;
+
+  try {
+    const { data, error } = await supabase
+      .from('task_events')
+      .insert({
+        project_id: projectId,
+        task_id: input.taskId,
+        event_type: input.eventType,
+        author,
+        content: input.content || null,
+        metadata: input.metadata || null,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    // Best-effort activity log for comments
+    if (input.eventType === 'comment') {
+      let taskTitle: string | null = null;
+      try {
+        const { data: taskData } = await supabase
+          .from('tasks')
+          .select('title')
+          .eq('id', input.taskId)
+          .maybeSingle();
+        taskTitle = (taskData as any)?.title ?? null;
+      } catch { /* ignore */ }
+
+      const truncated = (input.content || '').length > 80
+        ? (input.content || '').substring(0, 80) + '...'
+        : (input.content || '');
+      try {
+        await supabase.from('activities').insert({
+          project_id: projectId,
+          type: 'task_comment',
+          message: `Commented on "${taskTitle || input.taskId}": ${truncated}`,
+          actor_agent_key: author,
+          task_id: input.taskId,
+        });
+      } catch { /* ignore */ }
+    }
+
+    return {
+      ok: true,
+      event: {
+        id: data.id,
+        projectId: data.project_id,
+        taskId: data.task_id,
+        eventType: data.event_type as TaskEventType,
+        author: data.author,
+        content: data.content,
+        metadata: data.metadata as Record<string, any> | null,
+        createdAt: data.created_at,
+      },
+    };
+  } catch (e: any) {
+    console.error('createTaskEvent failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+export async function resolveApproval(
+  taskId: string,
+  originalEventId: string,
+  approved: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    // Write resolution event
+    await supabase.from('task_events').insert({
+      project_id: projectId,
+      task_id: taskId,
+      event_type: 'approval_resolved',
+      author: DASHBOARD_ACTOR_KEY,
+      content: approved ? 'Approved' : 'Rejected',
+      metadata: {
+        status: approved ? 'approved' : 'rejected',
+        resolved_by: 'ui',
+        resolved_at: new Date().toISOString(),
+        original_event_id: originalEventId,
+      },
+    });
+
+    // Activity log
+    let taskTitle: string | null = null;
+    try {
+      const { data: taskData } = await supabase
+        .from('tasks')
+        .select('title')
+        .eq('id', taskId)
+        .maybeSingle();
+      taskTitle = (taskData as any)?.title ?? null;
+    } catch { /* ignore */ }
+
+    try {
+      await supabase.from('activities').insert({
+        project_id: projectId,
+        type: approved ? 'approval_granted' : 'approval_rejected',
+        message: `${approved ? 'Approved' : 'Rejected'} action on "${taskTitle || taskId}"`,
+        actor_agent_key: DASHBOARD_ACTOR_KEY,
+        task_id: taskId,
+      });
+    } catch { /* ignore */ }
+
+    return { ok: true };
+  } catch (e: any) {
+    console.error('resolveApproval failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
 }
