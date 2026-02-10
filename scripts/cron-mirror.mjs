@@ -339,6 +339,104 @@ async function processPatchRequests() {
   return processed;
 }
 
+async function processProvisionRequests() {
+  const { data, error } = await sb
+    .from('agent_provision_requests')
+    .select('id,agent_key,agent_id_short,display_name,emoji,role_short,status,requested_at')
+    .eq('project_id', PROJECT_ID)
+    .eq('status', 'queued')
+    .order('requested_at', { ascending: true })
+    .limit(3);
+  if (error) throw error;
+
+  const queued = Array.isArray(data) ? data : [];
+  let processed = 0;
+
+  for (const req of queued) {
+    processed++;
+    const reqId = String(req.id);
+    const agentIdShort = String(req.agent_id_short);
+    const agentKey = String(req.agent_key);
+    const displayName = String(req.display_name);
+    const emoji = req.emoji ? String(req.emoji) : null;
+    const roleShort = req.role_short ? String(req.role_short) : null;
+
+    const { error: updErr } = await sb.from('agent_provision_requests').update({ status: 'running', picked_up_at: new Date().toISOString() }).eq('id', reqId);
+    if (updErr) throw updErr;
+
+    const homedir = process.env.HOME || '/Users/trunks';
+    const workspaceDir = `${homedir}/.openclaw/workspace-${agentIdShort}`;
+
+    try {
+      // 1. Add agent
+      try {
+        await runCmd(EXECUTOR_BIN, ['agents', 'add', agentIdShort, '--workspace', workspaceDir], 60_000);
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (!msg.includes('already exists') && !msg.includes('already added')) throw e;
+      }
+
+      // 2. Set identity
+      const identityArgs = ['agents', 'set-identity', '--agent', agentIdShort, '--name', displayName];
+      if (emoji) identityArgs.push('--emoji', emoji);
+      try {
+        await runCmd(EXECUTOR_BIN, identityArgs, 60_000);
+      } catch (e) {
+        console.error('[provision] set-identity failed (non-fatal):', e?.message || e);
+      }
+
+      // 3. Seed workspace files
+      const { exec: _execCb } = await import('node:child_process');
+      const { promisify: _p } = await import('node:util');
+      const _exec = _p(_execCb);
+      await _exec(`mkdir -p "${workspaceDir}/memory"`);
+
+      const { writeFileSync: _wfs, existsSync: _es } = await import('node:fs');
+      const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack**.\nRead and apply this context. Do not assume information not provided.\n`;
+      const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n`;
+      const memoryContent = `# MEMORY.md\n\n`;
+
+      if (!_es(`${workspaceDir}/SOUL.md`)) _wfs(`${workspaceDir}/SOUL.md`, soulContent, 'utf8');
+      if (!_es(`${workspaceDir}/USER.md`)) _wfs(`${workspaceDir}/USER.md`, userContent, 'utf8');
+      if (!_es(`${workspaceDir}/MEMORY.md`)) _wfs(`${workspaceDir}/MEMORY.md`, memoryContent, 'utf8');
+
+      // 4. Update Supabase
+      await sb.from('agents').update({
+        provisioned: true,
+        agent_id_short: agentIdShort,
+        workspace_path: workspaceDir,
+      }).eq('project_id', PROJECT_ID).eq('agent_key', agentKey);
+
+      // Write brain_docs
+      const docRows = [
+        { project_id: PROJECT_ID, agent_key: agentKey, doc_type: 'soul', content: soulContent, updated_by: 'provisioner' },
+        { project_id: PROJECT_ID, agent_key: agentKey, doc_type: 'user', content: userContent, updated_by: 'provisioner' },
+        { project_id: PROJECT_ID, agent_key: agentKey, doc_type: 'memory_long', content: memoryContent, updated_by: 'provisioner' },
+      ];
+      await sb.from('brain_docs').upsert(docRows, { onConflict: 'project_id,agent_key,doc_type' });
+
+      const result = { agentIdShort, workspaceDir, exitCode: 0 };
+      await sb.from('agent_provision_requests').update({ status: 'done', result, completed_at: new Date().toISOString() }).eq('id', reqId);
+
+      // Activity log
+      try {
+        await sb.from('activities').insert({
+          project_id: PROJECT_ID,
+          type: 'agent_provisioned',
+          message: `Provisioned agent ${displayName} (${agentIdShort}) on executor`,
+          actor_agent_key: 'agent:cron-mirror',
+        });
+      } catch { /* ignore */ }
+
+    } catch (e) {
+      const result = { agentIdShort, error: String(e?.message || e) };
+      await sb.from('agent_provision_requests').update({ status: 'error', result, completed_at: new Date().toISOString() }).eq('id', reqId);
+    }
+  }
+
+  return processed;
+}
+
 async function failStuckRequests({ table, maxAgeMs }) {
   // If a request sits in `queued` too long (e.g. transient Supabase/Cloudflare issues),
   // mark it as `error` so the UI doesn't show "pending" forever.
@@ -443,6 +541,15 @@ async function main() {
     }
   }, 10_000);
 
+  setInterval(async () => {
+    try {
+      const n = await processProvisionRequests();
+      if (n > 0) console.log(`[cron-mirror] processed ${n} provision request(s)`);
+    } catch (e) {
+      console.error('[cron-mirror] provision request processing failed', e);
+    }
+  }, 10_000);
+
   // Fail stuck queued requests so the UI doesn't hang on "pending".
   setInterval(async () => {
     try {
@@ -450,7 +557,8 @@ async function main() {
       const n1 = await failStuckRequests({ table: 'cron_delete_requests', maxAgeMs });
       const n2 = await failStuckRequests({ table: 'cron_run_requests', maxAgeMs });
       const n3 = await failStuckRequests({ table: 'cron_job_patch_requests', maxAgeMs });
-      const n = n1 + n2 + n3;
+      const n4 = await failStuckRequests({ table: 'agent_provision_requests', maxAgeMs });
+      const n = n1 + n2 + n3 + n4;
       if (n > 0) console.log(`[cron-mirror] failed ${n} stuck request(s)`);
     } catch (e) {
       console.error('[cron-mirror] stuck request watchdog failed', e);

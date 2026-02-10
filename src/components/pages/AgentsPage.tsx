@@ -306,6 +306,12 @@ export function AgentsPage() {
                     {agent.role || 'Agent'}
                   </p>
                   <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                    {agent.provisioned === false && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[11px] font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        Provisioning…
+                      </span>
+                    )}
                     <span>{agent.skillCount} skills</span>
                     <span>·</span>
                     <span>Seen {formatSeenLabel(agent)}</span>

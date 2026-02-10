@@ -62,6 +62,51 @@ export type Database = {
           },
         ]
       }
+      agent_provision_requests: {
+        Row: {
+          agent_id_short: string
+          agent_key: string
+          completed_at: string | null
+          display_name: string
+          emoji: string | null
+          id: string
+          picked_up_at: string | null
+          project_id: string
+          requested_at: string
+          result: Json | null
+          role_short: string | null
+          status: string
+        }
+        Insert: {
+          agent_id_short: string
+          agent_key: string
+          completed_at?: string | null
+          display_name: string
+          emoji?: string | null
+          id?: string
+          picked_up_at?: string | null
+          project_id: string
+          requested_at?: string
+          result?: Json | null
+          role_short?: string | null
+          status?: string
+        }
+        Update: {
+          agent_id_short?: string
+          agent_key?: string
+          completed_at?: string | null
+          display_name?: string
+          emoji?: string | null
+          id?: string
+          picked_up_at?: string | null
+          project_id?: string
+          requested_at?: string
+          result?: Json | null
+          role_short?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       agent_status: {
         Row: {
           agent_key: string
@@ -112,6 +157,7 @@ export type Database = {
       }
       agents: {
         Row: {
+          agent_id_short: string | null
           agent_key: string
           color: string | null
           created_at: string
@@ -119,9 +165,12 @@ export type Database = {
           id: string
           name: string
           project_id: string
+          provisioned: boolean
           role: string | null
+          workspace_path: string | null
         }
         Insert: {
+          agent_id_short?: string | null
           agent_key: string
           color?: string | null
           created_at?: string
@@ -129,9 +178,12 @@ export type Database = {
           id?: string
           name: string
           project_id: string
+          provisioned?: boolean
           role?: string | null
+          workspace_path?: string | null
         }
         Update: {
+          agent_id_short?: string | null
           agent_key?: string
           color?: string | null
           created_at?: string
@@ -139,7 +191,9 @@ export type Database = {
           id?: string
           name?: string
           project_id?: string
+          provisioned?: boolean
           role?: string | null
+          workspace_path?: string | null
         }
         Relationships: [
           {
