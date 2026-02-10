@@ -1,76 +1,107 @@
 
 
-# Fix: Brain Doc Editors Not Connected to Supabase Data
+# Fix Memory Editor + Add Daily Memory Sync + QMD Awareness
 
-## Root Cause
+## What's Actually Wrong
 
-There's a mismatch between how the sync script stores docs and how the editors read/write them:
+Two separate issues, both now confirmed by looking at the database and sync scripts:
 
-- **brain-doc-sync.mjs** (Mac mini) stores SOUL.md, USER.md, MEMORY.md with `agent_key = NULL` (project-global docs)
-- **SoulEditor / UserEditor / MemoryEditor** query with `.eq('agent_key', 'agent:main:main')` -- which never matches NULL rows in SQL
-- **saveAgentFile** writes with `agent_key = 'agent:main:main'`, creating a separate row that the sync script ignores
+### 1. Long-term memory (MEMORY.md) is blank because the file is blank
+The `brain_docs` row for `memory_long` exists (with `agent_key = NULL`) but has **0 bytes of content**. Your Mac mini's `MEMORY.md` file is genuinely empty. The dashboard is correctly showing "nothing" -- it's not a sync bug.
 
-Result: editors always see blank content, and any saves from the dashboard never reach your Mac mini.
+### 2. Today's memory has NO sync path at all
+The `brain-doc-sync.mjs` script only syncs 4 files: `SOUL.md`, `AGENTS.md`, `USER.md`, `MEMORY.md`. Daily memory files (`memory/YYYY-MM-DD.md`) are **never pushed to Supabase**. There's no row for `memory_today` in the database. The Memory editor's "Today" tab will always be blank in the current architecture.
 
-## Fix Strategy
+## Plan
 
-Update `getAgentFile` and `saveAgentFile` in `src/lib/api.ts` to handle the global-doc fallback:
+### Part A: Add daily memory sync to `brain-doc-sync.mjs`
 
-### Reading (`getAgentFile`)
-1. First, try to find an agent-specific row (`.eq('agent_key', agentId)`)
-2. If not found, fall back to the global row (`.is('agent_key', null)`)
-3. Track which row was found so saves go to the right place
+Extend the sync script to also sync today's memory file:
 
-### Writing (`saveAgentFile`)
-1. For doc types that have a global row (`soul`, `user`, `memory_long`, `agents`), check if a global row exists
-2. If the content was loaded from the global row, save back to the global row (so brain-doc-sync picks it up)
-3. If the agent has its own dedicated row, save to that
+- Add `memory_today` to the DOCS list, pointing to `memory/YYYY-MM-DD.md` (using today's date)
+- The date-based path needs to recalculate on each poll cycle (midnight rollover)
+- Upsert to `brain_docs` with `doc_type = 'memory_today'` and `agent_key = NULL`
+- This means the Memory editor's "Today" tab will finally show real content
 
-This ensures:
-- Trunks (agent:main:main) sees the SOUL.md content that brain-doc-sync put there
-- Saves from the dashboard write to the same row, so changes sync back to the Mac mini
-- Future per-agent overrides still work (agent-specific rows take priority)
+### Part B: Empty state UX for long-term memory
 
-## Files to Modify
+When `memory_long` content is empty/whitespace, show:
+
+- A friendly "Long-term memory is empty" message (not a blank editor that looks broken)
+- A "Seed template" button that inserts a starter template into the editor (marks buffer dirty, user still has to Save)
+- The template will have sections like `# Key Facts`, `# Important Dates`, `# Recurring Themes`
+
+### Part C: Wire up "Promote to Long-term" button
+
+Currently the button exists but does nothing. Make it:
+
+1. Take the entire Today content (or selected text if we can get a selection ref -- textarea selection is straightforward)
+2. Append it to the Long-term buffer with a date header (`## Promoted from YYYY-MM-DD`)
+3. Mark both buffers dirty so the user can review and Save
+
+### Part D: QMD awareness in Config/Health panel (informational only)
+
+Add a small "Memory Backend" section in the HealthPanel or ConfigPage that:
+
+- Shows current backend (default: "sqlite")
+- If QMD is configured, shows "qmd"
+- A note explaining: "This affects how the agent searches memory, not what's stored"
+- This reads from a new optional Control API endpoint `GET /api/memory/status` -- if the endpoint doesn't exist yet on your Mac mini, the UI gracefully shows "Unknown" with guidance
+
+This is informational only. No toggle to switch backends from the UI (that's a later feature).
+
+## Technical Details
+
+### Files to modify
 
 | File | Change |
 |------|--------|
-| `src/lib/api.ts` | Update `getAgentFile` with NULL fallback query; update `saveAgentFile` to write to the correct row |
-| `changes.md` | Log the fix |
+| `scripts/brain-doc-sync.mjs` | Add `memory_today` sync with date-rolling logic |
+| `src/components/agent-tabs/MemoryEditor.tsx` | Empty state UX, seed template, promote button, textarea ref for selection |
+| `src/components/settings/HealthPanel.tsx` | Add memory backend status section |
+| `src/lib/api.ts` | Add `getMemoryBackendStatus()` function (calls Control API, graceful fallback) |
+| `server/index.mjs` | Add `GET /api/memory/status` endpoint that reads OpenClaw config |
+| `changes.md` | Document all changes |
 
-## Technical Detail
+### brain-doc-sync.mjs changes
 
-In `getAgentFile`, replace the single query:
-```typescript
-// BEFORE: never matches NULL rows
-.eq('agent_key', agentId)
+The daily memory file path changes every day. Instead of a static DOCS array entry, use a function:
 
-// AFTER: try agent-specific first, then global
-const { data } = await supabase
-  .from('brain_docs')
-  .select('content,updated_at,agent_key')
-  .eq('project_id', projectId)
-  .eq('doc_type', type)
-  .in('agent_key', [agentId])  // agent-specific
-  .maybeSingle();
-
-// If not found, try global
-if (!data) {
-  const { data: global } = await supabase
-    .from('brain_docs')
-    .select('content,updated_at,agent_key')
-    .eq('project_id', projectId)
-    .eq('doc_type', type)
-    .is('agent_key', null)
-    .maybeSingle();
-  // use global if found
+```text
+function getTodayMemoryPath() {
+  const today = new Date().toISOString().slice(0, 10);
+  return join(WORKSPACE, 'memory', `${today}.md`);
 }
 ```
 
-In `saveAgentFile`, for global doc types, check if a global row exists and save to it (using `.is('agent_key', null)` in the upsert) so brain-doc-sync sees the change.
+On each poll cycle, recalculate the path and sync. The `doc_type` stays `memory_today` with `agent_key = NULL`. Previous days' files are not synced (they become part of long-term memory or are searchable via QMD).
 
-## What this means for you
-- After this fix, opening Trunks' Soul tab will show the actual SOUL.md content
-- Editing and saving will write back to the same row the sync script watches
-- Changes will flow: Dashboard save -> Supabase (agent_key=NULL) -> brain-doc-sync -> local file on Mac mini
-- No changes needed on your Mac mini or to brain-doc-sync
+### MemoryEditor.tsx changes
+
+- Add a `textareaRef` for the Today tab to support text selection for Promote
+- Empty state component when `content.trim() === ''` on the Long-term tab
+- Seed template button inserts content via `setFileContent(longKey, TEMPLATE)`
+- Promote button: reads Today content, appends to Long-term with date header
+
+### server/index.mjs - new endpoint
+
+```text
+GET /api/memory/status
+
+Response:
+{
+  backend: "sqlite" | "qmd",
+  qmdConfigured: boolean,
+  qmdCliFound: boolean
+}
+```
+
+Reads from `~/.openclaw/openclaw.json` if it exists, checks `which qmd` for CLI availability.
+
+### HealthPanel.tsx addition
+
+A small card/section below the existing connectivity panel showing:
+- Memory backend: sqlite/qmd/unknown
+- QMD installed: yes/no/unknown
+- Explanatory text about what this means
+
