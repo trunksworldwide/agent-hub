@@ -267,7 +267,7 @@ export function AgentsPage() {
 
       {/* Agent grid */}
       <div className="flex-1 overflow-auto p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl">
           {agents.map((agent) => (
             <button
               key={agent.id}
@@ -278,11 +278,11 @@ export function AgentsPage() {
                 agent.status === 'working' && 'agent-card-working'
               )}
             >
-              <div className="flex items-start gap-3">
-                <span className="text-3xl">{agent.avatar || '🤖'}</span>
+              <div className="flex items-start gap-4">
+                <span className="text-4xl mt-0.5">{agent.avatar || '🤖'}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium truncate">{agent.name}</span>
+                    <span className="text-base font-semibold">{agent.name}</span>
                     <StatusTooltip
                       status={agent.status}
                       statusState={agent.statusState}
@@ -291,7 +291,7 @@ export function AgentsPage() {
                     >
                       <span
                         className={cn(
-                          'w-2.5 h-2.5 rounded-full cursor-help shrink-0',
+                          'w-3 h-3 rounded-full cursor-help shrink-0',
                           agent.status === 'working'
                             ? 'status-dot-working'
                             : agent.status === 'idle'
@@ -302,10 +302,10 @@ export function AgentsPage() {
                       />
                     </StatusTooltip>
                   </div>
-                  <p className="text-sm text-muted-foreground truncate mt-0.5">
+                  <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
                     {agent.role || 'Agent'}
                   </p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                     <span>{agent.skillCount} skills</span>
                     <span>·</span>
                     <span>Seen {formatSeenLabel(agent)}</span>

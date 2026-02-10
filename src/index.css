@@ -153,14 +153,14 @@
   }
   
   .agent-card {
-    @apply p-3 rounded-lg cursor-pointer transition-all border border-transparent;
-    @apply hover:bg-accent hover:border-border;
+    @apply p-5 rounded-xl cursor-pointer transition-all border border-border bg-card shadow-sm;
+    @apply hover:shadow-md hover:border-primary/40;
     position: relative;
     overflow: hidden;
   }
   
   .agent-card-active {
-    @apply bg-accent border-primary;
+    @apply bg-accent border-primary shadow-md;
   }
 
   /* Working agent beam animation */
