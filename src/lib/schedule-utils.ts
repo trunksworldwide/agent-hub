@@ -4,6 +4,11 @@ export type FrequencyType =
   | 'every-5' 
   | 'every-15' 
   | 'every-30' 
+  | 'every-60'
+  | 'every-120'
+  | 'every-240'
+  | 'every-480'
+  | 'every-720'
   | 'hourly' 
   | 'daily' 
   | 'weekdays' 
@@ -32,7 +37,12 @@ export const SCHEDULE_PRESETS: SchedulePreset[] = [
   { id: 'every-5', label: 'Every 5 minutes', kind: 'every', expr: '300000' },
   { id: 'every-15', label: 'Every 15 minutes', kind: 'every', expr: '900000' },
   { id: 'every-30', label: 'Every 30 minutes', kind: 'every', expr: '1800000' },
-  { id: 'hourly', label: 'Hourly', kind: 'cron', expr: '0 * * * *' },
+  { id: 'every-60', label: 'Every 1 hour', kind: 'every', expr: '3600000' },
+  { id: 'every-120', label: 'Every 2 hours', kind: 'every', expr: '7200000' },
+  { id: 'every-240', label: 'Every 4 hours', kind: 'every', expr: '14400000' },
+  { id: 'every-480', label: 'Every 8 hours', kind: 'every', expr: '28800000' },
+  { id: 'every-720', label: 'Every 12 hours', kind: 'every', expr: '43200000' },
+  { id: 'hourly', label: 'Hourly (on the hour)', kind: 'cron', expr: '0 * * * *' },
   { id: 'daily', label: 'Daily at...', kind: 'cron', requiresTime: true },
   { id: 'weekdays', label: 'Weekdays at...', kind: 'cron', requiresTime: true },
   { id: 'weekly', label: 'Weekly on...', kind: 'cron', requiresTime: true, requiresDays: true },
@@ -99,8 +109,13 @@ export function parseScheduleToConfig(
     if (ms === 300000) return { frequency: 'every-5', tz: tz || undefined };
     if (ms === 900000) return { frequency: 'every-15', tz: tz || undefined };
     if (ms === 1800000) return { frequency: 'every-30', tz: tz || undefined };
-    // Default to every-15 for unknown intervals
-    return { frequency: 'every-15', tz: tz || undefined };
+    if (ms === 3600000) return { frequency: 'every-60', tz: tz || undefined };
+    if (ms === 7200000) return { frequency: 'every-120', tz: tz || undefined };
+    if (ms === 14400000) return { frequency: 'every-240', tz: tz || undefined };
+    if (ms === 28800000) return { frequency: 'every-480', tz: tz || undefined };
+    if (ms === 43200000) return { frequency: 'every-720', tz: tz || undefined };
+    // Unknown interval: treat as custom so we don't silently change it
+    return { frequency: 'custom', cronExpr: expr, tz: tz || undefined };
   }
 
   // Handle cron expressions
