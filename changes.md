@@ -1,3 +1,6 @@
+### Fix cron edit: --cron vs --every schedule kind detection
+- **Bug**: Editing a job title on an interval-based job (`every 3600000`) would send `--cron "3600000"` to the executor, which fails with `isolated cron jobs require payload.kind="agentTurn"`. The server now auto-detects numeric-only schedules as `every` kind, and the frontend sends `scheduleKind` explicitly. Schedule is also only included in the edit payload when actually changed.
+
 ### Cron edit persistence: offline patch processing + immediate mirror upsert
 - **`scripts/cron-mirror.mjs`**: Added `processPatchRequests()` — polls `cron_job_patch_requests` for queued patches and applies them via `openclaw cron edit` CLI (name → `--name`, instructions → `--system-event`, schedule → `--cron`/`--every`, enabled → `--enable`/`--disable`). Runs on 10s interval. Added to stuck-request watchdog.
 - **`server/index.mjs`**: After a successful direct edit via `/api/cron/:jobId/edit`, the server now best-effort upserts changed fields (name, instructions, enabled) into `cron_mirror` so the UI updates instantly via realtime instead of waiting up to 60s.

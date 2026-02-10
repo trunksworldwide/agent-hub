@@ -1036,11 +1036,17 @@ export function CronPage() {
       
       if (controlApiConnected) {
         // Direct edit via Control API
-        await editCronJob(editingJob.jobId, {
+        const editPayload: Record<string, any> = {
           name: editName,
-          schedule: editSchedule,
           instructions: encodedInstructions,
-        });
+        };
+        // Only include schedule if it changed, and include the kind so the server
+        // knows whether to use --cron or --every
+        if (editSchedule && editSchedule !== editingJob.scheduleExpr) {
+          editPayload.schedule = editSchedule;
+          editPayload.scheduleKind = editingJob.scheduleKind || (/^\d+$/.test(editSchedule) ? 'every' : 'cron');
+        }
+        await editCronJob(editingJob.jobId, editPayload);
         toast({
           title: 'Job updated',
           description: `${editingJob.name} saved.`,
