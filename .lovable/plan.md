@@ -1,77 +1,120 @@
 
-# Wire Up Cron Job Edit Persistence (Two Missing Pieces)
 
-## What already works
+# Updated Plan: Agent Provisioning (with fixes applied)
 
-The edit dialog, Control API endpoint, queue fallback, optimistic UI, and realtime subscriptions are all implemented. You can already open a job, change the title/instructions, and save — it reaches the executor in direct mode.
+## What's already done (no work needed)
 
-## What's missing
+- `brain_docs` unique constraint is already `(project_id, agent_key, doc_type)` -- the migration exists and upserts already use the correct conflict target. No schema fix needed here.
+- `createAgent()` already creates Supabase rows (agents, agent_status, brain_docs SOUL) and uses agent_key-scoped upserts.
+- Agent file read/write endpoints exist at `/api/agents/:agentKey/files/:type` -- but hardcoded to reject anything except `trunks`.
 
-Two backend gaps prevent edits from fully persisting and syncing:
+## Changes
 
-### 1. Offline patch processing in cron-mirror worker
+### 1. Migration: add columns to `agents` table
 
-**File:** `scripts/cron-mirror.mjs`
+Add two new columns:
 
-The worker processes run requests and delete requests, but has no handler for `cron_job_patch_requests`. When the Control API is offline and the dashboard queues a patch (name, instructions, schedule, enabled, agent, intent), nothing ever picks it up.
+| Column | Type | Default | Purpose |
+|--------|------|---------|---------|
+| `agent_id_short` | text | NULL | The OpenClaw agentId (e.g. `ricky`) -- used everywhere |
+| `workspace_path` | text | NULL | Absolute path to agent workspace on Mac mini |
+| `provisioned` | boolean | false | Whether the agent is live on the executor |
 
-**Add `processPatchRequests()` function** that:
-- Queries `cron_job_patch_requests` for `status = 'queued'` rows matching the project
-- For each request, reads `patch_json` and builds `openclaw cron edit <jobId>` CLI args:
-  - `patch.name` maps to `--name`
-  - `patch.instructions` maps to `--system-event`
-  - `patch.scheduleExpr` maps to `--cron` (for cron kind) or `--every` (for interval kind)
-  - `patch.enabled` maps to `--enable` / `--disable`
-- Marks the request `running`, then `done` or `error` with result
-- Runs on a 10-second interval (same as run/delete processing)
+### 2. New table: `agent_provision_requests`
 
-Also add patch requests to the existing `failStuckRequests` watchdog so stale patches don't sit in "queued" forever.
+Same queue pattern as `cron_run_requests` / `cron_delete_requests`.
 
-### 2. Immediate mirror upsert after direct edit
+Columns: id, project_id, agent_key, agent_id_short, display_name, emoji, role_short, status (queued/running/done/error), result (jsonb), requested_at, picked_up_at, completed_at.
 
-**File:** `server/index.mjs` (the `/api/cron/:jobId/edit` handler, ~line 931-968)
+RLS: open anon read/insert/update (same as other request tables).
 
-After the executor edit succeeds, the server currently just returns `{ ok: true }`. The Supabase mirror won't update until the next 60-second mirror cycle.
+### 3. Control API: agent provisioning endpoint (server/index.mjs)
 
-**Add a best-effort `cron_mirror` upsert** immediately after the successful edit:
-- Upsert the changed fields (name, instructions) into `cron_mirror` for the matching `project_id` + `job_id`
-- This is best-effort (wrapped in try/catch) so it doesn't break the response if Supabase is unavailable
-- The UI sees the change instantly via realtime subscription instead of waiting up to 60 seconds
+**POST `/api/agents/provision`**
 
-### 3. Log to changes.md
+1. Derive `agentIdShort` from agent_key (split on `:`, take index 1)
+2. Set workspace path: `~/.openclaw/workspace-<agentIdShort>`
+3. Run `openclaw agents add <agentIdShort> --workspace <path>`
+4. Run `openclaw agents set-identity --agent <agentIdShort> --name "<name>" --emoji "<emoji>"`
+5. Seed SOUL.md, USER.md, MEMORY.md into the workspace directory on disk
+6. Best-effort: update Supabase `agents` row with `provisioned=true`, `agent_id_short`, `workspace_path`
+7. Best-effort: write agent-scoped brain_docs rows to Supabase
+8. Return `{ ok: true, agentId, workspaceDir }`
 
-Document both additions.
+**GET `/api/agents/runtime`** -- runs `openclaw agents list --json` and returns the result.
 
-## Technical detail
+### 4. Fix agent file endpoints to support any agent (server/index.mjs)
 
-### Patch processing function (cron-mirror.mjs)
-
-```text
-processPatchRequests():
-  1. SELECT from cron_job_patch_requests WHERE status='queued', project_id=PROJECT_ID, LIMIT 5
-  2. For each request:
-     a. UPDATE status='running'
-     b. Read patch_json, build CLI args
-     c. Run: openclaw cron edit <jobId> --name "..." --system-event "..." ...
-     d. UPDATE status='done'/'error' with result
-  3. Return count processed
-```
-
-Interval: `setInterval(processPatchRequests, 10_000)`
-
-### Mirror upsert after direct edit (server/index.mjs)
+Current code at the `/api/agents/:agentKey/files/:type` handler:
 
 ```text
-After execExecutor(cmdArgs) succeeds:
-  1. Build partial upsert object from body fields
-  2. supabase.from('cron_mirror').update(partial).eq('project_id', projectId).eq('job_id', jobId)
-  3. Catch and log errors (non-blocking)
+if (agentId !== 'trunks') return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
+const fp = filePathFor(workspace, type);
 ```
 
-### Files to modify
+Change to:
+1. If agentKey is `trunks`, use the project workspace (existing behavior)
+2. Otherwise, look up `workspace_path` from Supabase `agents` table for that agent_key
+3. If no workspace_path found, return 404 with helpful error
+4. Use that workspace_path with `filePathFor()` for reads and writes
+5. On POST (write), also best-effort mirror to Supabase `brain_docs` with correct `agent_key`
 
-| File | Change |
+This is the key change that makes dashboard doc editing work for any agent immediately, without needing brain-doc-sync changes.
+
+### 5. brain-doc-sync: no changes (approach B)
+
+brain-doc-sync remains global-only (syncs the primary workspace). Agent-specific doc sync is handled by:
+- Control API direct writes (dashboard saves go to disk + Supabase)
+- Provisioning seeds initial files
+
+Multi-agent brain-doc-sync can be added later as a separate enhancement.
+
+### 6. Dashboard: createAgent() enhanced (src/lib/api.ts)
+
+After creating Supabase rows (existing), add:
+
+1. Derive `agentIdShort` and store it on the agents row
+2. Try `POST /api/agents/provision` via Control API
+3. If Control API unreachable, insert row into `agent_provision_requests` (queue fallback)
+4. Either way, agent appears immediately in dashboard
+
+### 7. Dashboard: AgentsPage.tsx -- provisioning badge
+
+- Read `provisioned` from agent data
+- Show a small "Provisioning..." badge on cards where `provisioned === false`
+- Badge disappears via realtime update when provisioning completes
+
+### 8. Offline provisioning worker (scripts/cron-mirror.mjs)
+
+Add `processProvisionRequests()` to the existing worker loop:
+1. Poll `agent_provision_requests` for `status = 'queued'`, limit 3
+2. Mark `running`, execute same provisioning steps as the Control API endpoint
+3. Mark `done` or `error`
+4. Update `agents.provisioned = true` on success
+5. Add to `failStuckRequests` watchdog
+
+Interval: every 10 seconds.
+
+### 9. Remove job intent from edit dialog
+
+Already handled in the previous change -- job intent field was removed from the cron edit UI.
+
+## Files to create/modify
+
+| File | Action |
 |------|--------|
-| `scripts/cron-mirror.mjs` | Add `processPatchRequests()` + wire into main loop + add to stuck watchdog |
-| `server/index.mjs` | Add best-effort mirror upsert after successful direct edit |
-| `changes.md` | Log both changes |
+| `supabase/migrations/xxx_agent_provisioning.sql` | New table `agent_provision_requests`, add columns to `agents` |
+| `server/index.mjs` | Add `/api/agents/provision`, `/api/agents/runtime`, fix file endpoints for multi-agent |
+| `scripts/cron-mirror.mjs` | Add `processProvisionRequests()` |
+| `src/lib/api.ts` | Enhance `createAgent()` with provisioning + queue fallback, add fields to Agent type |
+| `src/components/pages/AgentsPage.tsx` | Show provisioning badge |
+| `src/integrations/supabase/types.ts` | Add new table type |
+| `changes.md` | Document all changes |
+
+## What this intentionally skips
+
+- No per-agent tool restrictions (global tools for all)
+- No AI-generated docs (template-based seeding only; AI generation is a follow-up)
+- No brain-doc-sync multi-agent support (approach B: Control API handles it)
+- No automatic cron scheduling for new agents
+
