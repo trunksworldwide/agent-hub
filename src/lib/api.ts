@@ -1243,34 +1243,22 @@ export async function generateAgentDocs(agentKey: string): Promise<{
       return { ok: false, error: 'Agent has no purpose_text set. Please add a purpose first.' };
     }
 
-    // Call the edge function
-    const supabaseUrl = 'https://bsqeddnaiojvvckpdvcu.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzcWVkZG5haW9qdnZja3BkdmN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5ODQ3MjEsImV4cCI6MjA4NTU2MDcyMX0.9WUEYU5PshM6UbJbKTogIXg8aIpaez_MfVW98EaionY';
-
-    const res = await fetch(`${supabaseUrl}/functions/v1/generate-agent-docs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-      },
-      body: JSON.stringify({
+    // Call the edge function via the configured Supabase client (no hardcoded URL/key)
+    const { data: result, error: fnError } = await supabase.functions.invoke('generate-agent-docs', {
+      body: {
         agentName,
         purposeText,
         roleShort,
         globalSoul: globalSoul?.content || '',
         globalUser: globalUser?.content || '',
         projectName,
-      }),
+      },
     });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Edge function error ${res.status}: ${errText}`);
-    }
+    if (fnError) throw fnError;
 
-    const result = await res.json();
-    if (!result.success) {
-      throw new Error(result.error || result.reason || 'Generation failed');
+    if (!result?.success) {
+      throw new Error(result?.error || result?.reason || 'Generation failed');
     }
 
     return {
