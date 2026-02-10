@@ -1,82 +1,76 @@
 
 
-# Persist Control API URL in Supabase
+# Fix: Brain Doc Editors Not Connected to Supabase Data
 
-## What this solves
-Right now, the Control API URL only lives in `localStorage`. When you open a new browser, incognito window, or clear your cache, it's gone and you have to paste it again. This change stores it in Supabase so it persists across all sessions and devices.
+## Root Cause
 
-## Approach
+There's a mismatch between how the sync script stores docs and how the editors read/write them:
 
-### Step 1: Create a `project_settings` table in Supabase
+- **brain-doc-sync.mjs** (Mac mini) stores SOUL.md, USER.md, MEMORY.md with `agent_key = NULL` (project-global docs)
+- **SoulEditor / UserEditor / MemoryEditor** query with `.eq('agent_key', 'agent:main:main')` -- which never matches NULL rows in SQL
+- **saveAgentFile** writes with `agent_key = 'agent:main:main'`, creating a separate row that the sync script ignores
 
-A simple key-value settings table scoped to projects:
+Result: editors always see blank content, and any saves from the dashboard never reach your Mac mini.
 
-- `id` (uuid, PK, default `gen_random_uuid()`)
-- `project_id` (text, not null)
-- `key` (text, not null)
-- `value` (text, not null)
-- `updated_at` (timestamptz, default `now()`)
-- Unique constraint on `(project_id, key)`
+## Fix Strategy
 
-RLS: open read/write for anon (matching existing patterns in the project).
+Update `getAgentFile` and `saveAgentFile` in `src/lib/api.ts` to handle the global-doc fallback:
 
-### Step 2: Update `src/lib/control-api.ts`
+### Reading (`getAgentFile`)
+1. First, try to find an agent-specific row (`.eq('agent_key', agentId)`)
+2. If not found, fall back to the global row (`.is('agent_key', null)`)
+3. Track which row was found so saves go to the right place
 
-Add two new functions:
-- `fetchControlApiUrlFromSupabase(projectId)` -- reads the `control_api_base_url` setting
-- `saveControlApiUrlToSupabase(projectId, url)` -- upserts the setting
+### Writing (`saveAgentFile`)
+1. For doc types that have a global row (`soul`, `user`, `memory_long`, `agents`), check if a global row exists
+2. If the content was loaded from the global row, save back to the global row (so brain-doc-sync picks it up)
+3. If the agent has its own dedicated row, save to that
 
-The priority chain stays: **localStorage -> Supabase -> env var -> empty string**
+This ensures:
+- Trunks (agent:main:main) sees the SOUL.md content that brain-doc-sync put there
+- Saves from the dashboard write to the same row, so changes sync back to the Mac mini
+- Future per-agent overrides still work (agent-specific rows take priority)
 
-### Step 3: Update the Zustand store (`src/lib/store.ts`)
+## Files to Modify
 
-- Add an `initControlApiUrl()` async action that:
-  1. Checks localStorage (instant)
-  2. If empty, fetches from Supabase
-  3. If found in Supabase, sets it in both the store and localStorage (for next instant load)
-  4. Falls back to env var
-
-### Step 4: Call `initControlApiUrl()` on app startup
-
-Add a small `useEffect` in `AppShell` (or a dedicated hook) that calls this once on mount with the current `selectedProjectId`.
-
-### Step 5: Update the HealthPanel save flow
-
-When the user clicks **Save**:
-- Write to localStorage (instant, existing behavior)
-- Also upsert to Supabase `project_settings` (so it persists everywhere)
-
-When the user clicks **Clear**:
-- Remove from localStorage
-- Delete/clear the Supabase setting
-- Fall back to env var
-
-### Step 6: Update `changes.md`
-
-## Files to create/modify
-
-| File | Action |
+| File | Change |
 |------|--------|
-| `supabase/migrations/` (new) | Create `project_settings` table |
-| `src/lib/control-api.ts` | Add Supabase read/write functions |
-| `src/lib/store.ts` | Add `initControlApiUrl` action |
-| `src/components/layout/AppShell.tsx` | Call init on mount |
-| `src/components/settings/HealthPanel.tsx` | Save/Clear also write to Supabase |
-| `changes.md` | Log the change |
+| `src/lib/api.ts` | Update `getAgentFile` with NULL fallback query; update `saveAgentFile` to write to the correct row |
+| `changes.md` | Log the fix |
 
-## Startup flow
+## Technical Detail
 
-```text
-App loads
-  -> localStorage has URL? -> use it (instant)
-  -> no? -> fetch from Supabase project_settings
-     -> found? -> use it + cache to localStorage
-     -> not found? -> use VITE_API_BASE_URL or empty
+In `getAgentFile`, replace the single query:
+```typescript
+// BEFORE: never matches NULL rows
+.eq('agent_key', agentId)
+
+// AFTER: try agent-specific first, then global
+const { data } = await supabase
+  .from('brain_docs')
+  .select('content,updated_at,agent_key')
+  .eq('project_id', projectId)
+  .eq('doc_type', type)
+  .in('agent_key', [agentId])  // agent-specific
+  .maybeSingle();
+
+// If not found, try global
+if (!data) {
+  const { data: global } = await supabase
+    .from('brain_docs')
+    .select('content,updated_at,agent_key')
+    .eq('project_id', projectId)
+    .eq('doc_type', type)
+    .is('agent_key', null)
+    .maybeSingle();
+  // use global if found
+}
 ```
 
-## What stays the same
-- The existing `getControlApiUrl()` / `setControlApiUrl()` localStorage functions still work as a fast cache
-- The store shape doesn't change -- `controlApiUrl` is still a string
-- The HealthPanel UI looks the same (URL input, Test, Save, Clear)
-- No breaking changes to any other components that read `controlApiUrl` from the store
+In `saveAgentFile`, for global doc types, check if a global row exists and save to it (using `.is('agent_key', null)` in the upsert) so brain-doc-sync sees the change.
 
+## What this means for you
+- After this fix, opening Trunks' Soul tab will show the actual SOUL.md content
+- Editing and saving will write back to the same row the sync script watches
+- Changes will flow: Dashboard save -> Supabase (agent_key=NULL) -> brain-doc-sync -> local file on Mac mini
+- No changes needed on your Mac mini or to brain-doc-sync
