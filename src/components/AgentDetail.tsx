@@ -26,7 +26,7 @@ const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[
 ];
 
 export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
-  const { selectedAgentId, activeAgentTab, setActiveAgentTab, files, selectedProjectId } = useClawdOffice();
+  const { selectedAgentId, setSelectedAgentId, activeAgentTab, setActiveAgentTab, files, selectedProjectId } = useClawdOffice();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
@@ -102,7 +102,9 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
   const renderTabContent = () => {
     switch (activeAgentTab) {
       case 'overview':
-        return <AgentOverview agent={agent} onRefresh={loadAgents} />;
+        return <AgentOverview agent={agent} onRefresh={loadAgents} onDeleted={() => {
+          setSelectedAgentId(null);
+        }} />;
       case 'soul':
         return <SoulEditor />;
       case 'user':
