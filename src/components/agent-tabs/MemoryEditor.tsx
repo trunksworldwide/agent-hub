@@ -6,6 +6,7 @@ import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useBrainDocSubscription } from '@/hooks/useBrainDocSubscription';
+import { DocSourceBanner } from './DocSourceBanner';
 
 const MEMORY_TEMPLATE = `# Long-term Memory
 
@@ -275,6 +276,8 @@ export function MemoryEditor() {
             </Button>
           </div>
         </div>
+        {/* Doc source indicator */}
+        <DocSourceBanner source={longState?.source || 'unknown'} docType="memory_long" onOverrideCreated={() => void load()} />
 
         <TabsContent value="long" className="flex-1 m-0 overflow-hidden">
           {isLongTermEmpty ? (
