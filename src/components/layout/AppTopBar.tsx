@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Menu, Plus, Bell, RefreshCw, Clock } from 'lucide-react';
+import { Menu, Plus, Bell, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -13,10 +13,10 @@ import {
   type GlobalActivityItem, 
   type Project 
 } from '@/lib/api';
-import { hasSupabase } from '@/lib/supabase';
 import { setSelectedProjectId as persistSelectedProjectId } from '@/lib/project';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { ConnectionStatus } from '@/components/ConnectionStatus';
 
 interface AppTopBarProps {
   onMenuClick?: () => void;
@@ -36,15 +36,6 @@ export function AppTopBar({ onMenuClick }: AppTopBarProps) {
   const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
   const [globalActivityOpen, setGlobalActivityOpen] = useState(false);
 
-  // Connection status
-  const connectionStatus = useMemo(() => {
-    const hasSupabaseConnection = hasSupabase();
-    const hasApiConnection = Boolean(import.meta.env.VITE_API_BASE_URL);
-    
-    if (hasSupabaseConnection && hasApiConnection) return 'connected';
-    if (hasSupabaseConnection || hasApiConnection) return 'partial';
-    return 'offline';
-  }, []);
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => setProjects([]));
@@ -148,15 +139,7 @@ export function AppTopBar({ onMenuClick }: AppTopBarProps) {
         <div className="flex items-center gap-2">
           <span className="text-xl">🦞</span>
           <span className="font-semibold hidden sm:inline">ClawdOS</span>
-          <span 
-            className={cn(
-              "w-2 h-2 rounded-full",
-              connectionStatus === 'connected' && "bg-green-500",
-              connectionStatus === 'partial' && "bg-yellow-500",
-              connectionStatus === 'offline' && "bg-red-500"
-            )}
-            title={`Connection: ${connectionStatus}`}
-          />
+          <ConnectionStatus />
         </div>
       </div>
 

@@ -1,3 +1,9 @@
+### Phase 0: Mission Control Foundation
+- **Realtime publication fix**: Added 15 tables to `supabase_realtime` publication. Previously only `brain_docs`, `cron_mirror`, and `cron_run_requests` were publishing — all other realtime subscriptions were silently receiving nothing.
+- **Labs feature flag system**: New `useLabsFeature(key)` hook reads from `project_settings` table (`labs_features` JSON). New features can be toggled per-project. Includes `getLabsFlags()` and `setLabsFlags()` for the Settings page.
+- **Mode Indicator**: Replaced the static connection dot in the top bar with a `ConnectionStatus` component that polls the Control API every 30s and shows **Live** (green), **Backup** (amber), or **Offline** (red) with tooltip details.
+- **Realtime subscription**: Added `skills_mirror` to `subscribeToProjectRealtime` for future Skills usability work.
+
 ### AI-powered doc generation + disk sync
 - **Database**: Added `description` column to `agents` table for AI-generated card blurbs.
 - **New edge function `generate-agent-docs`**: Calls OpenAI (gpt-4o) with tool calling to generate tailored SOUL.md, USER.md, MEMORY.md, and a short description from the agent's purpose and global templates. Enforces line-count constraints.
