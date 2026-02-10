@@ -960,7 +960,7 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
 
     // Determine whether to save to the global row (agent_key=NULL) or the agent-specific row.
     // Global doc types are the ones brain-doc-sync manages with agent_key=NULL.
-    const globalDocTypes: AgentFile['type'][] = ['soul', 'user', 'memory_long', 'agents'];
+    const globalDocTypes: AgentFile['type'][] = ['soul', 'user', 'memory_long', 'memory_today', 'agents'];
     let saveToGlobal = false;
 
     if (globalDocTypes.includes(type)) {
@@ -1057,6 +1057,26 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
   await delay(300);
   console.log(`[API] Saving ${type} for agent ${agentId}`);
   return { ok: true };
+}
+
+// ============= Memory Backend Status (QMD awareness) =============
+
+export interface MemoryBackendStatus {
+  backend: 'sqlite' | 'qmd';
+  qmdConfigured: boolean;
+  qmdCliFound: boolean;
+}
+
+export async function getMemoryBackendStatus(): Promise<MemoryBackendStatus> {
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
+    return { backend: 'sqlite', qmdConfigured: false, qmdCliFound: false };
+  }
+  try {
+    return await requestJson<MemoryBackendStatus>('/api/memory/status');
+  } catch {
+    return { backend: 'sqlite', qmdConfigured: false, qmdCliFound: false };
+  }
 }
 
 export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {

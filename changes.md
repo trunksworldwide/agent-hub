@@ -1,3 +1,11 @@
+### Memory: daily sync + empty state UX + promote button + QMD awareness
+- **brain-doc-sync.mjs**: Now syncs daily memory file (`memory/YYYY-MM-DD.md`) as `memory_today` with date-rolling logic. Previous days are not synced.
+- **MemoryEditor**: Empty long-term memory shows friendly empty state with "Seed template" button. Promote button appends today's content (or text selection) to long-term with date header.
+- **saveAgentFile**: `memory_today` now included in global doc types for correct NULL-key saves.
+- **HealthPanel**: New "Memory Backend" section shows current backend (sqlite/qmd), QMD CLI availability, and explanatory text.
+- **server/index.mjs**: New `GET /api/memory/status` endpoint reads `~/.openclaw/openclaw.json` and checks `qmd` CLI availability.
+- **api.ts**: Added `getMemoryBackendStatus()` with graceful fallback when Control API unavailable.
+
 ### Fix: Brain doc editors now read/write global rows (NULL agent_key fallback)
 - `getAgentFile()` now tries agent-specific row first, then falls back to the global row (`agent_key IS NULL`) written by `brain-doc-sync.mjs`.
 - `saveAgentFile()` detects when a global row exists (and no agent-specific override) and updates it in-place, so changes flow back to the Mac mini via brain-doc-sync.
