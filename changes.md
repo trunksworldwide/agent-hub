@@ -1,3 +1,8 @@
+### Edit dialog: user-friendly schedule picker + remove job intent
+- **Edit dialog** now uses the same friendly preset selector as the Create dialog (Every 5 min, Every 1 hour, Daily at..., Weekly, Custom cron). No more raw cron expressions.
+- **Removed Job Intent** field from the edit dialog — intent is implicit in the instructions.
+- Schedule changes are properly tracked as dirty to avoid sending unchanged `--system-event` or `--cron` flags.
+
 ### Fix cron edit: --cron vs --every schedule kind detection
 - **Bug**: Editing a job title on an interval-based job (`every 3600000`) would send `--cron "3600000"` to the executor, which fails with `isolated cron jobs require payload.kind="agentTurn"`. The server now auto-detects numeric-only schedules as `every` kind, and the frontend sends `scheduleKind` explicitly. Schedule is also only included in the edit payload when actually changed.
 

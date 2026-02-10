@@ -466,7 +466,16 @@ export function CronPage() {
   // Edit dialog state
   const [editingJob, setEditingJob] = useState<CronMirrorJob | null>(null);
   const [editName, setEditName] = useState('');
-  const [editSchedule, setEditSchedule] = useState('');
+  const [editFrequency, setEditFrequency] = useState<FrequencyType>('every-15');
+  const [editFrequencyOriginal, setEditFrequencyOriginal] = useState<FrequencyType>('every-15');
+  const [editTime, setEditTime] = useState('09:00');
+  const [editTimeOriginal, setEditTimeOriginal] = useState('09:00');
+  const [editDays, setEditDays] = useState<string[]>(['mon']);
+  const [editDaysOriginal, setEditDaysOriginal] = useState<string[]>(['mon']);
+  const [editCustomCron, setEditCustomCron] = useState('');
+  const [editCustomCronOriginal, setEditCustomCronOriginal] = useState('');
+  const [editTz, setEditTz] = useState('America/New_York');
+  const [editTzOriginal, setEditTzOriginal] = useState('America/New_York');
   const [editInstructions, setEditInstructions] = useState('');
   const [editInstructionsOriginal, setEditInstructionsOriginal] = useState('');
   const [editTargetAgent, setEditTargetAgent] = useState('');
@@ -1015,9 +1024,20 @@ export function CronPage() {
 
   // Open edit dialog - parse headers from instructions for agent/intent
   const openEdit = (job: CronMirrorJob) => {
-    setEditingJob(job);
+     setEditingJob(job);
     setEditName(job.name || '');
-    setEditSchedule(job.scheduleExpr || '');
+    // Parse schedule into friendly config
+    const schedConfig = parseScheduleToConfig(job.scheduleKind, job.scheduleExpr, job.tz);
+    setEditFrequency(schedConfig.frequency);
+    setEditFrequencyOriginal(schedConfig.frequency);
+    setEditTime(schedConfig.time || '09:00');
+    setEditTimeOriginal(schedConfig.time || '09:00');
+    setEditDays(schedConfig.days || ['mon']);
+    setEditDaysOriginal(schedConfig.days || ['mon']);
+    setEditCustomCron(schedConfig.cronExpr || '');
+    setEditCustomCronOriginal(schedConfig.cronExpr || '');
+    setEditTz(schedConfig.tz || job.tz || 'America/New_York');
+    setEditTzOriginal(schedConfig.tz || job.tz || 'America/New_York');
     // Parse instructions to get body without headers
     const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
     setEditInstructions(body);
@@ -1048,6 +1068,22 @@ export function CronPage() {
         editTargetAgent !== editTargetAgentOriginal ||
         editJobIntent !== editJobIntentOriginal;
       
+      // Convert friendly schedule config to expression
+      const editSchedConfig: ScheduleConfig = {
+        frequency: editFrequency,
+        time: editTime,
+        days: editDays,
+        cronExpr: editCustomCron,
+        tz: editTz,
+      };
+      const editSchedResult = configToScheduleExpression(editSchedConfig);
+      const scheduleChanged =
+        editFrequency !== editFrequencyOriginal ||
+        editTime !== editTimeOriginal ||
+        JSON.stringify(editDays) !== JSON.stringify(editDaysOriginal) ||
+        editCustomCron !== editCustomCronOriginal ||
+        editTz !== editTzOriginal;
+
       if (controlApiConnected) {
         // Direct edit via Control API — only send fields that actually changed
         const editPayload: Record<string, any> = {};
@@ -1057,10 +1093,9 @@ export function CronPage() {
         if (instructionsChanged) {
           editPayload.instructions = encodedInstructions;
         }
-        // Only include schedule if it changed
-        if (editSchedule && editSchedule !== editingJob.scheduleExpr) {
-          editPayload.schedule = editSchedule;
-          editPayload.scheduleKind = editingJob.scheduleKind || (/^\d+$/.test(editSchedule) ? 'every' : 'cron');
+        if (scheduleChanged) {
+          editPayload.schedule = editSchedResult.expr;
+          editPayload.scheduleKind = editSchedResult.kind;
         }
         // If nothing changed, skip the API call
         if (Object.keys(editPayload).length === 0) {
@@ -1076,8 +1111,9 @@ export function CronPage() {
         // Queue patch request for offline execution
         const result = await queueCronPatchRequest(editingJob.jobId, {
           name: editName,
-          scheduleExpr: editSchedule,
-          instructions: encodedInstructions,
+          scheduleExpr: scheduleChanged ? editSchedResult.expr : undefined,
+          scheduleKind: scheduleChanged ? editSchedResult.kind : undefined,
+          instructions: instructionsChanged ? encodedInstructions : undefined,
           targetAgentKey: editTargetAgent || undefined,
           jobIntent: editJobIntent || undefined,
         });
@@ -1088,6 +1124,7 @@ export function CronPage() {
           });
         } else {
           throw new Error(result.error || 'Failed to queue edit');
+
         }
       }
 
@@ -1488,9 +1525,105 @@ export function CronPage() {
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Job name" />
             </div>
 
+            {/* Schedule Frequency */}
             <div className="space-y-2">
-              <div className="text-sm font-medium">Schedule (cron expression)</div>
-              <Input value={editSchedule} onChange={(e) => setEditSchedule(e.target.value)} placeholder="*/30 * * * *" />
+              <label className="text-sm font-medium">Runs...</label>
+              <Select value={editFrequency} onValueChange={(v) => setEditFrequency(v as FrequencyType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {SCHEDULE_PRESETS.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Time Picker - for daily/weekdays/weekly */}
+            {(editFrequency === 'daily' || editFrequency === 'weekdays' || editFrequency === 'weekly') && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">At time</label>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="time"
+                    value={editTime}
+                    onChange={(e) => setEditTime(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Day Picker - for weekly */}
+            {editFrequency === 'weekly' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">On days</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAY_OPTIONS.map((day) => (
+                    <label
+                      key={day.id}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors",
+                        editDays.includes(day.id) 
+                          ? "bg-primary text-primary-foreground border-primary" 
+                          : "bg-muted/50 border-border hover:bg-muted"
+                      )}
+                    >
+                      <Checkbox
+                        checked={editDays.includes(day.id)}
+                        onCheckedChange={() => {
+                          setEditDays(prev => {
+                            if (prev.includes(day.id)) {
+                              if (prev.length === 1) return prev;
+                              return prev.filter(d => d !== day.id);
+                            }
+                            return [...prev, day.id];
+                          });
+                        }}
+                        className="sr-only"
+                      />
+                      <span className="text-sm">{day.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Cron Input */}
+            {editFrequency === 'custom' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Cron expression</label>
+                <Input
+                  value={editCustomCron}
+                  onChange={(e) => setEditCustomCron(e.target.value)}
+                  placeholder="0 9 * * *"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: minute hour day-of-month month day-of-week
+                </p>
+              </div>
+            )}
+
+            {/* Timezone */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Timezone</label>
+              <Select value={editTz} onValueChange={setEditTz}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {COMMON_TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.id} value={tz.id}>
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Target Agent */}
@@ -1510,26 +1643,6 @@ export function CronPage() {
                         <span>{agent.avatar || '🤖'}</span>
                         <span>{agent.name}</span>
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Job Intent */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Job Intent</label>
-              <Select value={editJobIntent} onValueChange={(v) => setEditJobIntent(v as JobIntent)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover">
-                  {JOB_INTENTS.map((intent) => (
-                    <SelectItem key={intent.id} value={intent.id}>
-                      <div className="flex flex-col">
-                        <span>{intent.label}</span>
-                        <span className="text-xs text-muted-foreground">{intent.description}</span>
-                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
