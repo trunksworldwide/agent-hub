@@ -1,73 +1,80 @@
 
 
-# Auto-refresh Brain Doc Editors via Supabase Realtime
+# Fix Schedule Interval Parsing and Add Hourly Interval Preset
 
-## The Problem
+## Problem
 
-The sync pipeline works: local file edit -> brain-doc-sync -> Supabase row updated. But the dashboard editors (Soul, User, Memory) only fetch data once on mount. They never listen for updates. So when your bot edits SOUL.md on the Mac mini, the dashboard stays stale until you manually click "Reload."
+Two issues cause schedule mismatches:
 
-## The Fix
+1. The schedule parser (`parseScheduleToConfig`) only recognizes 5, 15, and 30-minute intervals. Any other interval (like 1 hour) silently defaults to "Every 15 minutes." This is dangerous because opening the editor and clicking Apply would overwrite the real schedule.
 
-Subscribe to Supabase Realtime changes on the `brain_docs` table. When a row updates, automatically refresh the editor content -- but only if the user hasn't made unsaved edits (to avoid clobbering their work).
+2. There is no "Every 1 hour" interval-based preset. The existing "Hourly" preset uses cron (`0 * * * *`), but the executor creates jobs with `every: 3600000` (milliseconds), which is a different kind.
 
-## What Changes
+## Changes
 
-### 1. New hook: `src/hooks/useBrainDocSubscription.ts`
+### 1. Add interval presets for 1h, 2h, 4h, 8h, 12h
 
-A reusable hook that:
-- Subscribes to Realtime `UPDATE` events on `brain_docs` filtered by `project_id` and `doc_type`
-- When a change arrives:
-  - If the editor has NO unsaved changes (not dirty): silently update the content
-  - If the editor HAS unsaved changes: show a subtle toast "Remote update available" with a "Reload" action button (don't overwrite their work)
-- Cleans up the subscription on unmount
+**File:** `src/lib/schedule-utils.ts`
 
-### 2. Update `SoulEditor.tsx`
+- Add `'every-60' | 'every-120' | 'every-240' | 'every-480' | 'every-720'` to the `FrequencyType` union
+- Add corresponding entries to `SCHEDULE_PRESETS`:
+  - Every 1 hour = 3600000ms
+  - Every 2 hours = 7200000ms
+  - Every 4 hours = 14400000ms
+  - Every 8 hours = 28800000ms  
+  - Every 12 hours = 43200000ms
+- Rename the existing cron-based "Hourly" preset label to "Hourly (on the hour)" to distinguish it from "Every 1 hour"
 
-- Import and use the new hook
-- Pass in the file key, doc_type, and dirty state
-- The hook handles the rest
+### 2. Fix the fallback for unknown intervals
 
-### 3. Update `UserEditor.tsx`
+**File:** `src/lib/schedule-utils.ts` (in `parseScheduleToConfig`)
 
-- Same pattern as SoulEditor
+- Instead of defaulting unknown `every` values to `every-15`, fall back to `custom` with the raw expression
+- This prevents accidental overwrites
 
-### 4. Update `MemoryEditor.tsx`
+### 3. Improve `formatScheduleDisplay` robustness
 
-- Same pattern for both `memory_long` and `memory_today` tabs
+Already handles arbitrary ms values correctly (it does math). No change needed here.
 
-### 5. Update `changes.md`
+### 4. Update `changes.md`
+
+Log the fix.
 
 ## Technical Detail
 
-The hook implementation:
-
+Current broken code (line 97-104):
 ```
-useBrainDocSubscription({
-  projectId,
-  docType: 'soul',       // or 'user', 'memory_long', 'memory_today'
-  fileKey,
-  isDirty: fileState?.isDirty ?? false,
-  onUpdate: (newContent) => setFileOriginal(fileKey, newContent),
-})
+if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
+    const ms = parseInt(expr, 10);
+    if (ms === 300000) return { frequency: 'every-5', ... };
+    if (ms === 900000) return { frequency: 'every-15', ... };
+    if (ms === 1800000) return { frequency: 'every-30', ... };
+    // Default to every-15 for unknown intervals  <-- BUG
+    return { frequency: 'every-15', ... };
+}
 ```
 
-Inside the hook:
-- Uses `supabase.channel()` to subscribe to `postgres_changes` on `brain_docs`
-- Filters by `project_id` and matches on `doc_type` from the payload
-- Checks `agent_key` is NULL (global docs) or matches the current agent
-- If not dirty: calls `onUpdate(payload.new.content)` which resets the editor
-- If dirty: fires a toast with "Remote changes available -- click Reload to update"
-- Returns a cleanup function that removes the channel
+Fixed:
+```
+if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
+    const ms = parseInt(expr, 10);
+    if (ms === 300000) return { frequency: 'every-5', ... };
+    if (ms === 900000) return { frequency: 'every-15', ... };
+    if (ms === 1800000) return { frequency: 'every-30', ... };
+    if (ms === 3600000) return { frequency: 'every-60', ... };
+    if (ms === 7200000) return { frequency: 'every-120', ... };
+    if (ms === 14400000) return { frequency: 'every-240', ... };
+    if (ms === 28800000) return { frequency: 'every-480', ... };
+    if (ms === 43200000) return { frequency: 'every-720', ... };
+    // Unknown interval: treat as custom so we don't silently change it
+    return { frequency: 'custom', cronExpr: expr, tz: tz || undefined };
+}
+```
 
-This means: your bot edits SOUL.md -> brain-doc-sync pushes to Supabase -> Realtime fires -> dashboard editor updates instantly. No manual reload needed, ever.
-
-### Files to create/modify
+### Files to modify
 
 | File | Change |
 |------|--------|
-| `src/hooks/useBrainDocSubscription.ts` | New hook for Realtime subscription |
-| `src/components/agent-tabs/SoulEditor.tsx` | Add realtime subscription |
-| `src/components/agent-tabs/UserEditor.tsx` | Add realtime subscription |
-| `src/components/agent-tabs/MemoryEditor.tsx` | Add realtime subscription |
-| `changes.md` | Log the change |
+| `src/lib/schedule-utils.ts` | Add interval presets, fix fallback |
+| `changes.md` | Log the fix |
 
