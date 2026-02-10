@@ -1,3 +1,12 @@
+### Phase 1: Task Threads & Unified Timeline
+- **New table `task_events`**: Canonical timeline for all task activity (comments, status changes, outputs, agent updates, approval requests/resolutions). RLS enabled, added to `supabase_realtime` publication.
+- **API functions**: `getTaskEvents()`, `createTaskEvent()`, `resolveApproval()` in `api.ts`. New `TaskEvent`, `TaskEventType`, `CreateTaskEventInput` types.
+- **Unified timeline component**: `TaskTimeline.tsx` merges `task_events` with legacy `task_comments` and `task_outputs` into a single chronological thread. Includes realtime subscription for instant updates.
+- **Approval cards**: `approval_request` events render as structured cards with Approve/Reject buttons. Resolutions write `approval_resolved` events.
+- **Status change events**: Status changes from `TaskDetailSheet` now write `status_change` events to the timeline with `old_status`/`new_status` metadata.
+- **Data ownership**: All new writes go to `task_events`. Legacy comments/outputs still read for backward compatibility but no new data is written to old tables.
+- **TaskDetailSheet refactored**: Removed inline comments section, replaced with `TaskTimeline` component. Removed ~130 lines of comment state/handlers.
+
 ### Phase 0: Mission Control Foundation
 - **Realtime publication fix**: Added 15 tables to `supabase_realtime` publication. Previously only `brain_docs`, `cron_mirror`, and `cron_run_requests` were publishing — all other realtime subscriptions were silently receiving nothing.
 - **Labs feature flag system**: New `useLabsFeature(key)` hook reads from `project_settings` table (`labs_features` JSON). New features can be toggled per-project. Includes `getLabsFlags()` and `setLabsFlags()` for the Settings page.
