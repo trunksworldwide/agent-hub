@@ -1,107 +1,96 @@
 
 
-# Fix Memory Editor + Add Daily Memory Sync + QMD Awareness
+# Fix Memory + Improve Daily Memory Storage + QMD Clarification
 
-## What's Actually Wrong
+## What's happening now (confirmed by database query)
 
-Two separate issues, both now confirmed by looking at the database and sync scripts:
+| doc_type | agent_key | content_len | status |
+|----------|-----------|-------------|--------|
+| soul | NULL | 1,467 | Working |
+| user | NULL | 635 | Working |
+| agents | NULL | 7,768 | Working |
+| memory_long | NULL | **0** | Empty file on Mac mini |
+| memory_today | -- | **no row** | Never synced yet |
 
-### 1. Long-term memory (MEMORY.md) is blank because the file is blank
-The `brain_docs` row for `memory_long` exists (with `agent_key = NULL`) but has **0 bytes of content**. Your Mac mini's `MEMORY.md` file is genuinely empty. The dashboard is correctly showing "nothing" -- it's not a sync bug.
+- **memory_long is blank** because `MEMORY.md` on the Mac mini is genuinely 0 bytes. Not a bug -- the file is empty.
+- **memory_today has no row** because the sync script needs to be restarted on the Mac mini after the code update (or hasn't run yet with the new `memory_today` entry).
+- **QMD shows "No"** because QMD is not installed on your Mac mini. That's an accurate reading, not a bug. Once you install QMD (`npm i -g qmd` or however OpenClaw distributes it), it will show "Yes".
 
-### 2. Today's memory has NO sync path at all
-The `brain-doc-sync.mjs` script only syncs 4 files: `SOUL.md`, `AGENTS.md`, `USER.md`, `MEMORY.md`. Daily memory files (`memory/YYYY-MM-DD.md`) are **never pushed to Supabase**. There's no row for `memory_today` in the database. The Memory editor's "Today" tab will always be blank in the current architecture.
+## Changes to make
 
-## Plan
+### 1. Store daily memory as date-stamped entries (address overwrite concern)
 
-### Part A: Add daily memory sync to `brain-doc-sync.mjs`
+Your bot is right: a single `memory_today` row will lose yesterday's data at midnight. Change the approach:
 
-Extend the sync script to also sync today's memory file:
+- **doc_type**: Keep `memory_today` as the "latest/current day" rolling entry (for the editor to bind to)
+- **Add archival**: When the date rolls over during sync, before overwriting `memory_today`, copy the previous day's content to a new row with `doc_type = 'memory_day'` and store the date in a simple prefix in the content (e.g., first line `<!-- date: 2026-02-09 -->`)
+- This keeps the `brain_docs` schema unchanged -- no new columns needed
 
-- Add `memory_today` to the DOCS list, pointing to `memory/YYYY-MM-DD.md` (using today's date)
-- The date-based path needs to recalculate on each poll cycle (midnight rollover)
-- Upsert to `brain_docs` with `doc_type = 'memory_today'` and `agent_key = NULL`
-- This means the Memory editor's "Today" tab will finally show real content
+**In `brain-doc-sync.mjs`**: Track the last-synced date. When date changes, archive the old `memory_today` content as a `memory_day` row before overwriting.
 
-### Part B: Empty state UX for long-term memory
+### 2. MemoryEditor improvements (already partially done)
 
-When `memory_long` content is empty/whitespace, show:
+The empty state and seed template are already implemented from the last round. Verify they work:
 
-- A friendly "Long-term memory is empty" message (not a blank editor that looks broken)
-- A "Seed template" button that inserts a starter template into the editor (marks buffer dirty, user still has to Save)
-- The template will have sections like `# Key Facts`, `# Important Dates`, `# Recurring Themes`
+- Empty long-term shows "Long-term memory is empty" + "Seed template" button (already in code)
+- Promote button already works (appends selection or full content with date header)
 
-### Part C: Wire up "Promote to Long-term" button
+No new UI changes needed -- these were shipped in the last update.
 
-Currently the button exists but does nothing. Make it:
+### 3. No changes needed for QMD display
 
-1. Take the entire Today content (or selected text if we can get a selection ref -- textarea selection is straightforward)
-2. Append it to the Long-term buffer with a date header (`## Promoted from YYYY-MM-DD`)
-3. Mark both buffers dirty so the user can review and Save
+The endpoint correctly checks `command -v qmd` and reads `~/.openclaw/openclaw.json`. It shows "No" because QMD isn't installed. This is accurate behavior, not a bug. No code change needed.
 
-### Part D: QMD awareness in Config/Health panel (informational only)
+### 4. Restart `brain-doc-sync` on Mac mini
 
-Add a small "Memory Backend" section in the HealthPanel or ConfigPage that:
+The `memory_today` sync path exists in the code but the script needs to be restarted to pick up the changes. After restarting, it will:
+- Read `memory/2026-02-10.md` from disk
+- Upsert it to `brain_docs` as `doc_type = 'memory_today'`, `agent_key = NULL`
+- The Memory editor's Today tab will then show content
 
-- Shows current backend (default: "sqlite")
-- If QMD is configured, shows "qmd"
-- A note explaining: "This affects how the agent searches memory, not what's stored"
-- This reads from a new optional Control API endpoint `GET /api/memory/status` -- if the endpoint doesn't exist yet on your Mac mini, the UI gracefully shows "Unknown" with guidance
+## Technical details
 
-This is informational only. No toggle to switch backends from the UI (that's a later feature).
+### brain-doc-sync.mjs -- date rollover archival
 
-## Technical Details
+```text
+// Before overwriting memory_today, check if the date changed
+// If so, archive the old content as memory_day
+
+let lastSyncedDate = null;
+
+// In the poll loop:
+const today = new Date().toISOString().slice(0, 10);
+if (lastSyncedDate && lastSyncedDate !== today) {
+  // Archive yesterday's memory_today content
+  const oldContent = await getRemoteDoc('memory_today');
+  if (oldContent?.content?.trim()) {
+    await sb.from('brain_docs').insert({
+      project_id: PROJECT_ID,
+      agent_key: null,
+      doc_type: 'memory_day',
+      content: `<!-- date: ${lastSyncedDate} -->\n${oldContent.content}`,
+      updated_by: 'archive_rollover',
+    });
+  }
+}
+lastSyncedDate = today;
+```
 
 ### Files to modify
 
 | File | Change |
 |------|--------|
-| `scripts/brain-doc-sync.mjs` | Add `memory_today` sync with date-rolling logic |
-| `src/components/agent-tabs/MemoryEditor.tsx` | Empty state UX, seed template, promote button, textarea ref for selection |
-| `src/components/settings/HealthPanel.tsx` | Add memory backend status section |
-| `src/lib/api.ts` | Add `getMemoryBackendStatus()` function (calls Control API, graceful fallback) |
-| `server/index.mjs` | Add `GET /api/memory/status` endpoint that reads OpenClaw config |
-| `changes.md` | Document all changes |
+| `scripts/brain-doc-sync.mjs` | Add date rollover archival for daily memory |
+| `changes.md` | Log the change |
 
-### brain-doc-sync.mjs changes
+### What does NOT change
+- MemoryEditor.tsx -- empty state and promote already work
+- HealthPanel.tsx -- QMD display is correct
+- server/index.mjs -- memory/status endpoint is correct
+- No schema changes needed
 
-The daily memory file path changes every day. Instead of a static DOCS array entry, use a function:
-
-```text
-function getTodayMemoryPath() {
-  const today = new Date().toISOString().slice(0, 10);
-  return join(WORKSPACE, 'memory', `${today}.md`);
-}
-```
-
-On each poll cycle, recalculate the path and sync. The `doc_type` stays `memory_today` with `agent_key = NULL`. Previous days' files are not synced (they become part of long-term memory or are searchable via QMD).
-
-### MemoryEditor.tsx changes
-
-- Add a `textareaRef` for the Today tab to support text selection for Promote
-- Empty state component when `content.trim() === ''` on the Long-term tab
-- Seed template button inserts content via `setFileContent(longKey, TEMPLATE)`
-- Promote button: reads Today content, appends to Long-term with date header
-
-### server/index.mjs - new endpoint
-
-```text
-GET /api/memory/status
-
-Response:
-{
-  backend: "sqlite" | "qmd",
-  qmdConfigured: boolean,
-  qmdCliFound: boolean
-}
-```
-
-Reads from `~/.openclaw/openclaw.json` if it exists, checks `which qmd` for CLI availability.
-
-### HealthPanel.tsx addition
-
-A small card/section below the existing connectivity panel showing:
-- Memory backend: sqlite/qmd/unknown
-- QMD installed: yes/no/unknown
-- Explanatory text about what this means
+## Action items for you (on Mac mini)
+1. Restart `brain-doc-sync.mjs` so it picks up the `memory_today` sync
+2. Optionally seed `MEMORY.md` with some content (or use the "Seed template" button in the dashboard)
+3. Install QMD when ready -- the dashboard will automatically detect it
 
