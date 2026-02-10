@@ -5,6 +5,10 @@ import { toast } from '@/hooks/use-toast';
 interface UseBrainDocSubscriptionOptions {
   projectId: string;
   docType: string;
+  /**
+   * Agent key to match (for agent-specific rows). If omitted/null, only global rows (agent_key IS NULL) match.
+   */
+  agentKey?: string | null;
   fileKey: string;
   isDirty: boolean;
   onUpdate: (newContent: string) => void;
@@ -19,6 +23,7 @@ interface UseBrainDocSubscriptionOptions {
 export function useBrainDocSubscription({
   projectId,
   docType,
+  agentKey = null,
   fileKey,
   isDirty,
   onUpdate,
@@ -31,6 +36,9 @@ export function useBrainDocSubscription({
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
+  const agentKeyRef = useRef(agentKey);
+  agentKeyRef.current = agentKey;
+
   useEffect(() => {
     if (!projectId || !docType || !fileKey) return;
 
@@ -41,7 +49,7 @@ export function useBrainDocSubscription({
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'brain_docs',
           filter: `project_id=eq.${projectId}`,
@@ -54,16 +62,23 @@ export function useBrainDocSubscription({
             updated_by: string | null;
           };
 
-          // Only react to changes for our doc_type and global (NULL agent_key) rows
-          if (row.doc_type !== docType) return;
-          if (row.agent_key !== null) return;
+          // Only react to changes for our doc_type
+          if (row?.doc_type !== docType) return;
+
+          // Match exactly one row source:
+          // - If agentKey is set: only the agent-specific row (agent_key = agentKey).
+          // - If agentKey is null/omitted: only the global row (agent_key IS NULL).
+          // This prevents global fallback updates from clobbering an agent-specific override editor.
+          const ak = agentKeyRef.current;
+          const matches = ak ? row.agent_key === ak : row.agent_key === null;
+          if (!matches) return;
 
           // Ignore updates that came from the dashboard itself
           if (row.updated_by === 'dashboard') return;
 
           if (!isDirtyRef.current) {
             // Editor is clean — silently update
-            onUpdateRef.current(row.content);
+            onUpdateRef.current(row.content ?? '');
           } else {
             // Editor has unsaved changes — notify without overwriting
             toast({

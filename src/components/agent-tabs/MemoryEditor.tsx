@@ -38,6 +38,7 @@ export function MemoryEditor() {
   useBrainDocSubscription({
     projectId: selectedProjectId,
     docType: 'memory_long',
+    agentKey: longState?.source === 'agent' ? selectedAgentId : null,
     fileKey: longKey,
     isDirty: longState?.isDirty ?? false,
     onUpdate: (newContent) => setFileOriginal(longKey, newContent),
@@ -46,6 +47,7 @@ export function MemoryEditor() {
   useBrainDocSubscription({
     projectId: selectedProjectId,
     docType: 'memory_today',
+    agentKey: todayState?.source === 'agent' ? selectedAgentId : null,
     fileKey: todayKey,
     isDirty: todayState?.isDirty ?? false,
     onUpdate: (newContent) => setFileOriginal(todayKey, newContent),
@@ -59,8 +61,8 @@ export function MemoryEditor() {
         getAgentFile(selectedAgentId, 'memory_long'),
         getAgentFile(selectedAgentId, 'memory_today'),
       ]);
-      setFileOriginal(longKey, longData.content);
-      setFileOriginal(todayKey, todayData.content);
+      setFileOriginal(longKey, longData.content, { source: longData._globalRow ? 'global' : 'agent' });
+      setFileOriginal(todayKey, todayData.content, { source: todayData._globalRow ? 'global' : 'agent' });
     } catch (e: any) {
       console.error('Failed to load memory docs', e);
       setLoadError(String(e?.message || e));
@@ -118,8 +120,8 @@ export function MemoryEditor() {
         getAgentFile(selectedAgentId, 'memory_today'),
       ]);
 
-      setFileOriginal(longKey, longData.content);
-      setFileOriginal(todayKey, todayData.content);
+      setFileOriginal(longKey, longData.content, { source: longData._globalRow ? 'global' : 'agent' });
+      setFileOriginal(todayKey, todayData.content, { source: todayData._globalRow ? 'global' : 'agent' });
 
       toast({
         title: 'Reloaded',

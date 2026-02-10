@@ -18,6 +18,9 @@ interface FileState {
   isDirty: boolean;
   isSaving: boolean;
   lastSaved: string | null;
+  // Whether this editor is currently backed by the global brain_docs row (agent_key IS NULL)
+  // or an agent-specific override row (agent_key = selectedAgentId).
+  source: 'global' | 'agent' | 'unknown';
 }
 
 interface ClawdOfficeState {
@@ -57,7 +60,7 @@ interface ClawdOfficeState {
   // File editing state
   files: Record<string, FileState>;
   setFileContent: (key: string, content: string) => void;
-  setFileOriginal: (key: string, content: string) => void;
+  setFileOriginal: (key: string, content: string, opts?: { source?: FileState['source'] }) => void;
   setFileSaving: (key: string, isSaving: boolean) => void;
   markFileSaved: (key: string) => void;
   resetFile: (key: string) => void;
@@ -135,7 +138,7 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
       },
     },
   })),
-  setFileOriginal: (key, content) => set((state) => ({
+  setFileOriginal: (key, content, opts) => set((state) => ({
     files: {
       ...state.files,
       [key]: {
@@ -144,6 +147,7 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
         isDirty: false,
         isSaving: false,
         lastSaved: null,
+        source: opts?.source ?? state.files[key]?.source ?? 'unknown',
       },
     },
   })),

@@ -18,6 +18,7 @@ export function SoulEditor() {
   useBrainDocSubscription({
     projectId: selectedProjectId,
     docType: 'soul',
+    agentKey: fileState?.source === 'agent' ? selectedAgentId : null,
     fileKey,
     isDirty: fileState?.isDirty ?? false,
     onUpdate: (newContent) => setFileOriginal(fileKey, newContent),
@@ -28,7 +29,7 @@ export function SoulEditor() {
     setLoadError(null);
     try {
       const data = await getAgentFile(selectedAgentId, 'soul');
-      setFileOriginal(fileKey, data.content);
+      setFileOriginal(fileKey, data.content, { source: data._globalRow ? 'global' : 'agent' });
     } catch (e: any) {
       console.error('Failed to load SOUL.md', e);
       setLoadError(String(e?.message || e));
@@ -75,7 +76,7 @@ export function SoulEditor() {
     setFileSaving(fileKey, true);
     try {
       const data = await getAgentFile(selectedAgentId, 'soul');
-      setFileOriginal(fileKey, data.content);
+      setFileOriginal(fileKey, data.content, { source: data._globalRow ? 'global' : 'agent' });
       toast({
         title: 'Reloaded',
         description: 'SOUL.md reloaded from server.',

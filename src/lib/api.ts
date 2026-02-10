@@ -412,8 +412,8 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // In dev, allow mock mode only when explicitly enabled.
 // Default is: NO MOCKS (to avoid confusing ghost agents in Lovable/remote builds).
-const USE_REMOTE = Boolean(getApiBaseUrl());
-const ALLOW_MOCKS = IS_DEV && !USE_REMOTE && ALLOW_MOCKS_ENV;
+// NOTE: Control API URL is runtime-configurable, so mock enablement must be computed dynamically.
+const allowMocks = () => IS_DEV && !getApiBaseUrl() && ALLOW_MOCKS_ENV;
 
 function getProjectId(): string {
   return getSelectedProjectId();
@@ -470,8 +470,8 @@ export async function getStatus(): Promise<SystemStatus> {
     }
   }
 
-  if (USE_REMOTE) return requestJson<SystemStatus>('/api/status');
-  if (!ALLOW_MOCKS) return requestJson<SystemStatus>('/api/status');
+  if (Boolean(getApiBaseUrl())) return requestJson<SystemStatus>('/api/status');
+  if (!allowMocks()) return requestJson<SystemStatus>('/api/status');
 
   await delay(100);
   return {
@@ -727,13 +727,13 @@ export async function updateAgentStatus(input: {
     }
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean; error?: string }>(`/api/agents/${encodeURIComponent(agentKey)}/status`, {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean; error?: string }>(`/api/agents/${encodeURIComponent(agentKey)}/status`, {
       method: 'POST',
       body: JSON.stringify({ input }),
@@ -882,8 +882,8 @@ export async function getAgents(): Promise<Agent[]> {
     });
   }
 
-  if (USE_REMOTE) return requestJson<Agent[]>('/api/agents');
-  if (!ALLOW_MOCKS) return requestJson<Agent[]>('/api/agents');
+  if (Boolean(getApiBaseUrl())) return requestJson<Agent[]>('/api/agents');
+  if (!allowMocks()) return requestJson<Agent[]>('/api/agents');
 
   await delay(150);
   return mockAgents;
@@ -933,8 +933,8 @@ export async function getAgentFile(agentId: string, type: AgentFile['type']): Pr
     };
   }
 
-  if (USE_REMOTE) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
-  if (!ALLOW_MOCKS) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
+  if (Boolean(getApiBaseUrl())) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
+  if (!allowMocks()) return requestJson<AgentFile>(`/api/agents/${agentId}/files/${type}`);
 
   await delay(200);
 
@@ -1041,13 +1041,13 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
     return { ok: true };
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean; commit?: string | null | { error: string } }>(`/api/agents/${agentId}/files/${type}`, {
       method: 'POST',
       body: JSON.stringify({ content }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean; commit?: string | null | { error: string } }>(`/api/agents/${agentId}/files/${type}`, {
       method: 'POST',
       body: JSON.stringify({ content }),
@@ -1081,8 +1081,8 @@ export async function getMemoryBackendStatus(): Promise<MemoryBackendStatus> {
 
 export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {
   // v1 maps reload -> restart (gateway restart)
-  if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
-  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (Boolean(getApiBaseUrl())) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (!allowMocks()) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
 
   await delay(500);
   console.log(`[API] Reloading agent${agentId ? `: ${agentId}` : 's'}`);
@@ -1090,8 +1090,8 @@ export async function reloadAgent(agentId?: string): Promise<{ ok: boolean }> {
 }
 
 export async function restartSystem(): Promise<{ ok: boolean }> {
-  if (USE_REMOTE) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
-  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (Boolean(getApiBaseUrl())) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
+  if (!allowMocks()) return requestJson<{ ok: boolean }>('/api/restart', { method: 'POST' });
 
   await delay(1000);
   console.log('[API] Restarting system');
@@ -1099,8 +1099,8 @@ export async function restartSystem(): Promise<{ ok: boolean }> {
 }
 
 export async function getSessions(agentId?: string): Promise<Session[]> {
-  if (USE_REMOTE) return requestJson<Session[]>('/api/sessions');
-  if (!ALLOW_MOCKS) return requestJson<Session[]>('/api/sessions');
+  if (Boolean(getApiBaseUrl())) return requestJson<Session[]>('/api/sessions');
+  if (!allowMocks()) return requestJson<Session[]>('/api/sessions');
 
   await delay(150);
   return agentId 
@@ -1603,13 +1603,13 @@ export async function getCronJobs(): Promise<CronJob[]> {
 }
 
 export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ ok: boolean; enabled?: boolean }> {
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean; enabled?: boolean }>(`/api/cron/${jobId}/toggle`, {
       method: 'POST',
       body: JSON.stringify({ enabled }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean; enabled?: boolean }>(`/api/cron/${jobId}/toggle`, {
       method: 'POST',
       body: JSON.stringify({ enabled }),
@@ -1622,13 +1622,13 @@ export async function toggleCronJob(jobId: string, enabled: boolean): Promise<{ 
 }
 
 export async function editCronJob(jobId: string, patch: { name?: string; schedule?: string; instructions?: string; enabled?: boolean }): Promise<{ ok: boolean }> {
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/edit`, {
       method: 'POST',
       body: JSON.stringify(patch),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/edit`, {
       method: 'POST',
       body: JSON.stringify(patch),
@@ -1641,8 +1641,8 @@ export async function editCronJob(jobId: string, patch: { name?: string; schedul
 }
 
 export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
-  if (USE_REMOTE) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
-  if (!ALLOW_MOCKS) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
+  if (Boolean(getApiBaseUrl())) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
+  if (!allowMocks()) return requestJson<{ ok: boolean }>(`/api/cron/${jobId}/run`, { method: 'POST' });
 
   await delay(500);
   console.log(`[API] Running cron job ${jobId}`);
@@ -1650,8 +1650,8 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean }> {
 }
 
 export async function getCronRuns(jobId: string, limit = 25): Promise<{ entries: CronRunEntry[] }> {
-  if (USE_REMOTE) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
-  if (!ALLOW_MOCKS) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
+  if (Boolean(getApiBaseUrl())) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
+  if (!allowMocks()) return requestJson<{ entries: CronRunEntry[] }>(`/api/cron/${jobId}/runs?limit=${encodeURIComponent(String(limit))}`);
 
   await delay(150);
   return { entries: [] };
@@ -1676,8 +1676,8 @@ export async function getProjects(): Promise<Project[]> {
     }));
   }
 
-  if (USE_REMOTE) return requestJson<Project[]>('/api/projects');
-  if (!ALLOW_MOCKS) return requestJson<Project[]>('/api/projects');
+  if (Boolean(getApiBaseUrl())) return requestJson<Project[]>('/api/projects');
+  if (!allowMocks()) return requestJson<Project[]>('/api/projects');
 
   await delay(50);
   return [
@@ -1725,13 +1725,13 @@ export async function createProject(input: { id: string; name: string }): Promis
     }
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean; project?: Project; error?: string }>('/api/projects', {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean; project?: Project; error?: string }>('/api/projects', {
       method: 'POST',
       body: JSON.stringify({ input }),
@@ -1799,8 +1799,8 @@ export async function getTasks(): Promise<Task[]> {
     }));
   }
 
-  if (USE_REMOTE) return requestJson<Task[]>('/api/tasks');
-  if (!ALLOW_MOCKS) return requestJson<Task[]>('/api/tasks');
+  if (Boolean(getApiBaseUrl())) return requestJson<Task[]>('/api/tasks');
+  if (!allowMocks()) return requestJson<Task[]>('/api/tasks');
 
   await delay(80);
   return [];
@@ -1860,13 +1860,13 @@ export async function updateTask(
     return { ok: true };
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, {
       method: 'POST',
       body: JSON.stringify({ patch }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, {
       method: 'POST',
       body: JSON.stringify({ patch }),
@@ -1922,13 +1922,13 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
     };
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean; task?: Task }>(`/api/tasks`, {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean; task?: Task }>(`/api/tasks`, {
       method: 'POST',
       body: JSON.stringify({ input }),
@@ -2082,7 +2082,7 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
     return { ok: true };
   }
 
-  if (USE_REMOTE) {
+  if (Boolean(getApiBaseUrl())) {
     return requestJson<{ ok: boolean }>('/api/activity', {
       method: 'POST',
       body: JSON.stringify({
@@ -2092,7 +2092,7 @@ export async function createActivity(input: CreateActivityInput): Promise<{ ok: 
       }),
     });
   }
-  if (!ALLOW_MOCKS) {
+  if (!allowMocks()) {
     return requestJson<{ ok: boolean }>('/api/activity', {
       method: 'POST',
       body: JSON.stringify({
@@ -2151,8 +2151,8 @@ export async function getActivity(limit = 75): Promise<ActivityItem[]> {
     }));
   }
 
-  if (USE_REMOTE) return requestJson<ActivityItem[]>('/api/activity');
-  if (!ALLOW_MOCKS) return requestJson<ActivityItem[]>('/api/activity');
+  if (Boolean(getApiBaseUrl())) return requestJson<ActivityItem[]>('/api/activity');
+  if (!allowMocks()) return requestJson<ActivityItem[]>('/api/activity');
 
   await delay(100);
   return [];
@@ -2162,8 +2162,8 @@ export async function getGlobalActivity(limit = 10): Promise<GlobalActivityItem[
   // Global activity requires server-side Supabase keys, so always go through the Control API.
   // (If VITE_API_BASE_URL is missing, this will throw and the UI will fail soft.)
   const qs = `?limit=${encodeURIComponent(String(limit))}`;
-  if (USE_REMOTE) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
-  if (!ALLOW_MOCKS) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
+  if (Boolean(getApiBaseUrl())) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
+  if (!allowMocks()) return requestJson<GlobalActivityItem[]>(`/api/activity/global${qs}`);
 
   await delay(60);
   return [];
@@ -2615,7 +2615,7 @@ export function getApiStatus(): {
     };
   }
 
-  if (ALLOW_MOCKS) {
+  if (allowMocks()) {
     return {
       connected: false,
       baseUrl: null,
