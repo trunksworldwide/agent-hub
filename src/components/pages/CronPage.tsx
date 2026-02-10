@@ -1033,18 +1033,30 @@ export function CronPage() {
         editJobIntent || null,
         editInstructions || ''
       );
+
+      // Compare encoded instructions to the original to avoid unnecessary --system-event
+      // which can strip payload.kind="agentTurn" on the executor
+      const originalEncoded = editingJob.instructions || '';
+      const instructionsChanged = encodedInstructions !== originalEncoded;
       
       if (controlApiConnected) {
-        // Direct edit via Control API
-        const editPayload: Record<string, any> = {
-          name: editName,
-          instructions: encodedInstructions,
-        };
-        // Only include schedule if it changed, and include the kind so the server
-        // knows whether to use --cron or --every
+        // Direct edit via Control API — only send fields that actually changed
+        const editPayload: Record<string, any> = {};
+        if (editName !== editingJob.name) {
+          editPayload.name = editName;
+        }
+        if (instructionsChanged) {
+          editPayload.instructions = encodedInstructions;
+        }
+        // Only include schedule if it changed
         if (editSchedule && editSchedule !== editingJob.scheduleExpr) {
           editPayload.schedule = editSchedule;
           editPayload.scheduleKind = editingJob.scheduleKind || (/^\d+$/.test(editSchedule) ? 'every' : 'cron');
+        }
+        // If nothing changed, skip the API call
+        if (Object.keys(editPayload).length === 0) {
+          setEditingJob(null);
+          return;
         }
         await editCronJob(editingJob.jobId, editPayload);
         toast({
