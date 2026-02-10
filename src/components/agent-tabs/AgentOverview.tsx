@@ -246,9 +246,11 @@ export function AgentOverview({ agent, onRefresh }: Props) {
               if (!agent?.id) return;
               setRegenerating(true);
               try {
+                // createDocOverride generates ALL docs (soul, user, memory_long + description)
+                // regardless of which docType is passed
                 const result = await createDocOverride(agent.id, 'soul');
                 if (!result.ok) throw new Error(result.error);
-                // Refresh doc status
+                // Refresh all doc statuses
                 const newStatus = await getDocOverrideStatus(agent.id);
                 setDocStatus(newStatus);
                 toast({

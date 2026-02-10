@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, HelpCircle, Plus } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
-import { getAgents, createAgent, queueProvisionRequest, type Agent } from '@/lib/api';
+import { getAgents, createAgent, queueProvisionRequest, createDocOverride, type Agent } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -168,15 +168,18 @@ export function AgentsPage() {
     if (!newAgentName.trim() || !newAgentPurpose.trim()) return;
 
     setIsCreating(true);
+    const nameVal = newAgentName.trim();
+    const purposeVal = newAgentPurpose.trim();
+    const emojiVal = newAgentEmoji;
     try {
       const existingKeys = agents.map(a => a.id);
       const agentKey = generateAgentKey(newAgentName, existingKeys);
 
       const result = await createAgent({
         agentKey,
-        name: newAgentName.trim(),
-        role: newAgentPurpose.trim(),
-        emoji: newAgentEmoji,
+        name: nameVal,
+        role: purposeVal,
+        emoji: emojiVal,
         color: newAgentColor || undefined,
       });
 
@@ -186,7 +189,7 @@ export function AgentsPage() {
 
       toast({
         title: 'Agent created',
-        description: `${newAgentEmoji} ${newAgentName} is ready to go!`,
+        description: `${emojiVal} ${nameVal} is ready to go!`,
       });
 
       // Reset form and close dialog
@@ -200,6 +203,21 @@ export function AgentsPage() {
       await refresh();
       setSelectedAgentId(agentKey);
       setDetailOpen(true);
+
+      // Auto-generate AI docs in background if purpose was provided
+      if (purposeVal) {
+        createDocOverride(agentKey, 'soul')
+          .then((res) => {
+            if (res.ok) {
+              toast({
+                title: 'Docs generated',
+                description: `AI-generated SOUL, USER, and MEMORY docs created for ${nameVal}.`,
+              });
+              refresh();
+            }
+          })
+          .catch(() => {});
+      }
     } catch (e: any) {
       toast({
         title: 'Failed to create agent',
