@@ -5,14 +5,23 @@ import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useBrainDocSubscription } from '@/hooks/useBrainDocSubscription';
 
 export function SoulEditor() {
-  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
+  const { selectedAgentId, selectedProjectId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   const [loadError, setLoadError] = useState<string | null>(null);
   
   const fileKey = `${selectedAgentId}-soul`;
   const fileState = files[fileKey];
+
+  useBrainDocSubscription({
+    projectId: selectedProjectId,
+    docType: 'soul',
+    fileKey,
+    isDirty: fileState?.isDirty ?? false,
+    onUpdate: (newContent) => setFileOriginal(fileKey, newContent),
+  });
 
   const load = async () => {
     if (!selectedAgentId) return;

@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useBrainDocSubscription } from '@/hooks/useBrainDocSubscription';
 
 const MEMORY_TEMPLATE = `# Long-term Memory
 
@@ -22,7 +23,7 @@ const MEMORY_TEMPLATE = `# Long-term Memory
 `;
 
 export function MemoryEditor() {
-  const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
+  const { selectedAgentId, selectedProjectId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   const [activeMemoryTab, setActiveMemoryTab] = useState<'long' | 'today'>('long');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -33,6 +34,22 @@ export function MemoryEditor() {
   
   const longState = files[longKey];
   const todayState = files[todayKey];
+
+  useBrainDocSubscription({
+    projectId: selectedProjectId,
+    docType: 'memory_long',
+    fileKey: longKey,
+    isDirty: longState?.isDirty ?? false,
+    onUpdate: (newContent) => setFileOriginal(longKey, newContent),
+  });
+
+  useBrainDocSubscription({
+    projectId: selectedProjectId,
+    docType: 'memory_today',
+    fileKey: todayKey,
+    isDirty: todayState?.isDirty ?? false,
+    onUpdate: (newContent) => setFileOriginal(todayKey, newContent),
+  });
 
   const load = async () => {
     if (!selectedAgentId) return;
