@@ -1,3 +1,7 @@
+### Cron edit persistence: offline patch processing + immediate mirror upsert
+- **`scripts/cron-mirror.mjs`**: Added `processPatchRequests()` — polls `cron_job_patch_requests` for queued patches and applies them via `openclaw cron edit` CLI (name → `--name`, instructions → `--system-event`, schedule → `--cron`/`--every`, enabled → `--enable`/`--disable`). Runs on 10s interval. Added to stuck-request watchdog.
+- **`server/index.mjs`**: After a successful direct edit via `/api/cron/:jobId/edit`, the server now best-effort upserts changed fields (name, instructions, enabled) into `cron_mirror` so the UI updates instantly via realtime instead of waiting up to 60s.
+
 ### Fix schedule interval parsing + add hourly interval presets
 - **Bug fix**: `parseScheduleToConfig` silently defaulted unknown `every` intervals (e.g. 1 hour / 3600000ms) to "Every 15 minutes", risking accidental overwrites when editing.
 - **New presets**: Added interval presets for 1h, 2h, 4h, 8h, 12h alongside existing 5m/15m/30m.

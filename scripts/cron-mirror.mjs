@@ -277,6 +277,68 @@ async function processDeleteRequests() {
   return processed;
 }
 
+async function processPatchRequests() {
+  const { data, error } = await sb
+    .from('cron_job_patch_requests')
+    .select('id,job_id,patch_json,status,requested_at')
+    .eq('project_id', PROJECT_ID)
+    .eq('status', 'queued')
+    .order('requested_at', { ascending: true })
+    .limit(5);
+  if (error) throw error;
+
+  const queued = Array.isArray(data) ? data : [];
+  let processed = 0;
+
+  for (const req of queued) {
+    processed++;
+    const reqId = String(req.id);
+    const jobId = String(req.job_id);
+
+    const { error: updErr } = await sb.from('cron_job_patch_requests').update({ status: 'running' }).eq('id', reqId);
+    if (updErr) throw updErr;
+
+    // Build CLI args from patch_json
+    const patch = typeof req.patch_json === 'string' ? JSON.parse(req.patch_json) : req.patch_json || {};
+    const args = ['cron', 'edit', jobId];
+
+    if (typeof patch.name === 'string' && patch.name.trim()) {
+      args.push('--name', patch.name.trim());
+    }
+    if (typeof patch.instructions === 'string') {
+      args.push('--system-event', patch.instructions);
+    }
+    if (typeof patch.scheduleExpr === 'string' && patch.scheduleExpr.trim()) {
+      const scheduleKind = patch.scheduleKind || 'cron';
+      if (scheduleKind === 'every') {
+        args.push('--every', patch.scheduleExpr.trim());
+      } else {
+        args.push('--cron', patch.scheduleExpr.trim());
+      }
+    }
+    if (patch.enabled === true) args.push('--enable');
+    if (patch.enabled === false) args.push('--disable');
+
+    const startedAt = Date.now();
+    const { code, stdout, stderr } = await runCmd(EXECUTOR_BIN, args, 60_000);
+    const durationMs = Date.now() - startedAt;
+
+    const result = {
+      jobId,
+      exitCode: code,
+      durationMs,
+      stdoutTail: stdout.slice(-4000),
+      stderrTail: stderr.slice(-4000),
+    };
+
+    const nextStatus = code === 0 ? 'done' : 'error';
+    const { error: finErr } = await sb.from('cron_job_patch_requests').update({ status: nextStatus, result }).eq('id', reqId);
+    if (finErr) throw finErr;
+  }
+
+  return processed;
+}
+
 async function failStuckRequests({ table, maxAgeMs }) {
   // If a request sits in `queued` too long (e.g. transient Supabase/Cloudflare issues),
   // mark it as `error` so the UI doesn't show "pending" forever.
@@ -372,13 +434,23 @@ async function main() {
     }
   }, 10_000);
 
+  setInterval(async () => {
+    try {
+      const n = await processPatchRequests();
+      if (n > 0) console.log(`[cron-mirror] processed ${n} patch request(s)`);
+    } catch (e) {
+      console.error('[cron-mirror] patch request processing failed', e);
+    }
+  }, 10_000);
+
   // Fail stuck queued requests so the UI doesn't hang on "pending".
   setInterval(async () => {
     try {
       const maxAgeMs = 2 * 60_000;
       const n1 = await failStuckRequests({ table: 'cron_delete_requests', maxAgeMs });
       const n2 = await failStuckRequests({ table: 'cron_run_requests', maxAgeMs });
-      const n = n1 + n2;
+      const n3 = await failStuckRequests({ table: 'cron_job_patch_requests', maxAgeMs });
+      const n = n1 + n2 + n3;
       if (n > 0) console.log(`[cron-mirror] failed ${n} stuck request(s)`);
     } catch (e) {
       console.error('[cron-mirror] stuck request watchdog failed', e);
