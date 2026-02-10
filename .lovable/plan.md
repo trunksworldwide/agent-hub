@@ -1,80 +1,77 @@
 
+# Wire Up Cron Job Edit Persistence (Two Missing Pieces)
 
-# Fix Schedule Interval Parsing and Add Hourly Interval Preset
+## What already works
 
-## Problem
+The edit dialog, Control API endpoint, queue fallback, optimistic UI, and realtime subscriptions are all implemented. You can already open a job, change the title/instructions, and save — it reaches the executor in direct mode.
 
-Two issues cause schedule mismatches:
+## What's missing
 
-1. The schedule parser (`parseScheduleToConfig`) only recognizes 5, 15, and 30-minute intervals. Any other interval (like 1 hour) silently defaults to "Every 15 minutes." This is dangerous because opening the editor and clicking Apply would overwrite the real schedule.
+Two backend gaps prevent edits from fully persisting and syncing:
 
-2. There is no "Every 1 hour" interval-based preset. The existing "Hourly" preset uses cron (`0 * * * *`), but the executor creates jobs with `every: 3600000` (milliseconds), which is a different kind.
+### 1. Offline patch processing in cron-mirror worker
 
-## Changes
+**File:** `scripts/cron-mirror.mjs`
 
-### 1. Add interval presets for 1h, 2h, 4h, 8h, 12h
+The worker processes run requests and delete requests, but has no handler for `cron_job_patch_requests`. When the Control API is offline and the dashboard queues a patch (name, instructions, schedule, enabled, agent, intent), nothing ever picks it up.
 
-**File:** `src/lib/schedule-utils.ts`
+**Add `processPatchRequests()` function** that:
+- Queries `cron_job_patch_requests` for `status = 'queued'` rows matching the project
+- For each request, reads `patch_json` and builds `openclaw cron edit <jobId>` CLI args:
+  - `patch.name` maps to `--name`
+  - `patch.instructions` maps to `--system-event`
+  - `patch.scheduleExpr` maps to `--cron` (for cron kind) or `--every` (for interval kind)
+  - `patch.enabled` maps to `--enable` / `--disable`
+- Marks the request `running`, then `done` or `error` with result
+- Runs on a 10-second interval (same as run/delete processing)
 
-- Add `'every-60' | 'every-120' | 'every-240' | 'every-480' | 'every-720'` to the `FrequencyType` union
-- Add corresponding entries to `SCHEDULE_PRESETS`:
-  - Every 1 hour = 3600000ms
-  - Every 2 hours = 7200000ms
-  - Every 4 hours = 14400000ms
-  - Every 8 hours = 28800000ms  
-  - Every 12 hours = 43200000ms
-- Rename the existing cron-based "Hourly" preset label to "Hourly (on the hour)" to distinguish it from "Every 1 hour"
+Also add patch requests to the existing `failStuckRequests` watchdog so stale patches don't sit in "queued" forever.
 
-### 2. Fix the fallback for unknown intervals
+### 2. Immediate mirror upsert after direct edit
 
-**File:** `src/lib/schedule-utils.ts` (in `parseScheduleToConfig`)
+**File:** `server/index.mjs` (the `/api/cron/:jobId/edit` handler, ~line 931-968)
 
-- Instead of defaulting unknown `every` values to `every-15`, fall back to `custom` with the raw expression
-- This prevents accidental overwrites
+After the executor edit succeeds, the server currently just returns `{ ok: true }`. The Supabase mirror won't update until the next 60-second mirror cycle.
 
-### 3. Improve `formatScheduleDisplay` robustness
+**Add a best-effort `cron_mirror` upsert** immediately after the successful edit:
+- Upsert the changed fields (name, instructions) into `cron_mirror` for the matching `project_id` + `job_id`
+- This is best-effort (wrapped in try/catch) so it doesn't break the response if Supabase is unavailable
+- The UI sees the change instantly via realtime subscription instead of waiting up to 60 seconds
 
-Already handles arbitrary ms values correctly (it does math). No change needed here.
+### 3. Log to changes.md
 
-### 4. Update `changes.md`
+Document both additions.
 
-Log the fix.
+## Technical detail
 
-## Technical Detail
+### Patch processing function (cron-mirror.mjs)
 
-Current broken code (line 97-104):
+```text
+processPatchRequests():
+  1. SELECT from cron_job_patch_requests WHERE status='queued', project_id=PROJECT_ID, LIMIT 5
+  2. For each request:
+     a. UPDATE status='running'
+     b. Read patch_json, build CLI args
+     c. Run: openclaw cron edit <jobId> --name "..." --system-event "..." ...
+     d. UPDATE status='done'/'error' with result
+  3. Return count processed
 ```
-if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
-    const ms = parseInt(expr, 10);
-    if (ms === 300000) return { frequency: 'every-5', ... };
-    if (ms === 900000) return { frequency: 'every-15', ... };
-    if (ms === 1800000) return { frequency: 'every-30', ... };
-    // Default to every-15 for unknown intervals  <-- BUG
-    return { frequency: 'every-15', ... };
-}
-```
 
-Fixed:
-```
-if (kind === 'every' || (!kind && /^\d+$/.test(expr))) {
-    const ms = parseInt(expr, 10);
-    if (ms === 300000) return { frequency: 'every-5', ... };
-    if (ms === 900000) return { frequency: 'every-15', ... };
-    if (ms === 1800000) return { frequency: 'every-30', ... };
-    if (ms === 3600000) return { frequency: 'every-60', ... };
-    if (ms === 7200000) return { frequency: 'every-120', ... };
-    if (ms === 14400000) return { frequency: 'every-240', ... };
-    if (ms === 28800000) return { frequency: 'every-480', ... };
-    if (ms === 43200000) return { frequency: 'every-720', ... };
-    // Unknown interval: treat as custom so we don't silently change it
-    return { frequency: 'custom', cronExpr: expr, tz: tz || undefined };
-}
+Interval: `setInterval(processPatchRequests, 10_000)`
+
+### Mirror upsert after direct edit (server/index.mjs)
+
+```text
+After execExecutor(cmdArgs) succeeds:
+  1. Build partial upsert object from body fields
+  2. supabase.from('cron_mirror').update(partial).eq('project_id', projectId).eq('job_id', jobId)
+  3. Catch and log errors (non-blocking)
 ```
 
 ### Files to modify
 
 | File | Change |
 |------|--------|
-| `src/lib/schedule-utils.ts` | Add interval presets, fix fallback |
-| `changes.md` | Log the fix |
-
+| `scripts/cron-mirror.mjs` | Add `processPatchRequests()` + wire into main loop + add to stuck watchdog |
+| `server/index.mjs` | Add best-effort mirror upsert after successful direct edit |
+| `changes.md` | Log both changes |
