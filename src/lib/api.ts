@@ -609,16 +609,37 @@ export async function deleteAgent(agentKey: string): Promise<{ ok: boolean; erro
 
   const projectId = getProjectId();
   try {
-    // Delete related rows first (brain_docs, agent_status, provision requests)
-    await supabase.from('brain_docs').delete().eq('project_id', projectId).eq('agent_key', agentKey);
-    await supabase.from('agent_status').delete().eq('project_id', projectId).eq('agent_key', agentKey);
-    await supabase.from('agent_provision_requests').delete().eq('project_id', projectId).eq('agent_key', agentKey);
+    // 1. Notify Control API to clean up workspace on the executor (best-effort)
+    const baseUrl = getApiBaseUrl();
+    if (baseUrl) {
+      try {
+        await fetch(`${baseUrl.replace(/\/+$/, '')}/api/agents/delete`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-clawdos-project': projectId,
+          },
+          body: JSON.stringify({ agentKey }),
+          signal: AbortSignal.timeout(10000),
+        });
+      } catch (e) {
+        console.warn('[deleteAgent] Control API cleanup failed (best-effort):', e);
+      }
+    }
 
-    // Delete the agent row
+    // 2. Delete related Supabase rows (brain_docs, agent_status, provision requests, cron jobs targeting this agent)
+    await Promise.all([
+      supabase.from('brain_docs').delete().eq('project_id', projectId).eq('agent_key', agentKey),
+      supabase.from('agent_status').delete().eq('project_id', projectId).eq('agent_key', agentKey),
+      supabase.from('agent_provision_requests').delete().eq('project_id', projectId).eq('agent_key', agentKey),
+      supabase.from('cron_mirror').delete().eq('project_id', projectId).eq('target_agent_key', agentKey),
+    ]);
+
+    // 3. Delete the agent row
     const { error } = await supabase.from('agents').delete().eq('project_id', projectId).eq('agent_key', agentKey);
     if (error) throw error;
 
-    // Activity log
+    // 4. Activity log
     await supabase.from('activities').insert({
       project_id: projectId,
       type: 'agent_deleted',

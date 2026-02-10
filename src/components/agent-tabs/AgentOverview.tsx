@@ -313,16 +313,15 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
         )}
       </div>
 
-      {/* Danger zone — delete agent (not for primary) */}
+      {/* Delete agent (not for primary) */}
       {!isPrimaryAgent && (
-        <div className="space-y-2 pt-4 border-t border-border">
-          <label className="text-sm font-medium text-destructive">Danger Zone</label>
+        <div className="pt-4 border-t border-border">
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10"
+                className="gap-2 text-muted-foreground hover:text-destructive"
                 disabled={deleting}
               >
                 <Trash2 className="w-4 h-4" />
@@ -333,7 +332,7 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete {agent?.name}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently remove this agent and all its brain docs, status, and provision data. This action cannot be undone.
+                  This will remove the agent from Supabase and notify the executor to clean up its workspace. Brain docs, status, and scheduled jobs for this agent will be deleted. This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
