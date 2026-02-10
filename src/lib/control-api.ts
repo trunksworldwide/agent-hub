@@ -1,7 +1,10 @@
 // Runtime Control API URL management + health check
 // Allows changing the executor URL from the UI without rebuilding
 
+import { supabase } from '@/integrations/supabase/client';
+
 const STORAGE_KEY = 'clawdos.controlApiUrl';
+const SETTINGS_KEY = 'control_api_base_url';
 
 export interface ExecutorCheckResult {
   binary: string;
@@ -33,6 +36,38 @@ export function setControlApiUrl(url: string): void {
 /** Remove the stored URL, reverting to env var default */
 export function clearControlApiUrl(): void {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+/** Fetch the Control API URL from Supabase project_settings */
+export async function fetchControlApiUrlFromSupabase(projectId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('project_settings')
+    .select('value')
+    .eq('project_id', projectId)
+    .eq('key', SETTINGS_KEY)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.value || null;
+}
+
+/** Save the Control API URL to Supabase project_settings (upsert) */
+export async function saveControlApiUrlToSupabase(projectId: string, url: string): Promise<void> {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    // Delete the setting if empty
+    await supabase
+      .from('project_settings')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('key', SETTINGS_KEY);
+    return;
+  }
+  await supabase
+    .from('project_settings')
+    .upsert(
+      { project_id: projectId, key: SETTINGS_KEY, value: trimmed },
+      { onConflict: 'project_id,key' }
+    );
 }
 
 /** Test the Control API by calling /api/executor-check */

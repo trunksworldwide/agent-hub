@@ -1,3 +1,10 @@
+### Control API URL: Supabase persistence (cross-session)
+- Created `project_settings` table (key-value, project-scoped) with open RLS matching existing patterns.
+- `control-api.ts` now has `fetchControlApiUrlFromSupabase()` and `saveControlApiUrlToSupabase()` for reading/writing the URL.
+- Store gains `initControlApiUrl()` — called on app mount in `AppShell`. If localStorage is empty, it fetches the URL from Supabase and caches it locally.
+- HealthPanel **Save** now upserts to Supabase alongside localStorage. **Clear** deletes the Supabase setting too.
+- Priority chain: localStorage (instant) → Supabase (persistent) → env var → empty string.
+
 ### Cron: Fix scheduled job deletion ghost-back behavior
 - **`CronDeleteRequest`** now includes parsed `removed` boolean from executor result `stdoutTail`.
 - **`getCronDeleteRequests`** parses `stdoutTail` JSON to extract `removed` status; falls back to `exitCode === 0` when JSON parsing fails.
