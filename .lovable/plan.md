@@ -1,113 +1,135 @@
 
+# AI-Powered Doc Override Generation + Disk Sync (Revised)
 
-# Make Sub-Agent Detail View Distinct and Functional
+## Summary
 
-## Problem
+Replace the current "copy global docs" override with AI-generated, purpose-tailored agent docs. Add a new `description` column (not clobber `role`). Sync doc changes to disk via Control API (disk-first when reachable). Add echo-loop protection.
 
-When you click on Ricky (or any sub-agent), the detail panel looks identical to Trunks because:
+## Database Migration
 
-1. Ricky has zero agent-specific `brain_docs` rows -- Soul/User/Memory all fall back to Trunks' global docs
-2. The long mission prompt is crammed into `agents.role` (which should be a short label like "Research Agent")
-3. There is no way to tell whether you are viewing inherited global docs or agent-specific overrides
-4. There are no "start working" controls (Run Once, Schedule Digest)
-5. The sub-tabs (Soul, User, Memory, Tools, Skills, Sessions) are identical for every agent with no context about what is inherited vs overridden
+Add one column to `agents`:
 
-## Changes
+| Column | Type | Default | Purpose |
+|--------|------|---------|---------|
+| `description` | text | NULL | AI-generated 1-2 sentence blurb for agent cards |
 
-### 1. Database: add `purpose_text` column to `agents`
+No brain_docs schema change needed -- the unique constraint is already `(project_id, agent_key, doc_type)` (verified).
 
-Add a new text column `purpose_text` (nullable) to hold the long mission prompt. Migrate Ricky's current `role` content into `purpose_text` and set `role` to a short label.
+## New Edge Function: `generate-agent-docs`
 
-This keeps `role` as a short display label (shown on cards, headers) while `purpose_text` holds the full instructions.
+Creates `supabase/functions/generate-agent-docs/index.ts` using the existing `OPENAI_API_KEY` secret (same pattern as `extract-document-notes`).
 
-### 2. Seed agent-specific brain_docs for Ricky
+**Input:** `{ agentName, purposeText, globalSoul, globalUser }`
 
-Insert agent-specific `brain_docs` rows for Ricky (`agent_key = 'agent:ricky:main'`) for `soul`, `user`, and `memory_long` doc types. Content will be generated from templates using Ricky's name and purpose. This ensures Ricky immediately has his own docs instead of falling back to Trunks' global docs.
+**Output (via tool calling / structured JSON):**
+```text
+{
+  soul: string,       // max ~300 lines
+  user: string,       // max ~200 lines
+  memory: string,     // max ~150 lines
+  description: string // 1-2 sentences for card display
+}
+```
 
-### 3. AgentDetail header: show purpose and doc source indicator
+**Prompt strategy:**
+- System prompt: "You are an expert OpenClaw agent configurator. Given a global SOUL.md template and purpose, generate tailored agent documents."
+- Enforces hard line limits (SOUL 200-400 lines, USER 150-300, MEMORY 100-200)
+- Enforces project communication rules from global SOUL (e.g., no markdown headers in messages to Zack)
+- Uses tool calling for structured output (same pattern as `extract-document-notes`)
+- `description` is a clean 1-2 sentence blurb, NOT the long purpose
 
-Update `AgentDetail.tsx` to:
-- Show `purpose_text` (truncated with expand) below the role label in the header
-- Add an editable purpose textarea (inline edit with Save) so the user can update the mission prompt directly
-- Display a small banner/badge on each doc tab indicating whether it is "Inherited (global)" or "Agent override", based on the `_globalRow` flag already returned by `getAgentFile`
+Register in `supabase/config.toml` with `verify_jwt = false`.
 
-### 4. Doc editors: show inherited vs override indicator + "Create Override" button
+## API Changes (`src/lib/api.ts`)
 
-Update `SoulEditor`, `UserEditor`, and `MemoryEditor` to:
-- Show a subtle banner in the toolbar: "Viewing global docs (shared with all agents)" when `source === 'global'`
-- Add a "Create agent override" button that copies the current global content into a new agent-specific `brain_docs` row, then reloads
-- Once overridden, show "Agent-specific docs" indicator instead
-- This replaces the concept of a "Docs Mode toggle" with something more intuitive -- you see what you have, and can override when ready
+### 1. Update `createDocOverride` to use AI generation
 
-### 5. Add "Start Working" controls to AgentDetail
+Current behavior: copies global content verbatim.
 
-Add a new section (or a new sub-tab called "Overview") at the top of the agent detail that shows:
+New behavior:
+1. Fetch agent's `purpose_text` and `name` from `agents` table
+2. Fetch global SOUL and USER templates from `brain_docs`
+3. Call `generate-agent-docs` edge function
+4. **Disk-first sync**: If Control API reachable, POST each file to `/api/agents/:agentKey/files/:type` (which writes disk + mirrors to Supabase with `updated_by='control_api'`). If unreachable, write to Supabase directly with `updated_by='dashboard'`.
+5. Update `agents.description` with AI-generated blurb
+6. Return `{ ok: true }`
 
-**For all agents:**
-- "Run Once" button: sends a cron run request targeting that agent (inserts into `cron_run_requests` or calls Control API directly)
-- "Schedule Digest" button: opens a small dialog to create a daily cron job assigned to that agent (name: "Daily Digest -- {agent name}", default 9am, writes to Activities)
+### 2. Add `generateAgentDocs` function
 
-**For sub-agents specifically:**
-- Purpose text (editable)
-- Provisioning status
-- Quick stats: number of assigned tasks, last activity time
+New exported function that calls the edge function and returns the generated content. Used by both `createDocOverride` and a new "Regenerate Docs" button.
 
-### 6. Add "Overview" as the default tab for sub-agents
+### 3. Add disk sync to `saveAgentFile`
 
-Add a new `AgentTab` value `'overview'` that shows the agent's profile, purpose, doc status, and action buttons. This is the landing tab when clicking a sub-agent.
+After saving to Supabase, best-effort POST to Control API:
+- Derive `agentIdShort` from `agentKey` (split on `:`, take index 1)
+- POST to `/api/agents/:agentIdShort/files/:type` with content
+- This uses the existing multi-agent file endpoint in `server/index.mjs` (already resolves `workspace_path` from Supabase)
 
-For the primary agent (Trunks / `agent:main:main`), the default tab remains `soul` (existing behavior).
+**Write ordering (sync priority):**
+- If Control API reachable: call Control API first (writes disk + mirrors Supabase with `updated_by='control_api'`), skip the Supabase write in `saveAgentFile`
+- If Control API unreachable: write Supabase only (current behavior), disk catches up later
 
-Tab content for Overview:
-- Agent card (emoji, name, role, status)
-- Purpose text (editable textarea + Save)
-- Doc status summary: "Soul: inherited | User: inherited | Memory: inherited" with "Create overrides" action
-- Action buttons: Run Once, Schedule Digest, Assign Task
-- Recent activity for this agent (filtered from activities table)
+### 4. Add `description` to Agent interface
 
-### 7. API changes
+Add `description?: string | null` to the `Agent` type. Read it in `getAgents()`.
 
-**`src/lib/api.ts`:**
-- Add `purposeText` to the `Agent` interface
-- Read `purpose_text` in `getAgents()`
-- Add `updateAgentPurpose(agentKey, purposeText)` function
-- Add `createDocOverride(agentKey, docType)` function that copies global content to an agent-specific row
-- Add `triggerAgentRun(agentKey)` function (queues a cron run request or calls Control API)
+## Echo-Loop Protection
 
-**`src/lib/store.ts`:**
-- Add `'overview'` to the `AgentTab` type
+The existing architecture already has protections:
+- `brain-doc-sync` uses a `lastLocal` hash map (line 46 of brain-doc-sync.mjs) to skip identical content
+- `brain-doc-sync` only watches global docs (`agent_key IS NULL`), so agent-specific overrides never trigger it
+- Control API file POST sets `updated_by='dashboard'` in its Supabase mirror
+- `brain-doc-sync` compares remote `updated_at` vs local `mtimeMs` and skips if remote is newer
 
-### 8. Cron integration for "Schedule Digest"
+No additional changes needed -- the existing guards are sufficient because:
+1. Agent-specific docs bypass brain-doc-sync entirely (it only watches `agent_key=null`)
+2. Global docs edited via dashboard -> Supabase -> brain-doc-sync sees `updated_by='dashboard'` and writes to disk -> local watcher sees same content via `lastLocal` map -> no echo
 
-When the user clicks "Schedule Digest", insert a row into `cron_create_requests` with:
-- `name`: "Daily Digest -- {agent name}"
-- `schedule_expr`: "0 9 * * *" (daily at 9am)
-- `target_agent_key`: the agent's key
-- `job_intent`: "digest"
-- `instructions`: "Summarize new findings and propose 1-3 tasks"
+## UI Changes
 
-The existing cron-mirror worker will pick this up.
+### `AgentsPage.tsx` -- card layout fix
 
-## Files to modify
+- Card subtitle: `agent.role` (short stable label like "Research Agent")
+- Card body: `agent.description` (AI-generated 1-2 sentences) -- with `line-clamp-3`
+- `purposeText` stays in the agent detail view only, not on cards
 
-| File | Change |
+### `AgentOverview.tsx` -- add "Regenerate Docs" button
+
+- New button in the doc status section: "Regenerate with AI"
+- Calls `generateAgentDocs()` then `createDocOverride()` for each type
+- Shows a loading state during generation
+- Preview step: NOT included in v1 (adds complexity). "Auto-apply" is the default. A preview step can be added later as a follow-up.
+
+### `DocSourceBanner.tsx` -- update "Create override" to show generating state
+
+- When clicked, shows "Generating with AI..." instead of "Creating..."
+- On completion, triggers a reload of the doc editor content
+
+## Control API (`server/index.mjs`)
+
+No changes needed. The multi-agent file endpoints already exist (lines 526-621) and correctly:
+- Resolve `workspace_path` from Supabase for non-trunks agents
+- Write to disk
+- Mirror to Supabase `brain_docs` with `updated_by='dashboard'`
+
+## Files to create/modify
+
+| File | Action |
 |------|--------|
-| `supabase/migrations/xxx_agent_purpose.sql` | Add `purpose_text` column, migrate Ricky's role, seed brain_docs rows |
-| `src/lib/store.ts` | Add `'overview'` to AgentTab type |
-| `src/lib/api.ts` | Add `purposeText` to Agent, new functions for override/run/schedule |
-| `src/components/AgentDetail.tsx` | Add overview tab, purpose display, doc source indicators |
-| `src/components/agent-tabs/AgentOverview.tsx` | New component: overview tab with purpose editor, doc status, action buttons |
-| `src/components/agent-tabs/SoulEditor.tsx` | Add inherited/override banner + "Create override" button |
-| `src/components/agent-tabs/UserEditor.tsx` | Same inherited/override banner |
-| `src/components/agent-tabs/MemoryEditor.tsx` | Same inherited/override banner |
-| `src/components/pages/AgentsPage.tsx` | Show short `role` on cards (not the long purpose text) |
+| `supabase/migrations/xxx_agent_description.sql` | Add `description` column to `agents` |
+| `supabase/functions/generate-agent-docs/index.ts` | New edge function for AI doc generation |
+| `supabase/config.toml` | Register new function |
+| `src/lib/api.ts` | Update `createDocOverride`, add `generateAgentDocs`, add disk sync to `saveAgentFile`, add `description` to Agent |
+| `src/components/agent-tabs/AgentOverview.tsx` | Add "Regenerate Docs" button |
+| `src/components/agent-tabs/DocSourceBanner.tsx` | Update generating state |
+| `src/components/pages/AgentsPage.tsx` | Fix card layout: role + description + remove purposeText from card |
 | `changes.md` | Document changes |
 
 ## What this does NOT change
 
-- No changes to the provisioning flow (already working)
-- No changes to brain-doc-sync (approach B: Control API handles agent docs)
+- No changes to `server/index.mjs` (endpoints already support multi-agent)
+- No changes to `brain-doc-sync` (only watches global docs; echo protection already exists)
+- No changes to `cron-mirror.mjs`
 - No per-agent tool restrictions
-- No AI-generated docs (template-based seeding for now)
-- No redesign of the existing tab UI structure
-
+- No preview-before-apply step (follow-up)
+- `role` field is never overwritten by AI -- it stays as a stable short label
