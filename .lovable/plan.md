@@ -1,82 +1,46 @@
 
 
-# Upgrade generate-agent-docs with Specialized Per-Doc Prompts
+# Fix "Regenerate with AI" + Auto-Generate Docs on Agent Creation
 
-## What changes
+## Problem
 
-Replace the single generic system prompt in the `generate-agent-docs` edge function with the four specialized prompts you provided. Instead of one OpenAI call that generates all four outputs via a single tool call, the function will make four parallel calls -- one per document type -- each with its own tailored system prompt.
+1. **"Regenerate with AI" button is broken** -- it only calls `createDocOverride(agent.id, 'soul')`, generating only SOUL.md. The toast misleadingly says "SOUL, USER, and MEMORY docs created."
+2. **No auto-generation on agent creation** -- new agents start with all docs inherited from Trunks. The user has to manually find and click override buttons.
 
-## Why parallel calls instead of one big call
+## Changes
 
-- Each prompt is focused and produces higher-quality output
-- Line limits and style rules are enforced per-doc, not crammed into one mega-prompt
-- The description generator is intentionally minimal (no tool call needed, just a short string)
-- Parallel execution keeps latency roughly the same as the current single call
+### 1. Fix "Regenerate with AI" in `AgentOverview.tsx`
 
-## Edge function changes (`supabase/functions/generate-agent-docs/index.ts`)
+The inline `onClick` handler (lines 245-263) currently calls `createDocOverride(agent.id, 'soul')` -- only soul.
 
-### New input shape
+Fix: call `createDocOverride` for all three doc types (soul, user, memory_long). Since `createDocOverride` already calls the AI edge function and does disk-first sync, we just need to call it three times (or refactor it to accept multiple types).
 
-Add two new optional fields to the input:
+However, looking at the current `createDocOverride` implementation, it already generates ALL docs in one edge function call (soul + user + memory + description) and writes all three rows. So the fix is simpler: the button just needs to call `createDocOverride` once with any type -- the function generates everything. But the UI only updates the status for the one type passed. 
 
-```text
-{
-  agentName: string,
-  purposeText: string,
-  roleShort: string,         // NEW - short label like "Research Agent"
-  globalSoul: string,
-  globalUser: string,
-  projectName?: string,      // NEW - e.g. "Front Office"
-  projectPurpose?: string    // NEW - 1-2 sentence project description
-}
-```
+**Actual fix**: After `createDocOverride` completes, refresh the full doc status (which it already does on line 252 with `getDocOverrideStatus`). The real bug is that `createDocOverride` in `api.ts` may only be writing the single doc type passed. Need to verify and fix the API layer.
 
-### Four system prompts (verbatim from your specs)
+### 2. Verify/fix `createDocOverride` in `api.ts`
 
-1. **SOUL_SYSTEM_PROMPT** -- the SOUL.md generator prompt you provided (operating rules, boundaries, vibe, reporting)
-2. **USER_SYSTEM_PROMPT** -- the USER.md generator prompt (user context, interrupt policy, blockers)
-3. **MEMORY_SYSTEM_PROMPT** -- the MEMORY.md seed generator prompt (people, project, running notes, decisions)
-4. **DESCRIPTION_SYSTEM_PROMPT** -- the 1-2 sentence agent card description prompt
+Ensure it generates and writes ALL three doc types (soul, user, memory_long) plus updates `agents.description`, regardless of which `docType` is passed. The edge function already returns all four outputs.
 
-### Four parallel OpenAI calls
+### 3. Auto-generate on agent creation
 
-Each call gets:
-- Its own system prompt (from above)
-- A shared user message containing: project name/purpose, agent name, role_short, purpose_text, global SOUL/USER templates, and org constraints
-- SOUL/USER/MEMORY use tool calling for structured output (single string field each)
-- Description uses a simple completion (no tool call needed, just extract the text)
+In the agent creation flow, after the agent row is inserted and provisioned, automatically call `createDocOverride` if the agent has a `purpose_text` set. This gives every new agent tailored docs from the start.
 
-All four calls run via `Promise.all` for parallelism.
-
-### Response shape stays the same
-
-```text
-{ success: true, soul: "...", user: "...", memory: "...", description: "..." }
-```
-
-No changes needed to `src/lib/api.ts` or the UI -- they already consume this shape.
-
-## API layer change (`src/lib/api.ts`)
-
-### Pass `roleShort` to the edge function
-
-The `generateAgentDocs` function currently only sends `agentName`, `purposeText`, `globalSoul`, `globalUser`. Update it to also fetch and send:
-- `role` from the agents table (as `roleShort`)
-- Project name from the projects table (as `projectName`)
-
-This is a small addition to the existing fetch query.
+The creation flow likely lives in a dialog component -- need to find it and add a post-creation step.
 
 ## Files to modify
 
 | File | Change |
 |------|--------|
-| `supabase/functions/generate-agent-docs/index.ts` | Replace single prompt with four specialized prompts; four parallel OpenAI calls |
-| `src/lib/api.ts` | Pass `roleShort` and `projectName` to the edge function |
+| `src/lib/api.ts` | Verify `createDocOverride` writes all 3 doc types + description from the single edge function response |
+| `src/components/agent-tabs/AgentOverview.tsx` | Fix "Regenerate with AI" onClick to properly trigger full regeneration and refresh all statuses |
+| Agent creation dialog (likely `src/components/dialogs/` or `AgentsPage.tsx`) | Add auto-generate step after agent creation when purpose_text is provided |
 
 ## What stays the same
 
-- Response shape from the edge function (no breaking change)
-- `createDocOverride` logic (disk-first sync, Supabase fallback)
-- UI components (AgentOverview, DocSourceBanner)
-- All other edge functions
-- No new migrations needed
+- Edge function (already generates all 4 outputs)
+- DocSourceBanner (works correctly as-is)
+- Individual "Create override" buttons on doc rows (fine for single-doc overrides)
+- Disk-first sync logic
+
