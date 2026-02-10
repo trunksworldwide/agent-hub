@@ -21,12 +21,25 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
-const DOCS = [
+const STATIC_DOCS = [
   { doc_type: 'soul', path: join(WORKSPACE, 'SOUL.md') },
   { doc_type: 'agents', path: join(WORKSPACE, 'AGENTS.md') },
   { doc_type: 'user', path: join(WORKSPACE, 'USER.md') },
   { doc_type: 'memory_long', path: join(WORKSPACE, 'MEMORY.md') },
 ];
+
+// Daily memory file rolls over at midnight
+function getTodayMemoryPath() {
+  const today = new Date().toISOString().slice(0, 10);
+  return join(WORKSPACE, 'memory', `${today}.md`);
+}
+
+function getDocs() {
+  return [
+    ...STATIC_DOCS,
+    { doc_type: 'memory_today', path: getTodayMemoryPath() },
+  ];
+}
 
 // Used to prevent immediate echo loops where a remote update writes a local file and the
 // local polling watcher immediately upserts the same content back to Supabase.
@@ -108,7 +121,7 @@ async function pullOnce() {
 
   const map = new Map((data || []).map((r) => [r.doc_type, r]));
 
-  for (const d of DOCS) {
+  for (const d of getDocs()) {
     const row = map.get(d.doc_type);
     const content = row?.content;
     if (typeof content !== 'string') continue;
@@ -124,7 +137,7 @@ async function pullOnce() {
 }
 
 async function seedIfMissing() {
-  for (const d of DOCS) {
+  for (const d of getDocs()) {
     try {
       const { data, error } = await sb
         .from('brain_docs')
@@ -157,13 +170,13 @@ async function writeConflictBackup(targetPath, content) {
 
 async function watchLocal() {
   // simple polling watcher (cross-platform reliable)
-  for (const d of DOCS) {
+  for (const d of getDocs()) {
     const content = await readFile(d.path, 'utf8').catch(() => '');
     lastLocal.set(d.doc_type, content);
   }
 
   setInterval(async () => {
-    for (const d of DOCS) {
+    for (const d of getDocs()) {
       try {
         const content = await readFile(d.path, 'utf8').catch(() => '');
         const prev = lastLocal.get(d.doc_type);
@@ -216,7 +229,7 @@ async function subscribeRemote() {
         const row = payload.new || payload.old;
         const docType = row?.doc_type;
         const content = row?.content;
-        const target = DOCS.find((d) => d.doc_type === docType);
+        const target = getDocs().find((d) => d.doc_type === docType);
         if (!target || typeof content !== 'string') return;
 
         const existing = await readFile(target.path, 'utf8').catch(() => null);

@@ -1155,6 +1155,35 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    // GET /api/memory/status — memory backend detection (QMD awareness)
+    if (req.method === 'GET' && url.pathname === '/api/memory/status') {
+      const result = { backend: 'sqlite', qmdConfigured: false, qmdCliFound: false };
+
+      // Check OpenClaw config for memory backend setting
+      try {
+        const homedir = process.env.HOME || '/Users/trunks';
+        const configPath = path.join(homedir, '.openclaw', 'openclaw.json');
+        const raw = await readFile(configPath, 'utf8');
+        const config = JSON.parse(raw);
+        if (config?.memory?.backend === 'qmd') {
+          result.backend = 'qmd';
+          result.qmdConfigured = true;
+        }
+      } catch {
+        // Config doesn't exist or no memory section — default sqlite
+      }
+
+      // Check if qmd CLI is available
+      try {
+        await exec('command -v qmd');
+        result.qmdCliFound = true;
+      } catch {
+        // qmd not on PATH
+      }
+
+      return sendJson(res, 200, result);
+    }
+
     return notFound(res);
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: String(err?.message || err) });

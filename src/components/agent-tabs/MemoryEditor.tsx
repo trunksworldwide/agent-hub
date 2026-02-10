@@ -1,16 +1,32 @@
-import { useEffect, useState } from 'react';
-import { Save, RotateCcw, RefreshCw, FileText, ArrowUp } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Save, RotateCcw, RefreshCw, ArrowUp, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useClawdOffice } from '@/lib/store';
 import { getAgentFile, saveAgentFile, reloadAgent } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
+const MEMORY_TEMPLATE = `# Long-term Memory
+
+## Key Facts
+- 
+
+## Important Dates
+- 
+
+## Recurring Themes
+- 
+
+## Preferences & Patterns
+- 
+`;
+
 export function MemoryEditor() {
   const { selectedAgentId, files, setFileContent, setFileOriginal, setFileSaving, markFileSaved } = useClawdOffice();
   const { toast } = useToast();
   const [activeMemoryTab, setActiveMemoryTab] = useState<'long' | 'today'>('long');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const todayTextareaRef = useRef<HTMLTextAreaElement>(null);
   
   const longKey = `${selectedAgentId}-memory_long`;
   const todayKey = `${selectedAgentId}-memory_today`;
@@ -120,6 +136,47 @@ export function MemoryEditor() {
     }
   };
 
+  const handleSeedTemplate = () => {
+    setFileContent(longKey, MEMORY_TEMPLATE);
+    toast({
+      title: 'Template loaded',
+      description: 'A starter template has been loaded. Save to persist.',
+    });
+  };
+
+  const handlePromoteToLongTerm = () => {
+    if (!todayState?.content?.trim()) {
+      toast({
+        title: 'Nothing to promote',
+        description: "Today's memory is empty.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Get selected text or full content
+    const textarea = todayTextareaRef.current;
+    let textToPromote = todayState.content;
+    if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
+      textToPromote = todayState.content.slice(textarea.selectionStart, textarea.selectionEnd);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const header = `\n\n## Promoted from ${today}\n\n`;
+    const currentLong = longState?.content || '';
+    const newLong = currentLong.trimEnd() + header + textToPromote.trim() + '\n';
+
+    setFileContent(longKey, newLong);
+    
+    toast({
+      title: 'Promoted',
+      description: 'Content appended to long-term memory. Save both tabs to persist.',
+    });
+
+    // Switch to long-term tab so user can review
+    setActiveMemoryTab('long');
+  };
+
   if (!currentState) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 px-6 text-center">
@@ -138,11 +195,10 @@ export function MemoryEditor() {
     );
   }
 
-  const lines = currentState.content.split('\n');
+  const isLongTermEmpty = !longState?.content?.trim();
 
   return (
     <div className="flex flex-col h-full">
-      {/* Memory Type Tabs */}
       <Tabs value={activeMemoryTab} onValueChange={(v) => setActiveMemoryTab(v as 'long' | 'today')} className="flex flex-col h-full">
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/20">
           <div className="flex items-center gap-4">
@@ -173,6 +229,9 @@ export function MemoryEditor() {
               variant="outline"
               size="sm"
               className="gap-2"
+              onClick={handlePromoteToLongTerm}
+              disabled={activeMemoryTab === 'long'}
+              title="Append today's memory (or selection) to long-term"
             >
               <ArrowUp className="w-4 h-4" />
               Promote to Long-term
@@ -199,25 +258,42 @@ export function MemoryEditor() {
         </div>
 
         <TabsContent value="long" className="flex-1 m-0 overflow-hidden">
-          <div className="flex-1 overflow-auto scrollbar-thin h-full">
-            <div className="editor-container m-4 min-h-full">
-              <div className="flex font-mono text-sm">
-                <div className="editor-gutter py-4 px-2 select-none border-r border-border min-w-[3rem]">
-                  {lines.map((_, i) => (
-                    <div key={i} className="editor-line leading-6 text-right">
-                      {i + 1}
-                    </div>
-                  ))}
+          {isLongTermEmpty ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 px-6 text-center">
+              <div className="text-4xl">📭</div>
+              <div>
+                <h3 className="text-lg font-semibold mb-1">Long-term memory is empty</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  This is <code className="text-xs bg-muted px-1 py-0.5 rounded">MEMORY.md</code> on your Mac mini. 
+                  It's currently blank. Seed it with a starter template or start writing.
+                </p>
+              </div>
+              <Button variant="outline" onClick={handleSeedTemplate} className="gap-2">
+                <Sparkles className="w-4 h-4" />
+                Seed template
+              </Button>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto scrollbar-thin h-full">
+              <div className="editor-container m-4 min-h-full">
+                <div className="flex font-mono text-sm">
+                  <div className="editor-gutter py-4 px-2 select-none border-r border-border min-w-[3rem]">
+                    {(longState?.content || '').split('\n').map((_, i) => (
+                      <div key={i} className="editor-line leading-6 text-right">
+                        {i + 1}
+                      </div>
+                    ))}
+                  </div>
+                  <textarea
+                    value={longState?.content || ''}
+                    onChange={(e) => setFileContent(longKey, e.target.value)}
+                    className="flex-1 bg-transparent p-4 resize-none outline-none leading-6 min-h-[400px]"
+                    spellCheck={false}
+                  />
                 </div>
-                <textarea
-                  value={longState?.content || ''}
-                  onChange={(e) => setFileContent(longKey, e.target.value)}
-                  className="flex-1 bg-transparent p-4 resize-none outline-none leading-6 min-h-[400px]"
-                  spellCheck={false}
-                />
               </div>
             </div>
-          </div>
+          )}
         </TabsContent>
 
         <TabsContent value="today" className="flex-1 m-0 overflow-hidden">
@@ -232,6 +308,7 @@ export function MemoryEditor() {
                   ))}
                 </div>
                 <textarea
+                  ref={todayTextareaRef}
                   value={todayState?.content || ''}
                   onChange={(e) => setFileContent(todayKey, e.target.value)}
                   className="flex-1 bg-transparent p-4 resize-none outline-none leading-6 min-h-[400px]"

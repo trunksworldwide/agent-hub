@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Wifi, WifiOff, CheckCircle2, XCircle, Loader2, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Wifi, WifiOff, CheckCircle2, XCircle, Loader2, Trash2, Brain } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   saveControlApiUrlToSupabase,
   type ExecutorCheckResult,
 } from '@/lib/control-api';
+import { getMemoryBackendStatus, type MemoryBackendStatus } from '@/lib/api';
 
 export function HealthPanel() {
   const { controlApiUrl, setControlApiUrl, selectedProjectId } = useClawdOffice();
@@ -20,9 +21,15 @@ export function HealthPanel() {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ExecutorCheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [memoryStatus, setMemoryStatus] = useState<MemoryBackendStatus | null>(null);
   const { toast } = useToast();
 
   const { setExecutorCheck } = useClawdOffice();
+
+  // Fetch memory backend status on mount
+  useEffect(() => {
+    getMemoryBackendStatus().then(setMemoryStatus).catch(() => {});
+  }, [controlApiUrl]);
 
   const handleTest = async () => {
     const url = urlInput.trim();
@@ -180,6 +187,45 @@ export function HealthPanel() {
             {error.slice(0, 300)}
           </div>
         )}
+
+        {/* Memory Backend Status */}
+        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Brain className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Memory Backend</span>
+          </div>
+          {memoryStatus ? (
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Backend</span>
+                <Badge variant={memoryStatus.backend === 'qmd' ? 'default' : 'secondary'}>
+                  {memoryStatus.backend}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">QMD installed</span>
+                {memoryStatus.qmdCliFound ? (
+                  <div className="flex items-center gap-1 text-primary">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Yes</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <XCircle className="h-4 w-4" />
+                    <span>No</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Unknown — connect the Control API to check memory backend status.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground pt-1">
+            This affects how the agent <em>searches</em> memory, not what's stored.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
