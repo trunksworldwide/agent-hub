@@ -1,3 +1,6 @@
+### Memory: date rollover archival for daily memory
+- **brain-doc-sync.mjs**: Added `archiveDailyMemoryIfDateChanged()` — at midnight rollover, the current `memory_today` row is copied to a new `memory_day` row with a `<!-- date: YYYY-MM-DD -->` prefix before being overwritten with the new day's file. Prevents loss of previous day's memory data.
+
 ### Memory: daily sync + empty state UX + promote button + QMD awareness
 - **brain-doc-sync.mjs**: Now syncs daily memory file (`memory/YYYY-MM-DD.md`) as `memory_today` with date-rolling logic. Previous days are not synced.
 - **MemoryEditor**: Empty long-term memory shows friendly empty state with "Seed template" button. Promote button appends today's content (or text selection) to long-term with date header.

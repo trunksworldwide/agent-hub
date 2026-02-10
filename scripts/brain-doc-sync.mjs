@@ -64,6 +64,31 @@ async function gitCommit(filePath, message) {
 
 const GLOBAL_AGENT_KEY = null;
 
+// Track the last-synced date for daily memory archival
+let lastSyncedDate = new Date().toISOString().slice(0, 10);
+
+async function archiveDailyMemoryIfDateChanged() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastSyncedDate && lastSyncedDate !== today) {
+    try {
+      const oldContent = await getRemoteDoc('memory_today');
+      if (oldContent?.content?.trim()) {
+        await sb.from('brain_docs').insert({
+          project_id: PROJECT_ID,
+          agent_key: GLOBAL_AGENT_KEY,
+          doc_type: 'memory_day',
+          content: `<!-- date: ${lastSyncedDate} -->\n${oldContent.content}`,
+          updated_by: 'archive_rollover',
+        });
+        console.log('brain-doc-sync: archived memory_today as memory_day for', lastSyncedDate);
+      }
+    } catch (e) {
+      console.warn('brain-doc-sync: failed to archive daily memory', e);
+    }
+  }
+  lastSyncedDate = today;
+}
+
 async function upsertDoc(doc_type, content, updated_by) {
   await sb.from('brain_docs').upsert(
     {
@@ -176,6 +201,9 @@ async function watchLocal() {
   }
 
   setInterval(async () => {
+    // Check for date rollover and archive yesterday's memory before syncing today's
+    await archiveDailyMemoryIfDateChanged();
+
     for (const d of getDocs()) {
       try {
         const content = await readFile(d.path, 'utf8').catch(() => '');
