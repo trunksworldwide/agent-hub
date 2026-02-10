@@ -6,7 +6,14 @@ import { spawn } from 'node:child_process';
 dotenv.config();
 dotenv.config({ path: '.env.local', override: false });
 
-const PROJECT_ID = process.env.CLAWDOX_PROJECT_ID || process.env.CLAWDO_PROJECT_ID || 'front-office';
+// NOTE: project id must match what the UI/brain-doc-sync uses.
+// Primary env: CLAWDOS_PROJECT_ID (canonical).
+// Keep legacy fallbacks to avoid breaking older setups.
+const PROJECT_ID =
+  process.env.CLAWDOS_PROJECT_ID ||
+  process.env.CLAWDOX_PROJECT_ID ||
+  process.env.CLAWDO_PROJECT_ID ||
+  'front-office';
 const url = process.env.VITE_SUPABASE_URL;
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
