@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.extract-document-notes]
 verify_jwt = false
+
+[functions.generate-agent-docs]
+verify_jwt = false

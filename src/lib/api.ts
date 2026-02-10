@@ -38,6 +38,9 @@ export interface Agent {
   // Purpose (long mission prompt, distinct from short role label)
   purposeText?: string | null;
 
+  // AI-generated short description for agent cards
+  description?: string | null;
+
   // Presence/status fields (optional; populated when Supabase agent_status is configured)
   statusState?: 'idle' | 'working' | 'blocked' | 'sleeping';
   statusNote?: string | null;
@@ -821,7 +824,7 @@ export async function getAgents(): Promise<Agent[]> {
       await Promise.all([
         supabase
           .from('agents')
-          .select('agent_key,name,role,emoji,color,created_at,provisioned,agent_id_short,workspace_path,purpose_text')
+          .select('agent_key,name,role,emoji,color,created_at,provisioned,agent_id_short,workspace_path,purpose_text,description')
           .eq('project_id', projectId)
           .order('created_at', { ascending: true }),
         supabase
@@ -950,6 +953,7 @@ export async function getAgents(): Promise<Agent[]> {
         lastHeartbeatAt: st?.last_heartbeat_at ?? null,
         currentTaskId: st?.current_task_id ?? null,
         purposeText: a.purpose_text ?? null,
+        description: a.description ?? null,
       };
     });
   }
@@ -1091,6 +1095,11 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
       if (error) throw error;
     }
 
+    // Best-effort: sync to Control API (disk-first for agent-specific docs)
+    if (!saveToGlobal && agentId && agentId !== 'agent:main:main') {
+      await trySyncToControlApi(agentId, type, content);
+    }
+
     // Best-effort: write a matching activity row so the Live Feed reflects doc edits
     try {
       const labelByType: Record<AgentFile['type'], string> = {
@@ -1149,31 +1158,160 @@ export async function updateAgentPurpose(agentKey: string, purposeText: string):
   }
 }
 
+/**
+ * Generate AI-powered agent docs by calling the generate-agent-docs edge function.
+ */
+export async function generateAgentDocs(agentKey: string): Promise<{
+  ok: boolean;
+  error?: string;
+  soul?: string;
+  user?: string;
+  memory?: string;
+  description?: string;
+}> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+
+  try {
+    // Fetch agent info
+    const { data: agentRow } = await supabase
+      .from('agents')
+      .select('name,purpose_text')
+      .eq('project_id', projectId)
+      .eq('agent_key', agentKey)
+      .maybeSingle();
+
+    const agentName = agentRow?.name || agentKey;
+    const purposeText = (agentRow as any)?.purpose_text || '';
+
+    if (!purposeText) {
+      return { ok: false, error: 'Agent has no purpose_text set. Please add a purpose first.' };
+    }
+
+    // Fetch global SOUL and USER templates
+    const [{ data: globalSoul }, { data: globalUser }] = await Promise.all([
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'soul').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'user').is('agent_key', null).maybeSingle(),
+    ]);
+
+    // Call the edge function
+    const supabaseUrl = 'https://bsqeddnaiojvvckpdvcu.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzcWVkZG5haW9qdnZja3BkdmN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5ODQ3MjEsImV4cCI6MjA4NTU2MDcyMX0.9WUEYU5PshM6UbJbKTogIXg8aIpaez_MfVW98EaionY';
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/generate-agent-docs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        agentName,
+        purposeText,
+        globalSoul: globalSoul?.content || '',
+        globalUser: globalUser?.content || '',
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Edge function error ${res.status}: ${errText}`);
+    }
+
+    const result = await res.json();
+    if (!result.success) {
+      throw new Error(result.error || result.reason || 'Generation failed');
+    }
+
+    return {
+      ok: true,
+      soul: result.soul,
+      user: result.user,
+      memory: result.memory,
+      description: result.description,
+    };
+  } catch (e: any) {
+    console.error('generateAgentDocs failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Helper: try to sync a doc to the Control API (disk-first).
+ * Returns true if Control API handled the write (so Supabase write can be skipped).
+ */
+async function trySyncToControlApi(agentKey: string, docType: string, content: string): Promise<boolean> {
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) return false;
+
+  const agentIdShort = agentKey.split(':')[1] || agentKey;
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/agents/${encodeURIComponent(agentIdShort)}/files/${encodeURIComponent(docType)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-clawdos-project': getProjectId() },
+      body: JSON.stringify({ content }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      console.log(`[trySyncToControlApi] Wrote ${docType} for ${agentKey} to disk`);
+      return true;
+    }
+    console.warn(`[trySyncToControlApi] Control API returned ${res.status}`);
+    return false;
+  } catch (e) {
+    console.warn('[trySyncToControlApi] Control API unreachable:', e);
+    return false;
+  }
+}
+
+/**
+ * Create doc overrides for an agent using AI-generated content.
+ * Generates all three doc types (soul, user, memory) at once.
+ */
 export async function createDocOverride(agentKey: string, docType: AgentFile['type']): Promise<{ ok: boolean; error?: string }> {
   if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
   const projectId = getProjectId();
+
   try {
-    const { data: globalRow } = await supabase
-      .from('brain_docs')
-      .select('content')
-      .eq('project_id', projectId)
-      .eq('doc_type', docType)
-      .is('agent_key', null)
-      .maybeSingle();
+    // Generate AI docs
+    const genResult = await generateAgentDocs(agentKey);
+    if (!genResult.ok) {
+      throw new Error(genResult.error || 'AI generation failed');
+    }
 
-    const content = globalRow?.content || '';
+    const docsToWrite: { type: AgentFile['type']; content: string }[] = [
+      { type: 'soul', content: genResult.soul || '' },
+      { type: 'user', content: genResult.user || '' },
+      { type: 'memory_long', content: genResult.memory || '' },
+    ];
 
-    const { error } = await supabase.from('brain_docs').upsert(
-      {
-        project_id: projectId,
-        agent_key: agentKey,
-        doc_type: docType,
-        content,
-        updated_by: 'dashboard',
-      },
-      { onConflict: 'project_id,agent_key,doc_type' }
-    );
-    if (error) throw error;
+    // Write each doc: disk-first, then Supabase fallback
+    for (const doc of docsToWrite) {
+      const diskHandled = await trySyncToControlApi(agentKey, doc.type, doc.content);
+      if (!diskHandled) {
+        // Fallback: write to Supabase directly
+        const { error } = await supabase.from('brain_docs').upsert(
+          {
+            project_id: projectId,
+            agent_key: agentKey,
+            doc_type: doc.type,
+            content: doc.content,
+            updated_by: 'dashboard',
+          },
+          { onConflict: 'project_id,agent_key,doc_type' }
+        );
+        if (error) throw error;
+      }
+    }
+
+    // Update agents.description with the AI-generated blurb
+    if (genResult.description) {
+      await supabase
+        .from('agents')
+        .update({ description: genResult.description } as any)
+        .eq('project_id', projectId)
+        .eq('agent_key', agentKey);
+    }
+
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: String(e?.message || e) };
