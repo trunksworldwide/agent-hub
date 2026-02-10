@@ -596,7 +596,7 @@ export async function createAgent(input: {
   }
 }
 
-async function queueProvisionRequest(
+export async function queueProvisionRequest(
   projectId: string,
   agentKey: string,
   agentIdShort: string,

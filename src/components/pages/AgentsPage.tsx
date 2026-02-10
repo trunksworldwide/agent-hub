@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, HelpCircle, Plus } from 'lucide-react';
 import { useClawdOffice } from '@/lib/store';
-import { getAgents, createAgent, type Agent } from '@/lib/api';
+import { getAgents, createAgent, queueProvisionRequest, type Agent } from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -306,10 +306,29 @@ export function AgentsPage() {
                     {agent.role || 'Agent'}
                   </p>
                   <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                    {agent.provisioned === false && (
+                    {agent.provisioned === false && agent.id !== 'agent:main:main' && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[11px] font-medium">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                         Provisioning…
+                        <button
+                          type="button"
+                          className="ml-1 underline hover:text-amber-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const idShort = agent.id.split(':')[1] || agent.id;
+                            queueProvisionRequest(
+                              selectedProjectId || 'front-office',
+                              agent.id,
+                              idShort,
+                              agent.name,
+                              agent.avatar || null,
+                              agent.role || null,
+                            );
+                            toast({ title: 'Provisioning re-queued', description: `${agent.name} will be provisioned when the executor picks it up.` });
+                          }}
+                        >
+                          Retry
+                        </button>
                       </span>
                     )}
                     <span>{agent.skillCount} skills</span>
