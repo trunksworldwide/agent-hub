@@ -1,7 +1,7 @@
 import { Globe, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClawdOffice } from '@/lib/store';
-import { createDocOverride, type AgentFile } from '@/lib/api';
+import { createSingleDocOverride, type AgentFile } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 
@@ -24,7 +24,7 @@ export function DocSourceBanner({ source, docType, onOverrideCreated }: Props) {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      const result = await createDocOverride(selectedAgentId, docType);
+      const result = await createSingleDocOverride(selectedAgentId, docType);
       if (!result.ok) throw new Error(result.error);
       toast({ title: 'Override created', description: 'Agent-specific docs created. Reload to see them.' });
       onOverrideCreated?.();
@@ -48,7 +48,7 @@ export function DocSourceBanner({ source, docType, onOverrideCreated }: Props) {
             onClick={handleCreate}
             disabled={creating}
           >
-            {creating ? 'Generating with AI...' : 'Create agent override'}
+            {creating ? 'Creating override...' : 'Create agent override'}
           </Button>
         </>
       ) : (

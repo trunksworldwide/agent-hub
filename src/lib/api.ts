@@ -1369,6 +1369,48 @@ export async function createDocOverride(agentKey: string, docType: AgentFile['ty
   }
 }
 
+/**
+ * Create a single doc override by copying the inherited (global) content.
+ * No AI generation — just makes the doc editable as an agent-specific copy.
+ */
+export async function createSingleDocOverride(agentKey: string, docType: AgentFile['type']): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+
+  try {
+    // Fetch the global (inherited) content for this doc type
+    const { data: globalDoc } = await supabase
+      .from('brain_docs')
+      .select('content')
+      .eq('project_id', projectId)
+      .eq('doc_type', docType)
+      .is('agent_key', null)
+      .maybeSingle();
+
+    const content = globalDoc?.content || '';
+
+    // Write as agent-specific row: disk-first, then Supabase fallback
+    const diskHandled = await trySyncToControlApi(agentKey, docType, content);
+    if (!diskHandled) {
+      const { error } = await supabase.from('brain_docs').upsert(
+        {
+          project_id: projectId,
+          agent_key: agentKey,
+          doc_type: docType,
+          content,
+          updated_by: 'dashboard',
+        },
+        { onConflict: 'project_id,agent_key,doc_type' }
+      );
+      if (error) throw error;
+    }
+
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 export async function getDocOverrideStatus(agentKey: string): Promise<Record<string, 'global' | 'agent'>> {
   if (!(hasSupabase() && supabase)) return {};
   const projectId = getProjectId();

@@ -8,6 +8,7 @@ import {
   updateAgentPurpose,
   getDocOverrideStatus,
   createDocOverride,
+  createSingleDocOverride,
   generateAgentDocs,
   scheduleAgentDigest,
   reloadAgent,
@@ -131,7 +132,7 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
   const handleCreateOverride = async (docType: string) => {
     if (!agent?.id) return;
     try {
-      const result = await createDocOverride(agent.id, docType as any);
+      const result = await createSingleDocOverride(agent.id, docType as any);
       if (!result.ok) throw new Error(result.error);
       setDocStatus((prev) => ({ ...prev, [docType]: 'agent' }));
       toast({ title: 'Override created', description: `${docType} now has agent-specific docs.` });
