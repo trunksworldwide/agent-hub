@@ -889,24 +889,47 @@ export async function getAgents(): Promise<Agent[]> {
   return mockAgents;
 }
 
-export async function getAgentFile(agentId: string, type: AgentFile['type']): Promise<AgentFile> {
+export async function getAgentFile(agentId: string, type: AgentFile['type']): Promise<AgentFile & { _globalRow?: boolean }> {
   // Prefer Supabase brain_docs if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
-    const { data, error } = await supabase
+
+    // 1. Try agent-specific row first
+    const { data: agentRow, error: err1 } = await supabase
       .from('brain_docs')
-      .select('content,updated_at')
+      .select('content,updated_at,agent_key')
       .eq('project_id', projectId)
       .eq('agent_key', agentId)
       .eq('doc_type', type)
       .maybeSingle();
 
-    if (error) throw error;
+    if (err1) throw err1;
+
+    if (agentRow) {
+      return {
+        type,
+        content: agentRow.content || '',
+        lastModified: agentRow.updated_at || new Date().toISOString(),
+        _globalRow: false,
+      };
+    }
+
+    // 2. Fallback to global row (agent_key IS NULL) — written by brain-doc-sync
+    const { data: globalRow, error: err2 } = await supabase
+      .from('brain_docs')
+      .select('content,updated_at,agent_key')
+      .eq('project_id', projectId)
+      .eq('doc_type', type)
+      .is('agent_key', null)
+      .maybeSingle();
+
+    if (err2) throw err2;
 
     return {
       type,
-      content: data?.content || '',
-      lastModified: data?.updated_at || new Date().toISOString(),
+      content: globalRow?.content || '',
+      lastModified: globalRow?.updated_at || new Date().toISOString(),
+      _globalRow: true,
     };
   }
 
@@ -934,22 +957,69 @@ export async function saveAgentFile(agentId: string, type: AgentFile['type'], co
   // Prefer Supabase brain_docs if configured.
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
-    const { error } = await supabase
-      .from('brain_docs')
-      .upsert(
-        {
-          project_id: projectId,
-          agent_key: agentId,
-          doc_type: type,
+
+    // Determine whether to save to the global row (agent_key=NULL) or the agent-specific row.
+    // Global doc types are the ones brain-doc-sync manages with agent_key=NULL.
+    const globalDocTypes: AgentFile['type'][] = ['soul', 'user', 'memory_long', 'agents'];
+    let saveToGlobal = false;
+
+    if (globalDocTypes.includes(type)) {
+      // Check if a global row exists (written by brain-doc-sync on the Mac mini)
+      const { data: globalRow } = await supabase
+        .from('brain_docs')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('doc_type', type)
+        .is('agent_key', null)
+        .maybeSingle();
+
+      // Also check if an agent-specific row exists
+      const { data: agentRow } = await supabase
+        .from('brain_docs')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('doc_type', type)
+        .eq('agent_key', agentId)
+        .maybeSingle();
+
+      // If there's a global row but no agent-specific row, save to global
+      // (this is the common case for the primary agent synced by brain-doc-sync)
+      if (globalRow && !agentRow) {
+        saveToGlobal = true;
+      }
+    }
+
+    if (saveToGlobal) {
+      // Update the global row in-place so brain-doc-sync picks up the change
+      const { error } = await supabase
+        .from('brain_docs')
+        .update({
           content,
           updated_by: 'dashboard',
-        },
-        { onConflict: 'project_id,agent_key,doc_type' }
-      );
-    if (error) throw error;
+          updated_at: new Date().toISOString(),
+        })
+        .eq('project_id', projectId)
+        .eq('doc_type', type)
+        .is('agent_key', null);
+      if (error) throw error;
+    } else {
+      // Agent-specific upsert (original behavior)
+      const { error } = await supabase
+        .from('brain_docs')
+        .upsert(
+          {
+            project_id: projectId,
+            agent_key: agentId,
+            doc_type: type,
+            content,
+            updated_by: 'dashboard',
+          },
+          { onConflict: 'project_id,agent_key,doc_type' }
+        );
+      if (error) throw error;
+    }
 
     // Best-effort: write a matching activity row so the Live Feed reflects doc edits
-    // even when the dashboard is talking directly to Supabase.
     try {
       const labelByType: Record<AgentFile['type'], string> = {
         soul: 'SOUL.md',

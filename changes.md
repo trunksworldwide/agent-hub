@@ -1,3 +1,8 @@
+### Fix: Brain doc editors now read/write global rows (NULL agent_key fallback)
+- `getAgentFile()` now tries agent-specific row first, then falls back to the global row (`agent_key IS NULL`) written by `brain-doc-sync.mjs`.
+- `saveAgentFile()` detects when a global row exists (and no agent-specific override) and updates it in-place, so changes flow back to the Mac mini via brain-doc-sync.
+- Fixes blank SOUL.md / USER.md / MEMORY.md editors for the primary agent.
+
 ### Control API URL: Supabase persistence (cross-session)
 - Created `project_settings` table (key-value, project-scoped) with open RLS matching existing patterns.
 - `control-api.ts` now has `fetchControlApiUrlFromSupabase()` and `saveControlApiUrlToSupabase()` for reading/writing the URL.
