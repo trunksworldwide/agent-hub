@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import type { Agent, SystemStatus, AgentFile } from './api';
 import { getSelectedProjectId, setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } from './project';
-import { getControlApiUrl, setControlApiUrl as persistControlApiUrl, type ExecutorCheckResult } from './control-api';
+import {
+  getControlApiUrl,
+  setControlApiUrl as persistControlApiUrl,
+  fetchControlApiUrlFromSupabase,
+  type ExecutorCheckResult,
+} from './control-api';
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
@@ -64,6 +69,9 @@ interface ClawdOfficeState {
   // Executor health check result (shared across components)
   executorCheck: ExecutorCheckResult | null;
   setExecutorCheck: (result: ExecutorCheckResult | null) => void;
+
+  // Init control API URL from Supabase (async, called on mount)
+  initControlApiUrl: (projectId: string) => Promise<void>;
 
   // UI state
   isRestarting: boolean;
@@ -181,6 +189,21 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Executor health check result
   executorCheck: null,
   setExecutorCheck: (result) => set({ executorCheck: result }),
+
+  // Init control API URL from Supabase if localStorage is empty
+  initControlApiUrl: async (projectId) => {
+    const current = getControlApiUrl();
+    if (current) return; // localStorage already has a value
+    try {
+      const fromSupabase = await fetchControlApiUrlFromSupabase(projectId);
+      if (fromSupabase) {
+        persistControlApiUrl(fromSupabase); // cache to localStorage
+        set({ controlApiUrl: fromSupabase });
+      }
+    } catch {
+      // Supabase fetch failed, keep env var fallback
+    }
+  },
 
   // UI state
   isRestarting: false,

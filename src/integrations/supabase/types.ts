@@ -577,6 +577,30 @@ export type Database = {
           },
         ]
       }
+      project_settings: {
+        Row: {
+          id: string
+          key: string
+          project_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          id?: string
+          key: string
+          project_id: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          id?: string
+          key?: string
+          project_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           created_at: string

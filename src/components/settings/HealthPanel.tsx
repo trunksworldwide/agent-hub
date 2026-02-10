@@ -10,11 +10,12 @@ import { useClawdOffice } from '@/lib/store';
 import {
   testControlApi,
   clearControlApiUrl,
+  saveControlApiUrlToSupabase,
   type ExecutorCheckResult,
 } from '@/lib/control-api';
 
 export function HealthPanel() {
-  const { controlApiUrl, setControlApiUrl } = useClawdOffice();
+  const { controlApiUrl, setControlApiUrl, selectedProjectId } = useClawdOffice();
   const [urlInput, setUrlInput] = useState(controlApiUrl);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ExecutorCheckResult | null>(null);
@@ -46,13 +47,18 @@ export function HealthPanel() {
     }
   };
 
-  const handleSave = () => {
-    setControlApiUrl(urlInput.trim());
-    toast({ title: 'Saved', description: 'Control API URL updated.' });
+  const handleSave = async () => {
+    const url = urlInput.trim();
+    setControlApiUrl(url);
+    // Also persist to Supabase for cross-session/device access
+    await saveControlApiUrlToSupabase(selectedProjectId, url).catch(() => {});
+    toast({ title: 'Saved', description: 'Control API URL updated and synced.' });
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     clearControlApiUrl();
+    // Also clear from Supabase
+    await saveControlApiUrlToSupabase(selectedProjectId, '').catch(() => {});
     const fallback = import.meta.env.VITE_API_BASE_URL || '';
     setUrlInput(fallback);
     setControlApiUrl(fallback);

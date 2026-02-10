@@ -2,14 +2,21 @@ import { Outlet } from 'react-router-dom';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useClawdOffice } from '@/lib/store';
 
 export function AppShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isMobile = useIsMobile();
+  const { selectedProjectId, initControlApiUrl } = useClawdOffice();
+
+  // On mount, hydrate control API URL from Supabase if localStorage is empty
+  useEffect(() => {
+    initControlApiUrl(selectedProjectId);
+  }, [selectedProjectId, initControlApiUrl]);
 
   return (
     <SidebarProvider>
