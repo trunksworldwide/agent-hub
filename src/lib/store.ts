@@ -193,7 +193,17 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
   // Init control API URL from Supabase if localStorage is empty
   initControlApiUrl: async (projectId) => {
     const current = getControlApiUrl();
-    if (current) return; // localStorage already has a value
+    if (current) {
+      // localStorage has a value — ensure it's also in Supabase
+      fetchControlApiUrlFromSupabase(projectId).then((fromSupa) => {
+        if (!fromSupa || fromSupa !== current) {
+          import('./control-api').then(({ saveControlApiUrlToSupabase }) =>
+            saveControlApiUrlToSupabase(projectId, current).catch(() => {})
+          );
+        }
+      }).catch(() => {});
+      return;
+    }
     try {
       const fromSupabase = await fetchControlApiUrlFromSupabase(projectId);
       if (fromSupabase) {
