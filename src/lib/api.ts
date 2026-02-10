@@ -1173,26 +1173,22 @@ export async function generateAgentDocs(agentKey: string): Promise<{
   const projectId = getProjectId();
 
   try {
-    // Fetch agent info
-    const { data: agentRow } = await supabase
-      .from('agents')
-      .select('name,purpose_text')
-      .eq('project_id', projectId)
-      .eq('agent_key', agentKey)
-      .maybeSingle();
+    // Fetch agent info + project name in parallel
+    const [{ data: agentRow }, { data: projectRow }, { data: globalSoul }, { data: globalUser }] = await Promise.all([
+      supabase.from('agents').select('name,purpose_text,role').eq('project_id', projectId).eq('agent_key', agentKey).maybeSingle(),
+      supabase.from('projects').select('name').eq('id', projectId).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'soul').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'user').is('agent_key', null).maybeSingle(),
+    ]);
 
     const agentName = agentRow?.name || agentKey;
     const purposeText = (agentRow as any)?.purpose_text || '';
+    const roleShort = agentRow?.role || '';
+    const projectName = projectRow?.name || '';
 
     if (!purposeText) {
       return { ok: false, error: 'Agent has no purpose_text set. Please add a purpose first.' };
     }
-
-    // Fetch global SOUL and USER templates
-    const [{ data: globalSoul }, { data: globalUser }] = await Promise.all([
-      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'soul').is('agent_key', null).maybeSingle(),
-      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'user').is('agent_key', null).maybeSingle(),
-    ]);
 
     // Call the edge function
     const supabaseUrl = 'https://bsqeddnaiojvvckpdvcu.supabase.co';
@@ -1207,8 +1203,10 @@ export async function generateAgentDocs(agentKey: string): Promise<{
       body: JSON.stringify({
         agentName,
         purposeText,
+        roleShort,
         globalSoul: globalSoul?.content || '',
         globalUser: globalUser?.content || '',
+        projectName,
       }),
     });
 
