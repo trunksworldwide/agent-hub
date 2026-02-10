@@ -113,7 +113,7 @@ export function AgentsPage() {
 
     const unsubscribe = subscribeToProjectRealtime(selectedProjectId, (change) => {
       const table = change?.table;
-      if (table === 'agents' || table === 'agent_status') scheduleRefresh();
+      if (table === 'agents' || table === 'agent_status' || table === 'agent_provision_requests') scheduleRefresh();
     });
 
     return () => {
