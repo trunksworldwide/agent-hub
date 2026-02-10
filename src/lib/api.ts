@@ -30,6 +30,11 @@ export interface Agent {
   // Optional theme fields (from Supabase `agents` table)
   color?: string | null;
 
+  // Provisioning fields
+  provisioned?: boolean;
+  agentIdShort?: string | null;
+  workspacePath?: string | null;
+
   // Presence/status fields (optional; populated when Supabase agent_status is configured)
   statusState?: 'idle' | 'working' | 'blocked' | 'sleeping';
   statusNote?: string | null;
@@ -504,6 +509,10 @@ export async function createAgent(input: {
   const color = input.color?.trim() || null;
 
   try {
+    // Derive agentIdShort from key
+    const keyParts = agentKey.split(':');
+    const agentIdShort = keyParts.length >= 2 ? keyParts[1] : agentKey;
+
     // Create/merge agent roster row.
     const { error: agentErr } = await supabase.from('agents').upsert(
       {
@@ -513,7 +522,9 @@ export async function createAgent(input: {
         role,
         emoji,
         color,
-      },
+        agent_id_short: agentIdShort,
+        provisioned: false,
+      } as any,
       { onConflict: 'project_id,agent_key' }
     );
 
@@ -544,11 +555,65 @@ export async function createAgent(input: {
       task_id: null,
     });
 
+    // Try direct provisioning via Control API
+    const baseUrl = getApiBaseUrl();
+    if (baseUrl) {
+      try {
+        const provisionRes = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/agents/provision`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-clawdos-project': projectId,
+          },
+          body: JSON.stringify({
+            agentKey,
+            displayName: name,
+            emoji,
+            roleShort: role,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (provisionRes.ok) {
+          console.log('[createAgent] Direct provisioning succeeded');
+        } else {
+          const errText = await provisionRes.text().catch(() => '');
+          console.warn('[createAgent] Direct provisioning failed, queuing:', errText);
+          await queueProvisionRequest(projectId, agentKey, agentIdShort, name, emoji, role);
+        }
+      } catch (e) {
+        console.warn('[createAgent] Control API unreachable, queuing provision request:', e);
+        await queueProvisionRequest(projectId, agentKey, agentIdShort, name, emoji, role);
+      }
+    } else {
+      // No Control API configured, queue for offline worker
+      await queueProvisionRequest(projectId, agentKey, agentIdShort, name, emoji, role);
+    }
+
     return { ok: true };
   } catch (e: any) {
     console.error('createAgent failed:', e);
     return { ok: false, error: String(e?.message || e) };
   }
+}
+
+async function queueProvisionRequest(
+  projectId: string,
+  agentKey: string,
+  agentIdShort: string,
+  displayName: string,
+  emoji: string | null,
+  roleShort: string | null,
+): Promise<void> {
+  if (!supabase) return;
+  await supabase.from('agent_provision_requests' as any).insert({
+    project_id: projectId,
+    agent_key: agentKey,
+    agent_id_short: agentIdShort,
+    display_name: displayName,
+    emoji,
+    role_short: roleShort,
+    status: 'queued',
+  });
 }
 
 /**
@@ -753,7 +818,7 @@ export async function getAgents(): Promise<Agent[]> {
       await Promise.all([
         supabase
           .from('agents')
-          .select('agent_key,name,role,emoji,color,created_at')
+          .select('agent_key,name,role,emoji,color,created_at,provisioned,agent_id_short,workspace_path')
           .eq('project_id', projectId)
           .order('created_at', { ascending: true }),
         supabase
@@ -873,6 +938,9 @@ export async function getAgents(): Promise<Agent[]> {
         skillCount: 0,
         avatar: a.emoji || '🤖',
         color: a.color ?? null,
+        provisioned: a.provisioned ?? false,
+        agentIdShort: a.agent_id_short ?? null,
+        workspacePath: a.workspace_path ?? null,
         statusState: state,
         statusNote: st?.note ?? null,
         lastActivityAt: st?.last_activity_at ?? null,

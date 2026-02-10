@@ -1,4 +1,16 @@
-### Edit dialog: user-friendly schedule picker + remove job intent
+### Agent Provisioning: create runnable OpenClaw agents from the dashboard
+- **Database**: Added `agent_id_short`, `workspace_path`, `provisioned` columns to `agents` table. Created `agent_provision_requests` queue table.
+- **Control API** (`server/index.mjs`):
+  - `POST /api/agents/provision`: Creates an OpenClaw agent on the Mac mini (`openclaw agents add` + `set-identity`), seeds SOUL/USER/MEMORY files, updates Supabase.
+  - `GET /api/agents/runtime`: Returns runnable agents from `openclaw agents list --json`.
+  - Agent file endpoints (`/api/agents/:agentKey/files/:type`) now support any provisioned agent (not just trunks). Resolves workspace via `agents.workspace_path` in Supabase.
+  - On POST (write), mirrors doc content to Supabase `brain_docs` with correct `agent_key`.
+- **Offline worker** (`scripts/cron-mirror.mjs`): Added `processProvisionRequests()` — polls `agent_provision_requests` every 10s, runs same provisioning steps, added to stuck-request watchdog.
+- **Dashboard** (`src/lib/api.ts`): `createAgent()` now derives `agent_id_short`, attempts direct provisioning via Control API, falls back to queue. `Agent` type includes `provisioned`, `agentIdShort`, `workspacePath`.
+- **Dashboard** (`src/components/pages/AgentsPage.tsx`): Shows "Provisioning…" badge on agents where `provisioned === false`.
+- **brain-doc-sync**: No changes (Approach B — Control API handles per-agent docs).
+
+
 - **Edit dialog** now uses the same friendly preset selector as the Create dialog (Every 5 min, Every 1 hour, Daily at..., Weekly, Custom cron). No more raw cron expressions.
 - **Removed Job Intent** field from the edit dialog — intent is implicit in the instructions.
 - Schedule changes are properly tracked as dirty to avoid sending unchanged `--system-event` or `--cron` flags.

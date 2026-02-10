@@ -526,8 +526,27 @@ const server = http.createServer(async (req, res) => {
     const agentFileMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/files\/(soul|user|memory_long|memory_today)$/);
     if (agentFileMatch && req.method === 'GET') {
       const [, agentId, type] = agentFileMatch;
-      if (agentId !== 'trunks') return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
-      const fp = filePathFor(workspace, type);
+
+      // Resolve workspace: trunks uses project workspace, others look up from Supabase
+      let agentWorkspace = workspace;
+      if (agentId !== 'trunks') {
+        const sb = getSupabaseServerClient();
+        if (sb) {
+          const { data: agentRow } = await sb.from('agents')
+            .select('workspace_path,agent_key')
+            .eq('project_id', projectId)
+            .or(`agent_key.eq.agent:${agentId}:main,agent_id_short.eq.${agentId}`)
+            .maybeSingle();
+          if (!agentRow?.workspace_path) {
+            return sendJson(res, 404, { ok: false, error: 'agent_not_provisioned', hint: `Agent "${agentId}" has no workspace_path. Provision it first.` });
+          }
+          agentWorkspace = agentRow.workspace_path;
+        } else {
+          return sendJson(res, 404, { ok: false, error: 'cannot_resolve_agent_workspace' });
+        }
+      }
+
+      const fp = filePathFor(agentWorkspace, type);
       if (!fp) return sendJson(res, 400, { ok: false, error: 'bad_type' });
 
       const st = await safeStat(fp);
@@ -541,8 +560,29 @@ const server = http.createServer(async (req, res) => {
 
     if (agentFileMatch && req.method === 'POST') {
       const [, agentId, type] = agentFileMatch;
-      if (agentId !== 'trunks') return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
-      const fp = filePathFor(workspace, type);
+
+      // Resolve workspace: trunks uses project workspace, others look up from Supabase
+      let agentWorkspace = workspace;
+      let resolvedAgentKey = null;
+      if (agentId !== 'trunks') {
+        const sb = getSupabaseServerClient();
+        if (sb) {
+          const { data: agentRow } = await sb.from('agents')
+            .select('workspace_path,agent_key')
+            .eq('project_id', projectId)
+            .or(`agent_key.eq.agent:${agentId}:main,agent_id_short.eq.${agentId}`)
+            .maybeSingle();
+          if (!agentRow?.workspace_path) {
+            return sendJson(res, 404, { ok: false, error: 'agent_not_provisioned', hint: `Agent "${agentId}" has no workspace_path. Provision it first.` });
+          }
+          agentWorkspace = agentRow.workspace_path;
+          resolvedAgentKey = agentRow.agent_key;
+        } else {
+          return sendJson(res, 404, { ok: false, error: 'cannot_resolve_agent_workspace' });
+        }
+      }
+
+      const fp = filePathFor(agentWorkspace, type);
       if (!fp) return sendJson(res, 400, { ok: false, error: 'bad_type' });
 
       const body = await readBodyJson(req);
@@ -553,8 +593,23 @@ const server = http.createServer(async (req, res) => {
 
       const commit = await gitCommitFile(brainRepo, fp, `ClawdOS: update ${type}`);
 
-      // Best-effort: mirror “brain doc” edits into the Supabase activity feed.
-      // This makes doc changes visible in the ClawdOS Live Feed when Supabase is configured.
+      // Best-effort: mirror to Supabase brain_docs with correct agent_key
+      const mirrorAgentKey = resolvedAgentKey || (agentId === 'trunks' ? null : `agent:${agentId}:main`);
+      const mirrorSb = getSupabaseServerClient();
+      if (mirrorSb) {
+        try {
+          await mirrorSb.from('brain_docs').upsert({
+            project_id: projectId,
+            agent_key: mirrorAgentKey,
+            doc_type: type,
+            content,
+            updated_by: 'dashboard',
+          }, { onConflict: 'project_id,agent_key,doc_type' });
+        } catch (e) {
+          console.error('[agent-file-write] brain_docs mirror failed:', e?.message || e);
+        }
+      }
+
       await logSupabaseActivity({
         projectId,
         type: 'brain_doc_updated',
@@ -1182,6 +1237,111 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, result);
     }
+
+    // ============= Agent Provisioning Endpoints =============
+
+    // GET /api/agents/runtime — list runnable OpenClaw agents from the Mac mini
+    if (req.method === 'GET' && url.pathname === '/api/agents/runtime') {
+      try {
+        const { stdout } = await execExecutor('agents list --json');
+        const parsed = JSON.parse(stdout || '{}');
+        return sendJson(res, 200, { ok: true, agents: parsed.agents || parsed.list || (Array.isArray(parsed) ? parsed : []) });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // POST /api/agents/provision — provision a new OpenClaw agent on the Mac mini
+    if (req.method === 'POST' && url.pathname === '/api/agents/provision') {
+      try {
+        const body = await readBodyJson(req);
+        const agentKey = String(body.agentKey || '').trim();
+        const displayName = String(body.displayName || '').trim();
+        const emoji = String(body.emoji || '').trim() || null;
+        const roleShort = String(body.roleShort || '').trim() || null;
+
+        if (!agentKey) return sendJson(res, 400, { ok: false, error: 'missing_agent_key' });
+        if (!displayName) return sendJson(res, 400, { ok: false, error: 'missing_display_name' });
+
+        // Derive agentIdShort from agent_key (e.g. "agent:ricky:main" -> "ricky")
+        const parts = agentKey.split(':');
+        const agentIdShort = parts.length >= 2 ? parts[1] : agentKey;
+
+        const homedir = process.env.HOME || '/Users/trunks';
+        const workspaceDir = path.join(homedir, '.openclaw', `workspace-${agentIdShort}`);
+
+        // 1. Create the agent in OpenClaw
+        try {
+          await execExecutor(`agents add ${JSON.stringify(agentIdShort)} --workspace ${JSON.stringify(workspaceDir)}`);
+        } catch (e) {
+          // If agent already exists, continue
+          const msg = String(e?.message || e);
+          if (!msg.includes('already exists') && !msg.includes('already added')) {
+            throw new Error(`Failed to add agent: ${msg}`);
+          }
+        }
+
+        // 2. Set identity
+        try {
+          const identityArgs = [`agents set-identity`, `--agent ${JSON.stringify(agentIdShort)}`, `--name ${JSON.stringify(displayName)}`];
+          if (emoji) identityArgs.push(`--emoji ${JSON.stringify(emoji)}`);
+          await execExecutor(identityArgs.join(' '));
+        } catch (e) {
+          console.error('[provision] set-identity failed (non-fatal):', e?.message || e);
+        }
+
+        // 3. Seed workspace files
+        await exec(`mkdir -p ${JSON.stringify(path.join(workspaceDir, 'memory'))}`);
+
+        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
+        const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n`;
+        const memoryContent = `# MEMORY.md\n\n`;
+
+        const seedFiles = [
+          { fp: path.join(workspaceDir, 'SOUL.md'), content: soulContent },
+          { fp: path.join(workspaceDir, 'USER.md'), content: userContent },
+          { fp: path.join(workspaceDir, 'MEMORY.md'), content: memoryContent },
+        ];
+
+        for (const f of seedFiles) {
+          if (!existsSync(f.fp)) writeFileSync(f.fp, f.content, 'utf8');
+        }
+
+        // 4. Best-effort: update Supabase
+        const sb = getSupabaseServerClient();
+        if (sb) {
+          // Update agents row
+          await sb.from('agents').update({
+            provisioned: true,
+            agent_id_short: agentIdShort,
+            workspace_path: workspaceDir,
+          }).eq('project_id', projectId).eq('agent_key', agentKey);
+
+          // Write agent-scoped brain_docs
+          const docRows = [
+            { project_id: projectId, agent_key: agentKey, doc_type: 'soul', content: soulContent, updated_by: 'provisioner' },
+            { project_id: projectId, agent_key: agentKey, doc_type: 'user', content: userContent, updated_by: 'provisioner' },
+            { project_id: projectId, agent_key: agentKey, doc_type: 'memory_long', content: memoryContent, updated_by: 'provisioner' },
+          ];
+          await sb.from('brain_docs').upsert(docRows, { onConflict: 'project_id,agent_key,doc_type' });
+
+          // Activity log
+          await sb.from('activities').insert({
+            project_id: projectId,
+            type: 'agent_provisioned',
+            message: `Provisioned agent ${displayName} (${agentIdShort}) on executor`,
+            actor_agent_key: 'agent:provisioner:system',
+          });
+        }
+
+        return sendJson(res, 200, { ok: true, agentId: agentIdShort, workspaceDir });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // ============= Agent File Endpoints (multi-agent support) =============
+    // Override the existing agent file match to support any agent, not just trunks
 
     // GET /api/memory/status — memory backend detection (QMD awareness)
     if (req.method === 'GET' && url.pathname === '/api/memory/status') {
