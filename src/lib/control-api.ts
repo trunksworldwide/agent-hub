@@ -16,9 +16,14 @@ export interface ExecutorCheckResult {
   };
 }
 
+/** Returns the URL stored in localStorage (if any). */
+export function getStoredControlApiUrl(): string {
+  return localStorage.getItem(STORAGE_KEY) || '';
+}
+
 /** Returns the runtime Control API URL: localStorage → VITE_API_BASE_URL → '' */
 export function getControlApiUrl(): string {
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = getStoredControlApiUrl();
   if (stored) return stored;
   return import.meta.env.VITE_API_BASE_URL || '';
 }

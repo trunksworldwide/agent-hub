@@ -196,26 +196,51 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
 
   // Init control API URL from Supabase if localStorage is empty
   initControlApiUrl: async (projectId) => {
-    const current = getControlApiUrl();
-    if (current) {
+    // IMPORTANT: distinguish "stored" (user-set) vs env fallback.
+    // We always try Supabase when there's no explicit localStorage override,
+    // even if VITE_API_BASE_URL is set.
+    const { getStoredControlApiUrl, getControlApiUrl } = await import('./control-api');
+
+    const stored = getStoredControlApiUrl();
+    const envFallback = import.meta.env.VITE_API_BASE_URL || '';
+
+    if (stored) {
+      const current = stored;
       // localStorage has a value — ensure it's also in Supabase
-      fetchControlApiUrlFromSupabase(projectId).then((fromSupa) => {
-        if (!fromSupa || fromSupa !== current) {
-          import('./control-api').then(({ saveControlApiUrlToSupabase }) =>
-            saveControlApiUrlToSupabase(projectId, current).catch(() => {})
-          );
-        }
-      }).catch(() => {});
+      fetchControlApiUrlFromSupabase(projectId)
+        .then((fromSupa) => {
+          if (!fromSupa || fromSupa !== current) {
+            import('./control-api').then(({ saveControlApiUrlToSupabase }) =>
+              saveControlApiUrlToSupabase(projectId, current).catch(() => {})
+            );
+          }
+        })
+        .catch(() => {});
       return;
     }
+
     try {
       const fromSupabase = await fetchControlApiUrlFromSupabase(projectId);
       if (fromSupabase) {
         persistControlApiUrl(fromSupabase); // cache to localStorage
         set({ controlApiUrl: fromSupabase });
+        return;
+      }
+
+      // No Supabase setting — fall back to env var.
+      // Best-effort: persist env fallback to Supabase so other clients inherit it.
+      if (envFallback) {
+        set({ controlApiUrl: envFallback });
+        import('./control-api').then(({ saveControlApiUrlToSupabase }) =>
+          saveControlApiUrlToSupabase(projectId, envFallback).catch(() => {})
+        );
+      } else {
+        // Ensure store reflects computed fallback (usually '')
+        set({ controlApiUrl: getControlApiUrl() });
       }
     } catch {
       // Supabase fetch failed, keep env var fallback
+      set({ controlApiUrl: getControlApiUrl() });
     }
   },
 
