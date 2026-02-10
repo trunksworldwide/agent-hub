@@ -1,3 +1,12 @@
+### AI-powered doc generation + disk sync
+- **Database**: Added `description` column to `agents` table for AI-generated card blurbs.
+- **New edge function `generate-agent-docs`**: Calls OpenAI (gpt-4o) with tool calling to generate tailored SOUL.md, USER.md, MEMORY.md, and a short description from the agent's purpose and global templates. Enforces line-count constraints.
+- **API** (`src/lib/api.ts`): `createDocOverride()` now generates AI docs instead of copying globals. Added `generateAgentDocs()`, `trySyncToControlApi()` for disk-first sync. `saveAgentFile()` now best-effort syncs agent-specific docs to Control API. Added `description` to `Agent` interface.
+- **AgentOverview**: Added "Regenerate with AI" button (requires purpose text). Shows loading state during generation.
+- **DocSourceBanner**: "Create agent override" now shows "Generating with AI..." during creation.
+- **AgentsPage**: Cards show `role` as subtitle + `description` (AI-generated) as body with `line-clamp-3`. Removed `purposeText` from cards.
+- **Sync priority**: Disk-first when Control API reachable, Supabase fallback when not.
+
 ### Sub-agent detail: distinct Overview tab, doc source indicators, purpose editor
 - **Database**: Added `purpose_text` column to `agents` table. Migrated Ricky's long role into `purpose_text`, set `role` to short label. Seeded agent-specific `brain_docs` rows (USER.md, MEMORY.md) for Ricky.
 - **New component `AgentOverview`**: Overview tab showing editable purpose/mission textarea, brain doc status (inherited vs override) with "Create override" buttons, and action buttons (Run Once, Schedule Digest).

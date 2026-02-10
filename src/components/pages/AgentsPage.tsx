@@ -302,12 +302,12 @@ export function AgentsPage() {
                       />
                     </StatusTooltip>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                  <p className="text-sm text-muted-foreground mt-1">
                     {agent.role || 'Agent'}
                   </p>
-                  {agent.purposeText && (
-                    <p className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-2 italic">
-                      {agent.purposeText}
+                  {agent.description && (
+                    <p className="text-xs text-muted-foreground/70 mt-1 line-clamp-3">
+                      {agent.description}
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">

@@ -161,6 +161,7 @@ export type Database = {
           agent_key: string
           color: string | null
           created_at: string
+          description: string | null
           emoji: string | null
           id: string
           name: string
@@ -175,6 +176,7 @@ export type Database = {
           agent_key: string
           color?: string | null
           created_at?: string
+          description?: string | null
           emoji?: string | null
           id?: string
           name: string
@@ -189,6 +191,7 @@ export type Database = {
           agent_key?: string
           color?: string | null
           created_at?: string
+          description?: string | null
           emoji?: string | null
           id?: string
           name?: string

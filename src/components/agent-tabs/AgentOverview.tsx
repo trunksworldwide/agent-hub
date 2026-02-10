@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, CalendarClock, Save, Globe, User, FileText } from 'lucide-react';
+import { Play, CalendarClock, Save, Globe, User, FileText, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useClawdOffice } from '@/lib/store';
@@ -8,6 +8,7 @@ import {
   updateAgentPurpose,
   getDocOverrideStatus,
   createDocOverride,
+  generateAgentDocs,
   scheduleAgentDigest,
   reloadAgent,
 } from '@/lib/api';
@@ -29,6 +30,7 @@ export function AgentOverview({ agent, onRefresh }: Props) {
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [runningOnce, setRunningOnce] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     if (agent) {
@@ -237,7 +239,45 @@ export function AgentOverview({ agent, onRefresh }: Props) {
             <CalendarClock className="w-4 h-4" />
             {scheduling ? 'Creating...' : 'Schedule Digest'}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!agent?.id) return;
+              setRegenerating(true);
+              try {
+                const result = await createDocOverride(agent.id, 'soul');
+                if (!result.ok) throw new Error(result.error);
+                // Refresh doc status
+                const newStatus = await getDocOverrideStatus(agent.id);
+                setDocStatus(newStatus);
+                toast({
+                  title: 'Docs regenerated',
+                  description: `AI-generated SOUL, USER, and MEMORY docs created for ${agent.name}.`,
+                });
+                onRefresh?.();
+              } catch (e: any) {
+                toast({ title: 'Error', description: String(e?.message || e), variant: 'destructive' });
+              } finally {
+                setRegenerating(false);
+              }
+            }}
+            disabled={regenerating || !agent?.purposeText}
+            className="gap-2"
+          >
+            {regenerating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {regenerating ? 'Generating...' : 'Regenerate with AI'}
+          </Button>
         </div>
+        {!agent?.purposeText && (
+          <p className="text-xs text-muted-foreground">
+            Set a purpose above to enable AI doc generation.
+          </p>
+        )}
       </div>
     </div>
   );

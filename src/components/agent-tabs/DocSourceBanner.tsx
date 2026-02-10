@@ -48,7 +48,7 @@ export function DocSourceBanner({ source, docType, onOverrideCreated }: Props) {
             onClick={handleCreate}
             disabled={creating}
           >
-            {creating ? 'Creating...' : 'Create agent override'}
+            {creating ? 'Generating with AI...' : 'Create agent override'}
           </Button>
         </>
       ) : (
