@@ -932,7 +932,7 @@ const server = http.createServer(async (req, res) => {
     if (cronEditMatch && req.method === 'POST') {
       const [, jobId] = cronEditMatch;
       try {
-        // Body supports: { name?, schedule?, instructions?, enabled? }
+        // Body supports: { name?, schedule?, scheduleKind?, instructions?, enabled? }
         const body = await readBodyJson(req);
         const args = [];
 
@@ -941,8 +941,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (typeof body.schedule === 'string' && body.schedule.trim()) {
-          // Cron expression
-          args.push('--cron', body.schedule.trim());
+          // Determine whether this is a cron expression or an interval (every) value
+          const scheduleKind = body.scheduleKind || ((/^\d+$/.test(body.schedule.trim())) ? 'every' : 'cron');
+          if (scheduleKind === 'every') {
+            args.push('--every', body.schedule.trim());
+          } else {
+            args.push('--cron', body.schedule.trim());
+          }
         }
 
         if (typeof body.instructions === 'string') {
