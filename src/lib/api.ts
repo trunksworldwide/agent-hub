@@ -202,6 +202,7 @@ export interface ActivityItem {
 }
 
 
+
 export interface CreateActivityInput {
   type: string;
   message: string;
@@ -601,6 +602,37 @@ export async function createAgent(input: {
     return { ok: false, error: String(e?.message || e) };
   }
 }
+
+export async function deleteAgent(agentKey: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+  if (agentKey === 'agent:main:main') return { ok: false, error: 'cannot_delete_primary_agent' };
+
+  const projectId = getProjectId();
+  try {
+    // Delete related rows first (brain_docs, agent_status, provision requests)
+    await supabase.from('brain_docs').delete().eq('project_id', projectId).eq('agent_key', agentKey);
+    await supabase.from('agent_status').delete().eq('project_id', projectId).eq('agent_key', agentKey);
+    await supabase.from('agent_provision_requests').delete().eq('project_id', projectId).eq('agent_key', agentKey);
+
+    // Delete the agent row
+    const { error } = await supabase.from('agents').delete().eq('project_id', projectId).eq('agent_key', agentKey);
+    if (error) throw error;
+
+    // Activity log
+    await supabase.from('activities').insert({
+      project_id: projectId,
+      type: 'agent_deleted',
+      message: `Deleted agent ${agentKey}`,
+      actor_agent_key: 'ui',
+      task_id: null,
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 
 export async function queueProvisionRequest(
   projectId: string,

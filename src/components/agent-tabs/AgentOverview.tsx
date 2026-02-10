@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, CalendarClock, Save, Globe, User, FileText, Sparkles, Loader2 } from 'lucide-react';
+import { Play, CalendarClock, Save, Globe, User, FileText, Sparkles, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useClawdOffice } from '@/lib/store';
@@ -11,16 +11,29 @@ import {
   generateAgentDocs,
   scheduleAgentDigest,
   reloadAgent,
+  deleteAgent,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface Props {
   agent: Agent | null;
   onRefresh?: () => void;
+  onDeleted?: () => void;
 }
 
-export function AgentOverview({ agent, onRefresh }: Props) {
+export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
   const { selectedProjectId, setActiveAgentTab } = useClawdOffice();
   const { toast } = useToast();
   const [purpose, setPurpose] = useState('');
@@ -31,6 +44,24 @@ export function AgentOverview({ agent, onRefresh }: Props) {
   const [runningOnce, setRunningOnce] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const isPrimaryAgent = agent?.id === 'agent:main:main';
+
+  const handleDelete = async () => {
+    if (!agent?.id || isPrimaryAgent) return;
+    setDeleting(true);
+    try {
+      const result = await deleteAgent(agent.id);
+      if (!result.ok) throw new Error(result.error);
+      toast({ title: 'Agent deleted', description: `${agent.name} has been removed.` });
+      onDeleted?.();
+    } catch (e: any) {
+      toast({ title: 'Error', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     if (agent) {
@@ -281,6 +312,43 @@ export function AgentOverview({ agent, onRefresh }: Props) {
           </p>
         )}
       </div>
+
+      {/* Danger zone — delete agent (not for primary) */}
+      {!isPrimaryAgent && (
+        <div className="space-y-2 pt-4 border-t border-border">
+          <label className="text-sm font-medium text-destructive">Danger Zone</label>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10"
+                disabled={deleting}
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleting ? 'Deleting...' : 'Delete Agent'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {agent?.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently remove this agent and all its brain docs, status, and provision data. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDelete}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
     </div>
   );
 }
