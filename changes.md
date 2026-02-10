@@ -1,3 +1,9 @@
+### Fix schedule interval parsing + add hourly interval presets
+- **Bug fix**: `parseScheduleToConfig` silently defaulted unknown `every` intervals (e.g. 1 hour / 3600000ms) to "Every 15 minutes", risking accidental overwrites when editing.
+- **New presets**: Added interval presets for 1h, 2h, 4h, 8h, 12h alongside existing 5m/15m/30m.
+- **Safe fallback**: Unknown intervals now fall back to `custom` instead of `every-15`.
+- **Label clarity**: Cron-based "Hourly" renamed to "Hourly (on the hour)" to distinguish from interval-based "Every 1 hour".
+
 ### Brain doc editors: auto-refresh via Supabase Realtime
 - **New hook `useBrainDocSubscription`**: Subscribes to Realtime `UPDATE` events on `brain_docs` filtered by `project_id` and `doc_type`. When a remote change arrives and the editor is clean, content updates silently. If the editor has unsaved changes, a toast notifies the user instead of overwriting.
 - **SoulEditor, UserEditor, MemoryEditor**: All three editors now use the hook — SOUL.md, USER.md, MEMORY.md, and today's memory auto-refresh when `brain-doc-sync` pushes changes from the Mac mini.
