@@ -468,8 +468,11 @@ export function CronPage() {
   const [editName, setEditName] = useState('');
   const [editSchedule, setEditSchedule] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  const [editInstructionsOriginal, setEditInstructionsOriginal] = useState('');
   const [editTargetAgent, setEditTargetAgent] = useState('');
+  const [editTargetAgentOriginal, setEditTargetAgentOriginal] = useState('');
   const [editJobIntent, setEditJobIntent] = useState<JobIntent>('custom');
+  const [editJobIntentOriginal, setEditJobIntentOriginal] = useState<JobIntent>('custom');
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Create dialog state - human-friendly
@@ -1018,8 +1021,13 @@ export function CronPage() {
     // Parse instructions to get body without headers
     const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
     setEditInstructions(body);
-    setEditTargetAgent(targetAgent || job.targetAgentKey || '');
-    setEditJobIntent((intent || job.jobIntent || 'custom') as JobIntent);
+    setEditInstructionsOriginal(body);
+    const ta = targetAgent || job.targetAgentKey || '';
+    const ji = (intent || job.jobIntent || 'custom') as JobIntent;
+    setEditTargetAgent(ta);
+    setEditTargetAgentOriginal(ta);
+    setEditJobIntent(ji);
+    setEditJobIntentOriginal(ji);
   };
 
   // Save edit via Control API or queue request for offline mode
@@ -1034,10 +1042,11 @@ export function CronPage() {
         editInstructions || ''
       );
 
-      // Compare encoded instructions to the original to avoid unnecessary --system-event
-      // which can strip payload.kind="agentTurn" on the executor
-      const originalEncoded = editingJob.instructions || '';
-      const instructionsChanged = encodedInstructions !== originalEncoded;
+      // Only mark instructions dirty if the user actually changed the body, agent, or intent
+      const instructionsChanged =
+        editInstructions !== editInstructionsOriginal ||
+        editTargetAgent !== editTargetAgentOriginal ||
+        editJobIntent !== editJobIntentOriginal;
       
       if (controlApiConnected) {
         // Direct edit via Control API — only send fields that actually changed
