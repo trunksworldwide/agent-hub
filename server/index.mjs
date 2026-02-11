@@ -1238,6 +1238,102 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    // ============= Chat Delivery (Operator Chat) =============
+
+    // POST /api/chat/deliver — deliver a chat message to an OpenClaw agent and write the reply back to Supabase
+    // NOTE: This is the "direct mode" path. When Control API is unreachable, the UI falls back to chat_delivery_queue.
+    if (req.method === 'POST' && url.pathname === '/api/chat/deliver') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const messageId = String(body.message_id || body.messageId || '').trim();
+        const targetAgentKey = String(body.target_agent_key || body.targetAgentKey || '').trim();
+        const message = String(body.message || '').trim();
+
+        if (!messageId) return sendJson(res, 400, { ok: false, error: 'missing_message_id' });
+        if (!targetAgentKey) return sendJson(res, 400, { ok: false, error: 'missing_target_agent_key' });
+        if (!message) return sendJson(res, 400, { ok: false, error: 'missing_message' });
+
+        // Derive OpenClaw agent id from agent_key (e.g. "agent:ricky:main" -> "ricky")
+        const parts = targetAgentKey.split(':');
+        const agentIdShort = parts.length >= 2 ? parts[1] : targetAgentKey;
+
+        const sb = getSupabaseServerClient();
+        if (!sb) {
+          return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+        }
+
+        // Fetch the original chat message so we can reply into the same thread.
+        const { data: originalMsg, error: fetchErr } = await sb
+          .from('project_chat_messages')
+          .select('id,thread_id')
+          .eq('project_id', projectId)
+          .eq('id', messageId)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+
+        const threadId = originalMsg?.thread_id || null;
+
+        // Deterministic session id so DMs stay coherent.
+        const sessionId = `clawdos:${projectId}:${threadId || targetAgentKey}`;
+
+        // Run an agent turn via the Gateway. Hard timeout so this endpoint can't hang forever.
+        let stdout = '';
+        try {
+          const r = await execExecutor(
+            `agent --agent ${JSON.stringify(agentIdShort)} --session-id ${JSON.stringify(sessionId)} --channel last --message ${JSON.stringify(message)} --json --timeout 120`,
+            { timeout: 140000 }
+          );
+          stdout = r.stdout || '';
+        } catch (e) {
+          // Fail soft, but return a useful error.
+          const msg = String(e?.message || e);
+          await sb.from('activities').insert({
+            project_id: projectId,
+            type: 'chat_delivery_failed',
+            message: `Direct chat delivery failed for ${targetAgentKey}: ${msg}`,
+            actor_agent_key: 'agent:control-api:system',
+          });
+          return sendJson(res, 500, { ok: false, error: msg });
+        }
+
+        // Extract reply text from JSON if possible.
+        let replyText = stdout.trim();
+        try {
+          const parsed = JSON.parse(stdout);
+          replyText =
+            parsed?.reply ||
+            parsed?.message ||
+            parsed?.text ||
+            parsed?.result?.reply ||
+            parsed?.result?.text ||
+            parsed?.output?.text ||
+            parsed?.output?.message ||
+            replyText;
+        } catch {
+          // keep raw stdout
+        }
+
+        // Write the agent response back into chat messages.
+        const { error: insErr } = await sb.from('project_chat_messages').insert({
+          project_id: projectId,
+          thread_id: threadId,
+          author: targetAgentKey,
+          target_agent_key: null,
+          message: replyText || '(no reply)',
+        });
+        if (insErr) throw insErr;
+
+        // Best-effort presence bump
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: targetAgentKey, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // ============= Agent Provisioning Endpoints =============
 
     // GET /api/agents/runtime — list runnable OpenClaw agents from the Mac mini
