@@ -72,6 +72,8 @@ interface ClawdOfficeState {
   // Executor health check result (shared across components)
   executorCheck: ExecutorCheckResult | null;
   setExecutorCheck: (result: ExecutorCheckResult | null) => void;
+  lastExecutorCheckAt: number | null;
+  setLastExecutorCheckAt: (ts: number | null) => void;
 
   // Init control API URL from Supabase (async, called on mount)
   initControlApiUrl: (projectId: string) => Promise<void>;
@@ -192,7 +194,12 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
 
   // Executor health check result
   executorCheck: null,
-  setExecutorCheck: (result) => set({ executorCheck: result }),
+  setExecutorCheck: (result) => set({
+    executorCheck: result,
+    lastExecutorCheckAt: result ? Date.now() : null,
+  }),
+  lastExecutorCheckAt: null,
+  setLastExecutorCheckAt: (ts) => set({ lastExecutorCheckAt: ts }),
 
   // Init control API URL from Supabase if localStorage is empty
   initControlApiUrl: async (projectId) => {
