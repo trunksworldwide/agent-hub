@@ -1,3 +1,5 @@
+- **DM panels**: Fixed infinite vertical expansion on long messages; panels now scroll internally with fixed header/composer.
+
 ### Wiring Gap Fixes: Reconcile UI with Reality
 - **Fix 1 — Task events on status change**: `updateTask()` now fetches the old status and emits a `task_events` row (`event_type: 'status_change'`) with `{old_status, new_status}` metadata whenever the status actually changes. Best-effort, non-blocking.
 - **Fix 2 — Health TTL**: `isControlApiHealthy()` now enforces a 60-second TTL via `lastExecutorCheckAt` in the store. `setExecutorCheck` automatically sets the timestamp. Stale checks return `false`.

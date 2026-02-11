@@ -160,7 +160,8 @@ function DMPanel({
 
   // Auto-scroll
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [messages]);
 
   const handleSend = async () => {
@@ -196,7 +197,7 @@ function DMPanel({
   const healthy = isControlApiHealthy();
 
   return (
-    <div className="h-full flex flex-col border-l border-border first:border-l-0">
+    <div className="h-full flex flex-col min-h-0 border-l border-border first:border-l-0">
       {/* Header */}
       <div className="p-3 border-b border-border flex items-center gap-2">
         <span className="text-lg">{agent.avatar || '🤖'}</span>
@@ -213,7 +214,7 @@ function DMPanel({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-3" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0 p-3" ref={scrollRef}>
         {loading && (
           <div className="flex items-center justify-center h-24 text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
@@ -337,7 +338,7 @@ export function DMsPage() {
         </div>
 
         {/* DM panels */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden h-full">
           {openAgentObjects.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <MessageSquare className="w-10 h-10 mb-3 opacity-30" />
