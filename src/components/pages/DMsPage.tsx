@@ -299,15 +299,15 @@ export function DMsPage() {
   );
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border-border shrink-0">
         <h1 className="text-lg font-semibold">Direct Messages</h1>
         <p className="text-sm text-muted-foreground">Private conversations with agents</p>
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Agent list */}
         <div className={cn('border-r border-border shrink-0', isMobile ? 'w-16' : 'w-48')}>
           {isMobile ? (
