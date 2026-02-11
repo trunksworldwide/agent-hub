@@ -1458,7 +1458,10 @@ const server = http.createServer(async (req, res) => {
         const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
         const title = String(body.title || '').trim();
         const description = String(body.description || '').trim();
-        const assigneeAgentKey = body.assignee_agent_key ? String(body.assignee_agent_key).trim() : null;
+        // If no explicit assignee is provided, default to the proposing agent.
+        const assigneeAgentKey = body.assignee_agent_key
+          ? String(body.assignee_agent_key).trim()
+          : (author && author !== 'dashboard' ? author : null);
 
         if (!title) return sendJson(res, 400, { ok: false, error: 'missing_title' });
 
@@ -1480,6 +1483,24 @@ const server = http.createServer(async (req, res) => {
 
         const { data, error } = await sb.from('tasks').insert(insertRow).select('id').single();
         if (error) throw error;
+
+        // Best-effort task thread comment (so the task is self-explaining in TaskTimeline)
+        try {
+          await sb.from('task_events').insert({
+            project_id: projectId,
+            task_id: data.id,
+            event_type: 'comment',
+            author,
+            content: `Proposed by ${author}${assigneeAgentKey ? ` (assigned to ${assigneeAgentKey})` : ''}.`,
+            metadata: {
+              source: 'api/tasks/propose',
+              is_proposed: true,
+              assignee_agent_key: assigneeAgentKey,
+            },
+          });
+        } catch {
+          // ignore
+        }
 
         // Best-effort activity log
         try {
