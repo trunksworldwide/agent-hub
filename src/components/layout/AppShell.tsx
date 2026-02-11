@@ -20,7 +20,7 @@ export function AppShell() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="h-screen flex w-full bg-background overflow-hidden">
         {/* Desktop sidebar */}
         {!isMobile && (
           <AppSidebar className="hidden md:flex shrink-0" />
