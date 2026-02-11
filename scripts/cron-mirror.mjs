@@ -451,9 +451,14 @@ async function failStuckRequests({ table, maxAgeMs }) {
   // mark it as `error` so the UI doesn't show "pending" forever.
   const cutoffIso = new Date(Date.now() - maxAgeMs).toISOString();
 
+  // agent_provision_requests doesn't have job_id; handle schema differences here to avoid error spam.
+  const selectCols = table === 'agent_provision_requests'
+    ? 'id,agent_key,status,requested_at'
+    : 'id,job_id,status,requested_at';
+
   const { data, error } = await sb
     .from(table)
-    .select('id,job_id,status,requested_at')
+    .select(selectCols)
     .eq('project_id', PROJECT_ID)
     .eq('status', 'queued')
     .lt('requested_at', cutoffIso)
@@ -468,10 +473,12 @@ async function failStuckRequests({ table, maxAgeMs }) {
   for (const req of stuck) {
     n++;
     const reqId = String(req.id);
-    const jobId = String(req.job_id);
+    const jobIdOrAgent = table === 'agent_provision_requests'
+      ? String(req.agent_key)
+      : String(req.job_id);
 
     const result = {
-      jobId,
+      ref: jobIdOrAgent,
       error: `Request stuck in queued > ${Math.round(maxAgeMs / 1000)}s; marking as error so UI can recover.`,
       requestedAt: req.requested_at,
       detectedAt: new Date().toISOString(),
@@ -486,7 +493,7 @@ async function failStuckRequests({ table, maxAgeMs }) {
       await sb.from('activities').insert({
         project_id: PROJECT_ID,
         type: 'watchdog',
-        message: `[cron-mirror] Marked stuck ${table} request as error (job ${jobId}, req ${reqId}).`,
+        message: `[cron-mirror] Marked stuck ${table} request as error (ref ${jobIdOrAgent}, req ${reqId}).`,
         actor_agent_key: 'agent:cron-mirror',
       });
     } catch {
