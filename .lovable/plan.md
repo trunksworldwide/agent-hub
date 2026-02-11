@@ -1,84 +1,125 @@
 
 
-# Fix: Contain DM Chat Panels So They Don't Expand Infinitely
+# Agent to Dashboard Bridge (Control API) -- Dashboard Side
 
-## Problem
+## Summary
 
-When an agent sends a long message, the entire DM panel grows vertically instead of scrolling internally. This pushes the composer off-screen and defeats the purpose of having side-by-side chat panels where you can see recent messages from multiple agents at a glance.
-
-## Root Cause
-
-Two CSS issues in `DMPanel`:
-
-1. The `ScrollArea` (messages area) has `className="flex-1 p-3"` but its flex parent lacks `min-h-0`. In CSS flexbox, flex children default to `min-height: auto`, which means they grow to fit content instead of shrinking and scrolling. Adding `min-h-0` on the flex column container lets `flex-1` actually constrain the height.
-
-2. The auto-scroll ref targets the `ScrollArea` Root element, but Radix ScrollArea scrolls via its internal Viewport. The ref needs to target the Viewport for `scrollTop` to work.
+Add two API helper functions that route task events and chat messages through the Control API when it's healthy, falling back to direct Supabase writes when offline. Document the Control API contract so the Mac-side implementation is clear.
 
 ## Changes
 
-### File: `src/components/pages/DMsPage.tsx`
+### 1. New helper: `postTaskEventViaControlApi()` in `src/lib/api.ts`
 
-**Change 1 -- DMPanel root container (line 199)**
+Add a new exported function near the existing `createTaskEvent()`:
 
-Add `min-h-0` to the panel's flex-col container so the ScrollArea is height-constrained:
-
-```
-// Before
-<div className="h-full flex flex-col border-l border-border first:border-l-0">
-
-// After
-<div className="h-full flex flex-col min-h-0 border-l border-border first:border-l-0">
-```
-
-**Change 2 -- ScrollArea gets min-h-0 (line 216)**
-
-Ensure the ScrollArea itself participates in the flex constraint:
-
-```
-// Before
-<ScrollArea className="flex-1 p-3" ref={scrollRef}>
-
-// After
-<ScrollArea className="flex-1 min-h-0 p-3" ref={scrollRef}>
+```typescript
+/**
+ * Post a task event, preferring the Control API when healthy.
+ * Falls back to direct Supabase insert (existing behavior).
+ *
+ * Control API contract:
+ *   POST /api/tasks/:taskId/events
+ *   Body: { project_id, author, event_type, content, metadata }
+ *   Response: { ok: true, event: { id, ... } }
+ *   Errors: { ok: false, error: string }
+ */
+export async function postTaskEventViaControlApi(
+  input: CreateTaskEventInput
+): Promise<{ ok: boolean; event?: TaskEvent; error?: string }>
 ```
 
-**Change 3 -- Fix auto-scroll to target Viewport**
+Logic:
+- Check `isControlApiHealthy()`
+- If healthy: `POST ${controlApiUrl}/api/tasks/${taskId}/events` with JSON body `{ project_id, author, event_type, content, metadata }`
+- If the Control API call fails (network error, non-2xx): fall back to `createTaskEvent()` (direct Supabase)
+- If not healthy: call `createTaskEvent()` directly
 
-The `scrollRef` currently points at the Radix `Root` element, but scrolling happens inside the `Viewport` child. Update the auto-scroll effect to find the viewport:
+This keeps the current Supabase path as the reliable fallback. No behavior change for existing UI flows.
 
+### 2. New helper: `postChatMessageViaControlApi()` in `src/lib/api.ts`
+
+Add near the existing `sendChatMessage()`:
+
+```typescript
+/**
+ * Post a chat message via Control API, falling back to Supabase.
+ *
+ * Control API contract:
+ *   POST /api/chat/post
+ *   Body: { project_id, thread_id, author, message, message_type?, metadata? }
+ *   Response: { ok: true }
+ *   Errors: { ok: false, error: string }
+ */
+export async function postChatMessageViaControlApi(
+  threadId: string,
+  opts: { author: string; message: string; messageType?: string; metadata?: Record<string, any> }
+): Promise<{ ok: boolean; error?: string }>
 ```
-// Before
-if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 
-// After
-const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-if (viewport) viewport.scrollTop = viewport.scrollHeight;
+Same pattern: try Control API first, fall back to direct Supabase insert.
+
+### 3. No UI changes required
+
+The existing `createTaskEvent()` and `sendChatMessage()` remain unchanged. The new helpers are additive -- agents calling the Control API will insert rows server-side, and the dashboard's existing realtime subscriptions will pick them up automatically.
+
+No new components, no UI redesign.
+
+### 4. Document the contract in `docs/CONTROL-API-BRIDGE.md`
+
+New documentation file covering:
+
+- Endpoint routes and request/response shapes
+- How each endpoint maps to Supabase tables (`task_events`, `project_chat_messages`)
+- Authentication model (service role key, server-side only)
+- Error handling expectations
+- Why agents never get Supabase credentials
+
+### 5. Log in `changes.md`
+
+Entry: "Added Control API bridge helpers (`postTaskEventViaControlApi`, `postChatMessageViaControlApi`) with Supabase fallback. Documented Control API contract in `docs/CONTROL-API-BRIDGE.md`."
+
+## Technical Details
+
+### Control API Endpoints (Mac-side -- NOT implemented here, just documented)
+
+```text
+POST /api/tasks/:taskId/events
+  Body:    { project_id, author, event_type, content, metadata }
+  Response: { ok: true, event: { id } }  |  { ok: false, error: "..." }
+  Maps to: INSERT into task_events
+
+POST /api/chat/post
+  Body:    { project_id, thread_id, author, message, message_type?, metadata? }
+  Response: { ok: true }  |  { ok: false, error: "..." }
+  Maps to: INSERT into project_chat_messages
 ```
 
-**Change 4 -- DM panels container (line 340)**
+### Fallback Flow
 
-Add `h-full` to ensure the panels container fills available space:
-
+```text
+UI calls postTaskEventViaControlApi()
+  |
+  +-- isControlApiHealthy()?
+       |
+       +-- YES --> POST /api/tasks/:id/events
+       |            |
+       |            +-- success --> return result
+       |            +-- failure --> createTaskEvent() (Supabase)
+       |
+       +-- NO  --> createTaskEvent() (Supabase)
 ```
-// Before
-<div className="flex-1 overflow-hidden">
 
-// After  
-<div className="flex-1 overflow-hidden h-full">
-```
+### Files Changed
 
-### File: `changes.md`
+| File | Change |
+|------|--------|
+| `src/lib/api.ts` | Add `postTaskEventViaControlApi()` and `postChatMessageViaControlApi()` |
+| `docs/CONTROL-API-BRIDGE.md` | New file: contract documentation |
+| `changes.md` | Log entry |
 
-Log: "DM panels: fixed infinite vertical expansion on long messages; panels now scroll internally with fixed header/composer."
+### What This Enables
 
-## What This Achieves
-
-- Each DM panel stays contained within its allocated space (header + scrollable messages + composer always visible)
-- Long messages scroll within the individual panel, not the whole page
-- Side-by-side panels remain equally visible so you can compare recent messages from multiple agents
-- Auto-scroll to newest message actually works
-
-## No Other Files Changed
-
-This is purely a CSS/layout fix in `DMsPage.tsx`. No new components, no API changes, no database changes.
+- Any agent can call `POST /api/tasks/:taskId/events` on the Mac mini and the update appears in TaskTimeline instantly via realtime subscription
+- No Supabase keys in agent workspaces
+- Dashboard gracefully degrades when Control API is offline
 
