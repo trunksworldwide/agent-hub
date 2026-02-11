@@ -1278,6 +1278,25 @@ const server = http.createServer(async (req, res) => {
         // Deterministic session id so DMs stay coherent.
         const sessionId = `clawdos:${projectId}:${threadId || targetAgentKey}`;
 
+        // If this workspace still has BOOTSTRAP.md, disable it so the agent doesn't keep asking onboarding questions.
+        try {
+          const homedir = process.env.HOME || '/Users/trunks';
+          const bootstrapPath = path.join(homedir, '.openclaw', `workspace-${agentIdShort}`, 'BOOTSTRAP.md');
+          if (existsSync(bootstrapPath)) {
+            const disabled = path.join(homedir, '.openclaw', `workspace-${agentIdShort}`, 'BOOTSTRAP.disabled.md');
+            try {
+              // Rename preserves the file for debugging but keeps it out of injection list.
+              // (OpenClaw injects BOOTSTRAP.md specifically.)
+              await exec(`mv ${JSON.stringify(bootstrapPath)} ${JSON.stringify(disabled)}`);
+            } catch {
+              // If mv fails for any reason, try delete.
+              try { writeFileSync(bootstrapPath, '', 'utf8'); } catch {}
+            }
+          }
+        } catch {
+          // non-fatal
+        }
+
         // Run an agent turn via the Gateway. Hard timeout so this endpoint can't hang forever.
         let stdout = '';
         try {
@@ -1298,22 +1317,30 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 500, { ok: false, error: msg });
         }
 
-        // Extract reply text from JSON if possible.
-        let replyText = stdout.trim();
+        // Extract reply text from JSON (only return the actual message payloads, not the full run report).
+        let replyText = '';
         try {
           const parsed = JSON.parse(stdout);
-          replyText =
-            parsed?.reply ||
-            parsed?.message ||
-            parsed?.text ||
-            parsed?.result?.reply ||
-            parsed?.result?.text ||
-            parsed?.output?.text ||
-            parsed?.output?.message ||
-            replyText;
+          const payloads = parsed?.result?.payloads || parsed?.payloads;
+          if (Array.isArray(payloads) && payloads.length > 0) {
+            replyText = payloads.map((p) => p?.text).filter(Boolean).join('\n\n');
+          }
+          if (!replyText) {
+            replyText =
+              parsed?.reply ||
+              parsed?.message ||
+              parsed?.text ||
+              parsed?.result?.reply ||
+              parsed?.result?.text ||
+              parsed?.output?.text ||
+              parsed?.output?.message ||
+              '';
+          }
         } catch {
-          // keep raw stdout
+          // Not JSON; keep raw stdout.
+          replyText = '';
         }
+        if (!replyText) replyText = String(stdout || '').trim();
 
         // Write the agent response back into chat messages.
         const { error: insErr } = await sb.from('project_chat_messages').insert({
@@ -1388,6 +1415,17 @@ const server = http.createServer(async (req, res) => {
 
         // 3. Seed workspace files
         await exec(`mkdir -p ${JSON.stringify(path.join(workspaceDir, 'memory'))}`);
+
+        // Disable BOOTSTRAP.md if OpenClaw created one (prevents repeated onboarding questions).
+        try {
+          const bootstrapPath = path.join(workspaceDir, 'BOOTSTRAP.md');
+          if (existsSync(bootstrapPath)) {
+            const disabled = path.join(workspaceDir, 'BOOTSTRAP.disabled.md');
+            await exec(`mv ${JSON.stringify(bootstrapPath)} ${JSON.stringify(disabled)}`);
+          }
+        } catch {
+          // non-fatal
+        }
 
         const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
         const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n`;

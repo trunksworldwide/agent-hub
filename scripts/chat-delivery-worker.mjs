@@ -117,21 +117,29 @@ async function processRow(row) {
     return;
   }
 
-  let replyText = stdout.trim();
+  // Extract only the actual reply payload text (avoid dumping run metadata into chat)
+  let replyText = '';
   try {
     const parsed = JSON.parse(stdout);
-    replyText =
-      parsed?.reply ||
-      parsed?.message ||
-      parsed?.text ||
-      parsed?.result?.reply ||
-      parsed?.result?.text ||
-      parsed?.output?.text ||
-      parsed?.output?.message ||
-      replyText;
+    const payloads = parsed?.result?.payloads || parsed?.payloads;
+    if (Array.isArray(payloads) && payloads.length > 0) {
+      replyText = payloads.map((p) => p?.text).filter(Boolean).join('\n\n');
+    }
+    if (!replyText) {
+      replyText =
+        parsed?.reply ||
+        parsed?.message ||
+        parsed?.text ||
+        parsed?.result?.reply ||
+        parsed?.result?.text ||
+        parsed?.output?.text ||
+        parsed?.output?.message ||
+        '';
+    }
   } catch {
-    // keep raw
+    // ignore
   }
+  if (!replyText) replyText = String(stdout || '').trim();
 
   // Write response
   await supabase.from('project_chat_messages').insert({
