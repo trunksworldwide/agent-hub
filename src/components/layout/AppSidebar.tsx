@@ -237,7 +237,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             activeClassName="bg-accent text-accent-foreground"
           >
             <MessageSquare className="w-4 h-4" />
-            <span>Team Room</span>
+            <span>War Room</span>
           </NavLink>
         )}
 

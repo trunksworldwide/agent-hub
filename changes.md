@@ -1,3 +1,6 @@
+### Rename: Team Room → War Room
+- Renamed "Team Room" to "War Room" across sidebar and chat page header. No route or feature flag changes.
+
 ### Agent → Dashboard Bridge (Control API)
 - Added `postTaskEventViaControlApi()` and `postChatMessageViaControlApi()` in `api.ts` — route writes through Control API when healthy, fall back to direct Supabase inserts when offline.
 - Documented Control API contract in `docs/CONTROL-API-BRIDGE.md` (endpoint shapes, auth model, fallback flow).
