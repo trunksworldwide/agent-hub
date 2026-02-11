@@ -916,16 +916,24 @@ const server = http.createServer(async (req, res) => {
         // Cron list can take longer than the default gateway timeout.
         const { stdout } = await execExecutor('cron list --json --timeout 60000', { timeout: 65000 });
         const data = JSON.parse(stdout || '{"jobs": []}');
-        const jobs = (data.jobs || []).map((j) => ({
-          id: j.id || j.jobId || j.name,
-          name: j.name || j.id,
-          schedule: j.cron || j.schedule || '',
-          enabled: j.enabled !== false,
-          nextRun: j.nextRun || '',
-          nextRunAtMs: typeof j.nextRunAtMs === 'number' ? j.nextRunAtMs : (typeof j.nextRunAt === 'number' ? j.nextRunAt : null),
-          lastRunStatus: null,
-          instructions: j.text || j.instructions || '',
-        }));
+        const jobs = (data.jobs || []).map((j) => {
+          const nextRunAtMs =
+            (typeof j?.state?.nextRunAtMs === 'number' ? j.state.nextRunAtMs : null) ??
+            (typeof j.nextRunAtMs === 'number' ? j.nextRunAtMs : null) ??
+            (typeof j.nextRunAt === 'number' ? j.nextRunAt : null);
+
+          return {
+            id: j.id || j.jobId || j.name,
+            name: j.name || j.id,
+            schedule: j.cron || j.schedule || '',
+            enabled: j.enabled !== false,
+            // nextRun is used for display; prefer a computed ISO string when possible.
+            nextRun: j.nextRun || (nextRunAtMs ? new Date(Number(nextRunAtMs)).toISOString() : ''),
+            nextRunAtMs,
+            lastRunStatus: j?.state?.lastStatus || null,
+            instructions: j.text || j.instructions || '',
+          };
+        });
         return sendJson(res, 200, jobs);
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
