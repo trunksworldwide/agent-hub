@@ -2242,16 +2242,19 @@ export async function updateTask(
 
     // Write an activity row (best effort)
     // Make the feed human-readable by including the task title.
+    // Also fetch old status so we can emit task_events when it changes.
     if (patch.status) {
       let title: string | null = null;
+      let oldStatus: string | null = null;
       try {
         const { data } = await supabase
           .from('tasks')
-          .select('title')
+          .select('title, status')
           .eq('project_id', projectId)
           .eq('id', taskId)
           .maybeSingle();
         title = (data as any)?.title ?? null;
+        oldStatus = (data as any)?.status ?? null;
       } catch {
         // ignore
       }
@@ -2264,6 +2267,23 @@ export async function updateTask(
         actor_agent_key: DASHBOARD_ACTOR_KEY,
         task_id: taskId,
       });
+
+      // Emit task_events status_change (best-effort, non-blocking)
+      // Only when old_status !== new_status
+      if (oldStatus && oldStatus !== patch.status) {
+        try {
+          await supabase.from('task_events').insert({
+            project_id: projectId,
+            task_id: taskId,
+            event_type: 'status_change',
+            author: 'dashboard',
+            content: `Status changed from ${oldStatus} to ${patch.status}`,
+            metadata: { old_status: oldStatus, new_status: patch.status },
+          });
+        } catch {
+          // Best-effort: task update already succeeded
+        }
+      }
     }
 
     return { ok: true };
@@ -3292,6 +3312,15 @@ export async function getChatMessages(threadId?: string, limit = 100): Promise<C
 }
 
 // ============= Chat Delivery Queue =============
+//
+// WIRING GAPS (Mac-side work, not implemented in this codebase):
+// - POST /api/chat/deliver endpoint is NOT yet implemented in the Control API (server/index.mjs).
+//   Direct delivery will always fail and fall back to queue until that endpoint exists.
+// - There is no worker/executor loop that polls chat_delivery_queue for status='queued'
+//   rows, delivers them to OpenClaw agent sessions, writes responses, and marks completion.
+// - The 2-minute watchdog for stuck rows must live in the Mac-side worker (cron-mirror or new poller).
+//
+// The UI handles all of this gracefully via the fallback-to-queue pattern.
 
 export interface ChatDeliveryEntry {
   id: string;
@@ -3312,12 +3341,16 @@ export interface ChatDeliveryEntry {
 export function isControlApiHealthy(): boolean {
   const url = getApiBaseUrl();
   if (!url) return false;
-  // If the store has a recent successful check, treat as healthy
+  // If the store has a recent successful check within TTL, treat as healthy
   try {
     // Access zustand store outside React — acceptable for utility fn
     const { useClawdOffice } = require('./store');
-    const check = useClawdOffice.getState().executorCheck;
-    return !!check;
+    const state = useClawdOffice.getState();
+    const check = state.executorCheck;
+    if (!check) return false;
+    const lastCheckAt = state.lastExecutorCheckAt;
+    if (!lastCheckAt || Date.now() - lastCheckAt > 60_000) return false;
+    return true;
   } catch {
     return false;
   }
@@ -3387,36 +3420,36 @@ export async function sendChatMessage(input: {
           });
           deliveryMode = 'direct';
 
-          // Mirror to queue with status='processed' (best-effort)
+        // Mirror to queue with status='processed' (best-effort, upsert for idempotency)
           try {
-            await supabase.from('chat_delivery_queue').insert({
+            await supabase.from('chat_delivery_queue').upsert({
               project_id: projectId,
               message_id: data.id,
               target_agent_key: input.targetAgentKey,
               status: 'processed',
               completed_at: new Date().toISOString(),
-            });
+            }, { onConflict: 'message_id,target_agent_key' });
           } catch { /* ignore */ }
         } catch (deliveryErr) {
           console.warn('Direct delivery failed, falling back to queue:', deliveryErr);
           // Fall through to queued
           deliveryMode = 'queued';
-          await supabase.from('chat_delivery_queue').insert({
+          await supabase.from('chat_delivery_queue').upsert({
             project_id: projectId,
             message_id: data.id,
             target_agent_key: input.targetAgentKey,
             status: 'queued',
-          });
+          }, { onConflict: 'message_id,target_agent_key' });
         }
       } else {
-        // Queued fallback
+        // Queued fallback (upsert for idempotency)
         deliveryMode = 'queued';
-        await supabase.from('chat_delivery_queue').insert({
+        await supabase.from('chat_delivery_queue').upsert({
           project_id: projectId,
           message_id: data.id,
           target_agent_key: input.targetAgentKey,
           status: 'queued',
-        });
+        }, { onConflict: 'message_id,target_agent_key' });
       }
     }
 

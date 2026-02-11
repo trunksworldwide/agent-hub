@@ -1338,8 +1338,10 @@ export function CronPage() {
 
         {/* Split into Heartbeats and Scheduled Jobs */}
         {(() => {
-          const heartbeats = filteredJobs.filter(j => j.jobIntent === 'heartbeat');
-          const scheduledJobs = filteredJobs.filter(j => j.jobIntent !== 'heartbeat');
+          const isHeartbeat = (j: CronMirrorJob) =>
+            j.jobIntent === 'heartbeat' || (j.scheduleKind === 'every' && !j.jobIntent);
+          const heartbeats = filteredJobs.filter(isHeartbeat);
+          const scheduledJobs = filteredJobs.filter(j => !isHeartbeat(j));
 
           const renderJobRow = (job: CronMirrorJob) => (
             <CronJobRow

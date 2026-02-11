@@ -1,4 +1,11 @@
-### Phase 6: Project Mission + Polish
+### Wiring Gap Fixes: Reconcile UI with Reality
+- **Fix 1 — Task events on status change**: `updateTask()` now fetches the old status and emits a `task_events` row (`event_type: 'status_change'`) with `{old_status, new_status}` metadata whenever the status actually changes. Best-effort, non-blocking.
+- **Fix 2 — Health TTL**: `isControlApiHealthy()` now enforces a 60-second TTL via `lastExecutorCheckAt` in the store. `setExecutorCheck` automatically sets the timestamp. Stale checks return `false`.
+- **Fix 3 — Heartbeat grouping fallback**: CronPage now treats `schedule_kind='every'` jobs with no explicit `job_intent` as heartbeats, preventing misfiling.
+- **Fix 4 — Queue idempotency**: Added unique constraint on `chat_delivery_queue(message_id, target_agent_key)` with duplicate cleanup migration. All queue inserts switched from `.insert()` to `.upsert()`.
+- **Fix 5 — Mac-side gap documentation**: Added code comments in `api.ts` documenting that `/api/chat/deliver` endpoint and queue worker are not yet implemented (Mac-side work).
+
+
 - **Mission doc_type**: New `brain_docs` doc_type `'mission'` for short project mission statements.
 - **API functions**: `getProjectMission()` and `saveProjectMission()` added to `api.ts`.
 - **ProjectOverviewCard**: Now shows both Mission (short, input-based) and Overview (long, textarea-based) cards.
