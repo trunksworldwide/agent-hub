@@ -176,6 +176,17 @@ export function subscribeToProjectRealtime(projectId: string, onChange: (change?
     )
     .on(
       'postgres_changes',
+      { event: '*', schema: 'public', table: 'chat_delivery_queue', filter: `project_id=eq.${projectId}` },
+      (payload) =>
+        onChange({
+          table: 'chat_delivery_queue',
+          event: (payload as any).eventType,
+          new: (payload as any).new,
+          old: (payload as any).old,
+        })
+    )
+    .on(
+      'postgres_changes',
       { event: '*', schema: 'public', table: 'task_events', filter: `project_id=eq.${projectId}` },
       (payload) =>
         onChange({

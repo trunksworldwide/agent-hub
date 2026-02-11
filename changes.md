@@ -1,3 +1,12 @@
+### Phase 3: Operator Chat — Direct + Queued Delivery
+- **New table `chat_delivery_queue`**: Tracks message delivery to agents. Columns: `message_id` (FK), `target_agent_key`, `status` (queued/delivered/processed/failed), timestamps, `result`. RLS enabled, added to `supabase_realtime` publication with index on `(project_id, status, created_at)`.
+- **Direct + Queued delivery**: `sendChatMessage()` now checks Control API health. If healthy, delivers via `POST /api/chat/deliver` and mirrors to queue as `processed`. If unhealthy, enqueues as `queued` for executor to poll later. Falls back gracefully on direct delivery failure.
+- **Delivery status UI**: Each outgoing agent-targeted message shows a delivery badge (✓ processed, ✓ delivered, ⏱ queued, ✗ failed with retry). Realtime subscription on `chat_delivery_queue` updates badges without refresh.
+- **Mode indicator in composer**: Shows Live/Backup dot with tooltip explaining delivery mode. When targeting an agent, displays "Will deliver directly" or "Will queue for later delivery".
+- **Retry**: Failed deliveries show a retry button that resets status to `queued`.
+- **API functions**: `getChatDeliveryStatus()`, `retryChatDelivery()`, `isControlApiHealthy()`.
+- **Realtime**: `chat_delivery_queue` added to `subscribeToProjectRealtime`.
+
 ### Phase 1: Task Threads & Unified Timeline
 - **New table `task_events`**: Canonical timeline for all task activity (comments, status changes, outputs, agent updates, approval requests/resolutions). RLS enabled, added to `supabase_realtime` publication.
 - **API functions**: `getTaskEvents()`, `createTaskEvent()`, `resolveApproval()` in `api.ts`. New `TaskEvent`, `TaskEventType`, `CreateTaskEventInput` types.

@@ -282,6 +282,50 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_delivery_queue: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          message_id: string
+          picked_up_at: string | null
+          project_id: string
+          result: Json | null
+          status: string
+          target_agent_key: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          message_id: string
+          picked_up_at?: string | null
+          project_id: string
+          result?: Json | null
+          status?: string
+          target_agent_key: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          message_id?: string
+          picked_up_at?: string | null
+          project_id?: string
+          result?: Json | null
+          status?: string
+          target_agent_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_delivery_queue_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "project_chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cron_create_requests: {
         Row: {
           completed_at: string | null
