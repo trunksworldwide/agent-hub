@@ -332,7 +332,7 @@ export function ChatPage() {
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">Chat</h1>
+          <h1 className="text-lg font-semibold">War Room</h1>
           <p className="text-sm text-muted-foreground">Project conversations</p>
         </div>
         <Button variant="ghost" size="sm" onClick={loadData} disabled={isLoading}>
