@@ -158,10 +158,12 @@ function DMPanel({
     return unsub;
   }, [selectedProjectId, thread, messages]);
 
-  // Auto-scroll
+  // Auto-scroll to latest message after DOM paints
   useEffect(() => {
-    const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    requestAnimationFrame(() => {
+      const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    });
   }, [messages]);
 
   const handleSend = async () => {
