@@ -1,4 +1,4 @@
-import { type Skill } from '@/lib/api';
+import { type Skill, checkSkillEligibility, isControlApiHealthy } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,10 +8,15 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
-import { CheckCircle, AlertTriangle, XCircle, MinusCircle, Copy, ExternalLink } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, MinusCircle, Copy, ExternalLink, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface SkillDetailDrawerProps {
   skill: Skill | null;
@@ -38,6 +43,45 @@ function CopyBlock({ value, label }: { value: string; label?: string }) {
         <Copy className="h-3.5 w-3.5" />
       </Button>
     </div>
+  );
+}
+
+function CheckAgainButton({ skillId }: { skillId: string }) {
+  const [checking, setChecking] = useState(false);
+  const healthy = isControlApiHealthy();
+
+  const handleCheck = async () => {
+    setChecking(true);
+    const result = await checkSkillEligibility(skillId);
+    setChecking(false);
+    if (result.ok) {
+      toast({ description: 'Eligibility check triggered. Refresh to see updated status.' });
+    } else {
+      toast({ description: result.error || 'Check failed', variant: 'destructive' });
+    }
+  };
+
+  if (!healthy) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button variant="outline" size="sm" disabled className="gap-2">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Check again
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Requires executor connection</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Button variant="outline" size="sm" onClick={handleCheck} disabled={checking} className="gap-2">
+      <RefreshCw className={`h-3.5 w-3.5 ${checking ? 'animate-spin' : ''}`} />
+      Check again
+    </Button>
   );
 }
 
@@ -202,6 +246,7 @@ export function SkillDetailDrawer({ skill, open, onOpenChange }: SkillDetailDraw
               Setup help
             </Button>
           )}
+          <CheckAgainButton skillId={skill.id} />
         </div>
       </SheetContent>
     </Sheet>

@@ -1,3 +1,16 @@
+### Phase 6: Project Mission + Polish
+- **Mission doc_type**: New `brain_docs` doc_type `'mission'` for short project mission statements.
+- **API functions**: `getProjectMission()` and `saveProjectMission()` added to `api.ts`.
+- **ProjectOverviewCard**: Now shows both Mission (short, input-based) and Overview (long, textarea-based) cards.
+- **Activity page**: Pinned mission banner at the top of the activity feed when mission text exists.
+- **Labs toggles**: Settings page now has a "Labs" tab with toggles for all feature flags.
+
+### Phase 5: Heartbeat vs Cron + Skills Usability
+- **Schedule page split**: Jobs are now visually grouped into "💓 Heartbeats" (job_intent='heartbeat') and "📅 Scheduled Jobs" (everything else) sections with counts.
+- **Page title**: Renamed from "Scheduled Jobs" to "Schedule" with updated description.
+- **Skills "Check again"**: SkillDetailDrawer now has a "Check again" button that calls `POST /api/skills/:id/check`. Disabled with tooltip when executor is offline.
+- **API**: `checkSkillEligibility()` added for skill re-check via Control API.
+
 ### Phase 4: Multi-Agent DMs
 - **New page `DMsPage`**: Split-pane layout with agent list sidebar and up to 2 concurrent DM panels (1 on mobile). Each panel has its own thread, composer, delivery badges, and realtime subscription.
 - **DM threads**: Uses existing `project_chat_threads` with `title = 'DM:<agent_key>'` naming convention. Auto-creates thread on first message via `getOrCreateDMThread()`.
