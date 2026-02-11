@@ -1361,6 +1361,89 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // ============= Agent → Dashboard Bridge (Control API) =============
+
+    // POST /api/tasks/:taskId/events — insert a task_events row via service role (agents can call Control API; no Supabase keys in workspaces)
+    if (req.method === 'POST' && url.pathname.startsWith('/api/tasks/') && url.pathname.endsWith('/events')) {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(url.pathname.slice('/api/tasks/'.length, -'/events'.length));
+        if (!taskId) return sendJson(res, 400, { ok: false, error: 'missing_task_id' });
+
+        const body = await readBodyJson(req);
+        const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
+        const eventType = String(body.event_type || body.eventType || '').trim();
+        const content = body.content === undefined ? null : String(body.content);
+        const metadata = body.metadata ?? null;
+
+        if (!eventType) return sendJson(res, 400, { ok: false, error: 'missing_event_type' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data, error } = await sb
+          .from('task_events')
+          .insert({
+            project_id: projectId,
+            task_id: taskId,
+            event_type: eventType,
+            author,
+            content,
+            metadata,
+          })
+          .select('id')
+          .single();
+
+        if (error) throw error;
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true, id: data?.id || null });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // POST /api/chat/post — insert a project_chat_messages row via service role
+    if (req.method === 'POST' && url.pathname === '/api/chat/post') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const threadId = body.thread_id === undefined ? null : (body.thread_id ? String(body.thread_id) : null);
+        const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
+        const message = String(body.message || '').trim();
+        const targetAgentKey = body.target_agent_key ? String(body.target_agent_key).trim() : null;
+        const messageType = body.message_type ? String(body.message_type).trim() : null;
+        const metadata = body.metadata ?? null;
+
+        if (!message) return sendJson(res, 400, { ok: false, error: 'missing_message' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const insertRow = {
+          project_id: projectId,
+          thread_id: threadId,
+          author,
+          target_agent_key: targetAgentKey,
+          message,
+        };
+
+        // Optional columns exist in newer schema; include if provided.
+        if (messageType) insertRow.message_type = messageType;
+        if (metadata) insertRow.metadata = metadata;
+
+        const { data, error } = await sb.from('project_chat_messages').insert(insertRow).select('id').single();
+        if (error) throw error;
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true, id: data?.id || null });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // ============= Agent Provisioning Endpoints =============
 
     // GET /api/agents/runtime — list runnable OpenClaw agents from the Mac mini
