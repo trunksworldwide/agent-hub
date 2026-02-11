@@ -24,11 +24,14 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { useLabsFeature } from '@/hooks/useLabsFeature';
-const navItems = [
+const navItemsBefore = [
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/activity', label: 'Activity', icon: Activity },
   { to: '/agents', label: 'Agents', icon: Bot },
   { to: '/documents', label: 'Knowledge', icon: Brain },
+];
+
+const navItemsAfter = [
   { to: '/schedule', label: 'Schedule', icon: Clock },
 ];
 
@@ -40,6 +43,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
+  const teamRoomEnabled = useLabsFeature('team_room');
   const dmEnabled = useLabsFeature('multi_dm');
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -211,7 +215,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1">
-        {navItems.map((item) => (
+        {navItemsBefore.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -223,6 +227,19 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             <span>{item.label}</span>
           </NavLink>
         ))}
+
+        {/* Team Room (Labs flag) */}
+        {teamRoomEnabled && (
+          <NavLink
+            to="/chat"
+            onClick={onNavigate}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            activeClassName="bg-accent text-accent-foreground"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Team Room</span>
+          </NavLink>
+        )}
 
         {/* DMs (Labs flag) */}
         {dmEnabled && (
@@ -236,6 +253,19 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             <span>DMs</span>
           </NavLink>
         )}
+
+        {navItemsAfter.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={onNavigate}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            activeClassName="bg-accent text-accent-foreground"
+          >
+            <item.icon className="w-4 h-4" />
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
         
         {/* Divider before Settings */}
         <div className="my-2 border-t border-border" />
