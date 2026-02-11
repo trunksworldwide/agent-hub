@@ -3861,6 +3861,120 @@ export async function createTaskEvent(input: CreateTaskEventInput): Promise<{ ok
   }
 }
 
+/**
+ * Post a task event, preferring the Control API when healthy.
+ * Falls back to direct Supabase insert (existing createTaskEvent behavior).
+ *
+ * Control API contract:
+ *   POST /api/tasks/:taskId/events
+ *   Body: { project_id, author, event_type, content, metadata }
+ *   Response: { ok: true, event: { id, ... } }
+ *   Errors: { ok: false, error: string }
+ */
+export async function postTaskEventViaControlApi(
+  input: CreateTaskEventInput
+): Promise<{ ok: boolean; event?: TaskEvent; error?: string }> {
+  const baseUrl = getApiBaseUrl();
+
+  if (isControlApiHealthy() && baseUrl) {
+    try {
+      const projectId = getProjectId();
+      const author = input.author || DASHBOARD_ACTOR_KEY;
+      const url = `${baseUrl.replace(/\/+$/, '')}/api/tasks/${encodeURIComponent(input.taskId)}/events`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-clawdos-project': projectId,
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          author,
+          event_type: input.eventType,
+          content: input.content || null,
+          metadata: input.metadata || null,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) return json;
+      }
+      // Non-2xx or !ok → fall through to Supabase
+      console.warn('[postTaskEventViaControlApi] Control API returned non-ok, falling back to Supabase');
+    } catch (e) {
+      console.warn('[postTaskEventViaControlApi] Control API error, falling back to Supabase:', e);
+    }
+  }
+
+  // Fallback: direct Supabase insert
+  return createTaskEvent(input);
+}
+
+/**
+ * Post a chat message via Control API, falling back to Supabase.
+ *
+ * Control API contract:
+ *   POST /api/chat/post
+ *   Body: { project_id, thread_id, author, message, message_type?, metadata? }
+ *   Response: { ok: true }
+ *   Errors: { ok: false, error: string }
+ */
+export async function postChatMessageViaControlApi(
+  threadId: string,
+  opts: { author: string; message: string; messageType?: string; metadata?: Record<string, any> }
+): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = getApiBaseUrl();
+
+  if (isControlApiHealthy() && baseUrl) {
+    try {
+      const projectId = getProjectId();
+      const url = `${baseUrl.replace(/\/+$/, '')}/api/chat/post`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-clawdos-project': projectId,
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          thread_id: threadId,
+          author: opts.author,
+          message: opts.message,
+          message_type: opts.messageType || null,
+          metadata: opts.metadata || null,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) return { ok: true };
+      }
+      console.warn('[postChatMessageViaControlApi] Control API returned non-ok, falling back to Supabase');
+    } catch (e) {
+      console.warn('[postChatMessageViaControlApi] Control API error, falling back to Supabase:', e);
+    }
+  }
+
+  // Fallback: direct Supabase insert
+  if (!hasSupabase() || !supabase) return { ok: false, error: 'supabase_not_configured' };
+  const projectId = getProjectId();
+  try {
+    const { error } = await supabase.from('project_chat_messages').insert({
+      project_id: projectId,
+      thread_id: threadId,
+      author: opts.author,
+      message: opts.message,
+    });
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 export async function resolveApproval(
   taskId: string,
   originalEventId: string,

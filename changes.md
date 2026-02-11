@@ -1,3 +1,7 @@
+### Agent → Dashboard Bridge (Control API)
+- Added `postTaskEventViaControlApi()` and `postChatMessageViaControlApi()` in `api.ts` — route writes through Control API when healthy, fall back to direct Supabase inserts when offline.
+- Documented Control API contract in `docs/CONTROL-API-BRIDGE.md` (endpoint shapes, auth model, fallback flow).
+
 - **DM panels**: Fixed infinite vertical expansion on long messages; panels now scroll internally with fixed header/composer.
 
 ### Wiring Gap Fixes: Reconcile UI with Reality
