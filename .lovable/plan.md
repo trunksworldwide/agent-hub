@@ -1,115 +1,84 @@
 
 
-# Wiring Gap Fixes: Reconcile UI with Reality
+# Fix: Contain DM Chat Panels So They Don't Expand Infinitely
 
-## Overview
+## Problem
 
-Five targeted fixes to align the frontend and database with actual execution behavior. No UI redesigns -- just correctness patches. Answer to the question: yes, only emit `status_change` when `old_status != new_status`.
+When an agent sends a long message, the entire DM panel grows vertically instead of scrolling internally. This pushes the composer off-screen and defeats the purpose of having side-by-side chat panels where you can see recent messages from multiple agents at a glance.
 
----
+## Root Cause
 
-## Fix 1: `updateTask()` emits `task_events` on status change
+Two CSS issues in `DMPanel`:
 
-**File:** `src/lib/api.ts` (inside `updateTask()`, lines ~2245-2267)
+1. The `ScrollArea` (messages area) has `className="flex-1 p-3"` but its flex parent lacks `min-h-0`. In CSS flexbox, flex children default to `min-height: auto`, which means they grow to fit content instead of shrinking and scrolling. Adding `min-h-0` on the flex column container lets `flex-1` actually constrain the height.
 
-Before inserting the `activities` row, fetch the old status alongside the title (combine into one query). If `patch.status` is defined AND differs from the old status, insert a `task_events` row:
+2. The auto-scroll ref targets the `ScrollArea` Root element, but Radix ScrollArea scrolls via its internal Viewport. The ref needs to target the Viewport for `scrollTop` to work.
 
-```
-task_events {
-  project_id,
-  task_id: taskId,
-  event_type: 'status_change',
-  author: 'dashboard',
-  content: `Status changed from ${oldStatus} to ${newStatus}`,
-  metadata: { old_status: oldStatus, new_status: newStatus }
-}
-```
+## Changes
 
-- Best-effort: wrapped in try/catch, non-blocking (task update already succeeded)
-- Only emits when `oldStatus !== patch.status`
-- Reuses the same `select('title, status')` query already being made for the activity message
+### File: `src/components/pages/DMsPage.tsx`
 
----
+**Change 1 -- DMPanel root container (line 199)**
 
-## Fix 2: `isControlApiHealthy()` adds TTL + URL check
-
-**File:** `src/lib/store.ts` -- add `lastExecutorCheckAt: number | null` field and setter
-
-**File:** `src/lib/api.ts` -- update `isControlApiHealthy()` (lines ~3312-3324):
+Add `min-h-0` to the panel's flex-col container so the ScrollArea is height-constrained:
 
 ```
-// Current (broken):
-return !!check;
+// Before
+<div className="h-full flex flex-col border-l border-border first:border-l-0">
 
-// Fixed:
-if (!check) return false;
-const lastCheckAt = useClawdOffice.getState().lastExecutorCheckAt;
-if (!lastCheckAt || Date.now() - lastCheckAt > 60_000) return false;
-return true;
+// After
+<div className="h-full flex flex-col min-h-0 border-l border-border first:border-l-0">
 ```
 
-Also update wherever `setExecutorCheck` is called to simultaneously set `lastExecutorCheckAt: Date.now()`.
+**Change 2 -- ScrollArea gets min-h-0 (line 216)**
 
----
+Ensure the ScrollArea itself participates in the flex constraint:
 
-## Fix 3: Heartbeat grouping fallback for `schedule_kind='every'`
-
-**File:** `src/components/pages/CronPage.tsx` (lines ~1341-1342)
-
-Change the filter from:
 ```
-j.jobIntent === 'heartbeat'
-```
-To:
-```
-j.jobIntent === 'heartbeat' || (j.scheduleKind === 'every' && !j.jobIntent)
+// Before
+<ScrollArea className="flex-1 p-3" ref={scrollRef}>
+
+// After
+<ScrollArea className="flex-1 min-h-0 p-3" ref={scrollRef}>
 ```
 
-And the "scheduled jobs" filter becomes the inverse of that condition.
+**Change 3 -- Fix auto-scroll to target Viewport**
 
----
+The `scrollRef` currently points at the Radix `Root` element, but scrolling happens inside the `Viewport` child. Update the auto-scroll effect to find the viewport:
 
-## Fix 4: Unique constraint on `chat_delivery_queue`
+```
+// Before
+if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 
-**New migration file**
-
-```sql
--- Remove any existing duplicates (keep newest per pair)
-DELETE FROM public.chat_delivery_queue a
-USING public.chat_delivery_queue b
-WHERE a.message_id = b.message_id
-  AND a.target_agent_key = b.target_agent_key
-  AND a.created_at < b.created_at;
-
--- Add unique constraint
-ALTER TABLE public.chat_delivery_queue
-  ADD CONSTRAINT uq_chat_delivery_message_agent
-  UNIQUE (message_id, target_agent_key);
+// After
+const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+if (viewport) viewport.scrollTop = viewport.scrollHeight;
 ```
 
-Then update `src/lib/api.ts` where queue rows are inserted: use `.upsert()` instead of `.insert()` (or wrap in try/catch to swallow duplicate key errors) so retries and direct-mode mirroring don't fail.
+**Change 4 -- DM panels container (line 340)**
 
----
+Add `h-full` to ensure the panels container fills available space:
 
-## Fix 5: Document Mac-side gaps (code comments only)
+```
+// Before
+<div className="flex-1 overflow-hidden">
 
-**File:** `src/lib/api.ts` -- add comments near `sendChatMessage` noting:
-- `/api/chat/deliver` endpoint is not yet implemented in Control API
-- Queue worker (poll + watchdog) is Mac-side work
-- Direct delivery will always fall back to queue until endpoint exists
+// After  
+<div className="flex-1 overflow-hidden h-full">
+```
 
----
+### File: `changes.md`
 
-## Changes Summary
+Log: "DM panels: fixed infinite vertical expansion on long messages; panels now scroll internally with fixed header/composer."
 
-| File | What |
-|---|---|
-| `src/lib/api.ts` | Fix 1: emit `task_events` in `updateTask()` |
-| `src/lib/api.ts` | Fix 2: TTL check in `isControlApiHealthy()` |
-| `src/lib/store.ts` | Fix 2: add `lastExecutorCheckAt` field |
-| `src/components/pages/CronPage.tsx` | Fix 3: heartbeat fallback grouping |
-| New migration | Fix 4: unique constraint + dedup |
-| `src/lib/api.ts` | Fix 4: upsert for queue inserts |
-| `src/lib/api.ts` | Fix 5: doc comments |
-| `changes.md` | Log all changes |
+## What This Achieves
+
+- Each DM panel stays contained within its allocated space (header + scrollable messages + composer always visible)
+- Long messages scroll within the individual panel, not the whole page
+- Side-by-side panels remain equally visible so you can compare recent messages from multiple agents
+- Auto-scroll to newest message actually works
+
+## No Other Files Changed
+
+This is purely a CSS/layout fix in `DMsPage.tsx`. No new components, no API changes, no database changes.
 
