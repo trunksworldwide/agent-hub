@@ -665,6 +665,11 @@ const server = http.createServer(async (req, res) => {
     const taskUpdateMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
     if (taskUpdateMatch && req.method === 'POST') {
       const [, taskId] = taskUpdateMatch;
+      // Reserved routes handled elsewhere
+      if (taskId === 'propose') {
+        // fall through so /api/tasks/propose can be handled by the dashboard bridge
+      } else {
+
       try {
         const body = await readBodyJson(req);
         const patch = body.patch || {};
@@ -687,6 +692,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { ok: true, commit });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
       }
     }
 
