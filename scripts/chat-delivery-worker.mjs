@@ -150,6 +150,23 @@ async function processRow(row) {
     message: replyText || '(no reply)',
   });
 
+  // Best-effort: bump presence so queued deliveries don't look "dead" in the dashboard
+  try {
+    await supabase.from('agent_status').upsert(
+      {
+        project_id: PROJECT_ID,
+        agent_key: row.target_agent_key,
+        state: 'idle',
+        note: null,
+        last_activity_at: nowIso,
+        last_heartbeat_at: nowIso,
+      },
+      { onConflict: 'project_id,agent_key' }
+    );
+  } catch (e) {
+    console.warn('[chat-worker] presence bump failed:', e?.message || e);
+  }
+
   // Mark processed
   await supabase
     .from('chat_delivery_queue')
@@ -157,6 +174,7 @@ async function processRow(row) {
     .eq('project_id', PROJECT_ID)
     .eq('id', row.id);
 }
+
 
 async function loop() {
   console.log('[chat-worker] starting', { PROJECT_ID, POLL_MS, BATCH });
