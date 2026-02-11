@@ -2232,6 +2232,24 @@ export async function updateTask(
     if (patch.blockedReason !== undefined) update.blocked_reason = patch.blockedReason;
     if (patch.blockedAt !== undefined) update.blocked_at = patch.blockedAt;
 
+    // If we're changing status, capture the old status BEFORE the update so we can emit a correct status_change event.
+    let oldStatus: string | null = null;
+    let title: string | null = null;
+    if (patch.status) {
+      try {
+        const { data } = await supabase
+          .from('tasks')
+          .select('title,status')
+          .eq('project_id', projectId)
+          .eq('id', taskId)
+          .maybeSingle();
+        title = (data as any)?.title ?? null;
+        oldStatus = (data as any)?.status ?? null;
+      } catch {
+        // ignore
+      }
+    }
+
     const { error } = await supabase
       .from('tasks')
       .update(update)
@@ -2241,24 +2259,7 @@ export async function updateTask(
     if (error) throw error;
 
     // Write an activity row (best effort)
-    // Make the feed human-readable by including the task title.
-    // Also fetch old status so we can emit task_events when it changes.
     if (patch.status) {
-      let title: string | null = null;
-      let oldStatus: string | null = null;
-      try {
-        const { data } = await supabase
-          .from('tasks')
-          .select('title, status')
-          .eq('project_id', projectId)
-          .eq('id', taskId)
-          .maybeSingle();
-        title = (data as any)?.title ?? null;
-        oldStatus = (data as any)?.status ?? null;
-      } catch {
-        // ignore
-      }
-
       const label = title ? `"${title}"` : taskId;
       await supabase.from('activities').insert({
         project_id: projectId,
@@ -2269,17 +2270,30 @@ export async function updateTask(
       });
 
       // Emit task_events status_change (best-effort, non-blocking)
-      // Only when old_status !== new_status
+      // Prefer Control API bridge so we don't depend on client-side RLS for task_events.
       if (oldStatus && oldStatus !== patch.status) {
         try {
-          await supabase.from('task_events').insert({
-            project_id: projectId,
-            task_id: taskId,
-            event_type: 'status_change',
-            author: 'dashboard',
-            content: `Status changed from ${oldStatus} to ${patch.status}`,
-            metadata: { old_status: oldStatus, new_status: patch.status },
-          });
+          const base = getApiBaseUrl();
+          if (base) {
+            await requestJson(`/api/tasks/${encodeURIComponent(taskId)}/events`, {
+              method: 'POST',
+              body: JSON.stringify({
+                author: 'dashboard',
+                event_type: 'status_change',
+                content: null,
+                metadata: { old_status: oldStatus, new_status: patch.status },
+              }),
+            });
+          } else {
+            await supabase.from('task_events').insert({
+              project_id: projectId,
+              task_id: taskId,
+              event_type: 'status_change',
+              author: 'dashboard',
+              content: null,
+              metadata: { old_status: oldStatus, new_status: patch.status },
+            });
+          }
         } catch {
           // Best-effort: task update already succeeded
         }
@@ -3313,14 +3327,16 @@ export async function getChatMessages(threadId?: string, limit = 100): Promise<C
 
 // ============= Chat Delivery Queue =============
 //
-// WIRING GAPS (Mac-side work, not implemented in this codebase):
-// - POST /api/chat/deliver endpoint is NOT yet implemented in the Control API (server/index.mjs).
-//   Direct delivery will always fail and fall back to queue until that endpoint exists.
-// - There is no worker/executor loop that polls chat_delivery_queue for status='queued'
-//   rows, delivers them to OpenClaw agent sessions, writes responses, and marks completion.
-// - The 2-minute watchdog for stuck rows must live in the Mac-side worker (cron-mirror or new poller).
+// Delivery model:
+// - Direct path: POST /api/chat/deliver (Control API) triggers an agent turn and writes the agent reply
+//   back into `project_chat_messages`.
+// - Fallback path: insert into `chat_delivery_queue`; a Mac-side worker polls/claims rows, runs the agent,
+//   writes the reply into `project_chat_messages`, and marks the queue row processed/failed.
 //
-// The UI handles all of this gracefully via the fallback-to-queue pattern.
+// When debugging delivery issues:
+// - Check `chat_delivery_queue.status/result` in Supabase
+// - Check worker logs (clawdos-chat-delivery.log)
+// - Check Control API health (/api/executor-check)
 
 export interface ChatDeliveryEntry {
   id: string;
