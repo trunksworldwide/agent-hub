@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell, Brain, MessageSquare } from 'lucide-react';
+import { Activity, CheckSquare, Bot, FileText, Clock, Settings, Plus, Bell, Brain, MessageSquare, MessagesSquare } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -23,7 +23,7 @@ import { setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } 
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-
+import { useLabsFeature } from '@/hooks/useLabsFeature';
 const navItems = [
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/activity', label: 'Activity', icon: Activity },
@@ -40,6 +40,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
+  const dmEnabled = useLabsFeature('multi_dm');
   const navigate = useNavigate();
   const { toast } = useToast();
   const { 
@@ -222,6 +223,19 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             <span>{item.label}</span>
           </NavLink>
         ))}
+
+        {/* DMs (Labs flag) */}
+        {dmEnabled && (
+          <NavLink
+            to="/dms"
+            onClick={onNavigate}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            activeClassName="bg-accent text-accent-foreground"
+          >
+            <MessagesSquare className="w-4 h-4" />
+            <span>DMs</span>
+          </NavLink>
+        )}
         
         {/* Divider before Settings */}
         <div className="my-2 border-t border-border" />

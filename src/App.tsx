@@ -12,6 +12,7 @@ import { SchedulePage } from "./components/pages/SchedulePage";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { DocumentsPage } from "./components/pages/DocumentsPage";
 import { ChatPage } from "./components/pages/ChatPage";
+import { DMsPage } from "./components/pages/DMsPage";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ function AppRoutes() {
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/dms" element={<DMsPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/settings" element={<SettingsPage />} />
