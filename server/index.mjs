@@ -1444,6 +1444,58 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/tasks/propose — create a proposed task in Tasks inbox for approval
+    if (req.method === 'POST' && url.pathname === '/api/tasks/propose') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
+        const title = String(body.title || '').trim();
+        const description = String(body.description || '').trim();
+        const assigneeAgentKey = body.assignee_agent_key ? String(body.assignee_agent_key).trim() : null;
+
+        if (!title) return sendJson(res, 400, { ok: false, error: 'missing_title' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const nowIso = new Date().toISOString();
+
+        const insertRow = {
+          project_id: projectId,
+          title,
+          description: description || '',
+          status: 'inbox',
+          assignee_agent_key: assigneeAgentKey,
+          is_proposed: true,
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+
+        const { data, error } = await sb.from('tasks').insert(insertRow).select('id').single();
+        if (error) throw error;
+
+        // Best-effort activity log
+        try {
+          await sb.from('activities').insert({
+            project_id: projectId,
+            type: 'task_proposed',
+            message: `Proposed task: ${title}`,
+            actor_agent_key: author,
+            task_id: data.id,
+          });
+        } catch {
+          // ignore
+        }
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: nowIso });
+
+        return sendJson(res, 200, { ok: true, id: data.id });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // ============= Agent Provisioning Endpoints =============
 
     // GET /api/agents/runtime — list runnable OpenClaw agents from the Mac mini
