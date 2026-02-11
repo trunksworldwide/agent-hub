@@ -3086,6 +3086,51 @@ export async function getChatThreads(): Promise<ChatThread[]> {
   }
 }
 
+export async function getOrCreateDMThread(agentKey: string): Promise<ChatThread> {
+  if (!hasSupabase() || !supabase) {
+    throw new Error('supabase_not_configured');
+  }
+
+  const projectId = getProjectId();
+  const title = `DM:${agentKey}`;
+
+  // Try to find existing DM thread
+  const { data: existing } = await supabase
+    .from('project_chat_threads')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('title', title)
+    .limit(1)
+    .single();
+
+  if (existing) {
+    return {
+      id: existing.id,
+      projectId: existing.project_id,
+      title: existing.title || title,
+      createdAt: existing.created_at,
+      updatedAt: existing.updated_at,
+    };
+  }
+
+  // Create new DM thread
+  const { data, error } = await supabase
+    .from('project_chat_threads')
+    .insert({ project_id: projectId, title })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    projectId: data.project_id,
+    title: data.title || title,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
 export async function getOrCreateDefaultThread(): Promise<ChatThread> {
   if (!hasSupabase() || !supabase) {
     throw new Error('supabase_not_configured');

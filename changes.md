@@ -1,3 +1,12 @@
+### Phase 4: Multi-Agent DMs
+- **New page `DMsPage`**: Split-pane layout with agent list sidebar and up to 2 concurrent DM panels (1 on mobile). Each panel has its own thread, composer, delivery badges, and realtime subscription.
+- **DM threads**: Uses existing `project_chat_threads` with `title = 'DM:<agent_key>'` naming convention. Auto-creates thread on first message via `getOrCreateDMThread()`.
+- **Delivery integration**: Reuses Phase 3 `chat_delivery_queue` for all DM messages. Each panel independently shows delivery status badges.
+- **Sidebar**: "DMs" nav item appears behind `multi_dm` Labs feature flag.
+- **Route**: `/dms` added to app router.
+- **Mobile**: Compact icon-only agent list, single panel at a time.
+- **Resizable panels**: Desktop uses `ResizablePanelGroup` for side-by-side agent conversations.
+
 ### Phase 3: Operator Chat — Direct + Queued Delivery
 - **New table `chat_delivery_queue`**: Tracks message delivery to agents. Columns: `message_id` (FK), `target_agent_key`, `status` (queued/delivered/processed/failed), timestamps, `result`. RLS enabled, added to `supabase_realtime` publication with index on `(project_id, status, created_at)`.
 - **Direct + Queued delivery**: `sendChatMessage()` now checks Control API health. If healthy, delivers via `POST /api/chat/deliver` and mirrors to queue as `processed`. If unhealthy, enqueues as `queued` for executor to poll later. Falls back gracefully on direct delivery failure.
