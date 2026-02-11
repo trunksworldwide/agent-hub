@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
-import { Send, RefreshCw, Bot, User, AlertCircle, CheckSquare } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { Send, RefreshCw, Bot, User, AlertCircle, CheckSquare, Clock, RotateCcw, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -9,11 +9,120 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useClawdOffice } from '@/lib/store';
 import { getAgents, type Agent } from '@/lib/api';
-import { getChatMessages, sendChatMessage, getOrCreateDefaultThread, type ChatMessage } from '@/lib/api';
+import {
+  getChatMessages,
+  sendChatMessage,
+  getOrCreateDefaultThread,
+  getChatDeliveryStatus,
+  retryChatDelivery,
+  isControlApiHealthy,
+  type ChatMessage,
+  type ChatDeliveryEntry,
+} from '@/lib/api';
 import { hasSupabase, subscribeToProjectRealtime } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { NewTaskDialog } from '@/components/dialogs/NewTaskDialog';
+
+// ─── Sub-components ───
+
+function DeliveryStatusBadge({
+  entry,
+  onRetry,
+}: {
+  entry: ChatDeliveryEntry | undefined;
+  onRetry?: (id: string) => void;
+}) {
+  if (!entry) return null;
+
+  const { status } = entry;
+
+  if (status === 'processed') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Check className="w-3 h-3 text-[hsl(var(--success))] inline-block ml-1" />
+        </TooltipTrigger>
+        <TooltipContent>Delivered &amp; processed</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  if (status === 'delivered') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Check className="w-3 h-3 text-muted-foreground inline-block ml-1" />
+        </TooltipTrigger>
+        <TooltipContent>Delivered, awaiting response</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  if (status === 'queued') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Clock className="w-3 h-3 text-[hsl(var(--warning))] inline-block ml-1" />
+        </TooltipTrigger>
+        <TooltipContent>Queued — agent will process when online</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // failed
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center gap-0.5 ml-1">
+          <AlertCircle className="w-3 h-3 text-destructive" />
+          {onRetry && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-4 w-4 p-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(entry.id);
+              }}
+            >
+              <RotateCcw className="w-2.5 h-2.5" />
+            </Button>
+          )}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Delivery failed. Click to retry.</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ModeIndicator() {
+  const healthy = isControlApiHealthy();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              healthy ? 'bg-[hsl(var(--success))]' : 'bg-[hsl(var(--warning))]'
+            )}
+          />
+          <span className="text-[10px] text-muted-foreground">
+            {healthy ? 'Live' : 'Backup'}
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        {healthy
+          ? 'Messages delivered directly to agent'
+          : 'Messages queued — delivered when agent comes online'}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ─── Main component ───
 
 export function ChatPage() {
   const { selectedProjectId } = useClawdOffice();
@@ -22,6 +131,7 @@ export function ChatPage() {
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [deliveryMap, setDeliveryMap] = useState<Record<string, ChatDeliveryEntry>>({});
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -36,7 +146,7 @@ export function ChatPage() {
   const [taskFromMessage, setTaskFromMessage] = useState<ChatMessage | null>(null);
 
   // Load agents and messages
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -49,28 +159,46 @@ export function ChatPage() {
 
       const messagesData = await getChatMessages(thread.id, 100);
       setMessages(messagesData);
+
+      // Load delivery status for outgoing agent-targeted messages
+      const outgoingIds = messagesData
+        .filter((m) => m.author === 'ui' && m.targetAgentKey)
+        .map((m) => m.id);
+      if (outgoingIds.length > 0) {
+        const statuses = await getChatDeliveryStatus(outgoingIds);
+        setDeliveryMap(statuses);
+      }
     } catch (e: any) {
       console.error('Failed to load chat:', e);
       setError(String(e?.message || e));
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedProjectId]);
 
   useEffect(() => {
     loadData();
-  }, [selectedProjectId]);
+  }, [loadData]);
 
   // Realtime subscription
   useEffect(() => {
     if (!hasSupabase()) return;
 
     const unsubscribe = subscribeToProjectRealtime(selectedProjectId, (change) => {
-      if (change?.table === 'project_chat_messages') {
-        // Reload messages on any change
-        if (threadId) {
-          getChatMessages(threadId, 100).then(setMessages).catch(console.error);
-        }
+      if (change?.table === 'project_chat_messages' && threadId) {
+        getChatMessages(threadId, 100).then(setMessages).catch(console.error);
+      }
+      if (change?.table === 'chat_delivery_queue') {
+        // Refresh delivery statuses
+        setMessages((prev) => {
+          const outgoingIds = prev
+            .filter((m) => m.author === 'ui' && m.targetAgentKey)
+            .map((m) => m.id);
+          if (outgoingIds.length > 0) {
+            getChatDeliveryStatus(outgoingIds).then(setDeliveryMap).catch(console.error);
+          }
+          return prev;
+        });
       }
     });
 
@@ -100,9 +228,20 @@ export function ChatPage() {
       }
 
       setMessageText('');
-      // Message will appear via realtime, but also add optimistically
+
+      // Optimistic add
       if (result.message) {
-        setMessages(prev => [...prev, result.message!]);
+        setMessages((prev) => [...prev, result.message!]);
+      }
+
+      // Show delivery mode feedback for agent-targeted messages
+      if (targetAgent && result.deliveryMode) {
+        if (result.deliveryMode === 'queued') {
+          toast({
+            title: 'Message queued',
+            description: 'Agent will process when online.',
+          });
+        }
       }
     } catch (e: any) {
       toast({
@@ -119,6 +258,15 @@ export function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleRetryDelivery = async (deliveryId: string) => {
+    const res = await retryChatDelivery(deliveryId);
+    if (res.ok) {
+      toast({ title: 'Retrying delivery...' });
+    } else {
+      toast({ title: 'Retry failed', description: res.error, variant: 'destructive' });
     }
   };
 
@@ -159,32 +307,22 @@ export function ChatPage() {
   };
 
   const getAuthorDisplay = (author: string) => {
-    // Check if it's an agent
     if (author.startsWith('agent:')) {
-      const agent = agents.find(a => a.id === author);
-      if (agent) {
-        return { name: agent.name, avatar: agent.avatar || '🤖', isAgent: true };
-      }
-      // Extract name from key
+      const agent = agents.find((a) => a.id === author);
+      if (agent) return { name: agent.name, avatar: agent.avatar || '🤖', isAgent: true };
       const parts = author.split(':');
       return { name: parts[1] || author, avatar: '🤖', isAgent: true };
     }
-
-    // UI/dashboard author
     if (author === 'ui' || author === 'dashboard') {
       return { name: 'You', avatar: null, isAgent: false };
     }
-
-    // Human author
     return { name: author, avatar: null, isAgent: false };
   };
 
   const getTargetAgentDisplay = (targetKey: string | null) => {
     if (!targetKey) return null;
-    const agent = agents.find(a => a.id === targetKey);
-    if (agent) {
-      return { name: agent.name, avatar: agent.avatar || '🤖' };
-    }
+    const agent = agents.find((a) => a.id === targetKey);
+    if (agent) return { name: agent.name, avatar: agent.avatar || '🤖' };
     const parts = targetKey.split(':');
     return { name: parts[1] || targetKey, avatar: '🤖' };
   };
@@ -197,12 +335,7 @@ export function ChatPage() {
           <h1 className="text-lg font-semibold">Chat</h1>
           <p className="text-sm text-muted-foreground">Project conversations</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={loadData}
-          disabled={isLoading}
-        >
+        <Button variant="ghost" size="sm" onClick={loadData} disabled={isLoading}>
           <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
         </Button>
       </div>
@@ -216,15 +349,6 @@ export function ChatPage() {
           </Alert>
         </div>
       )}
-
-      {/* Delivery notice */}
-      <div className="px-4 pt-2">
-        <Alert className="bg-muted/50 border-muted">
-          <AlertDescription className="text-xs text-muted-foreground">
-            💬 Messages are stored. Agent delivery coming soon.
-          </AlertDescription>
-        </Alert>
-      </div>
 
       {/* Messages area */}
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
@@ -254,36 +378,40 @@ export function ChatPage() {
                 const author = getAuthorDisplay(msg.author);
                 const target = getTargetAgentDisplay(msg.targetAgentKey);
                 const isOutgoing = !author.isAgent;
+                const delivery = deliveryMap[msg.id];
 
                 return (
                   <div
                     key={msg.id}
-                    className={cn(
-                      "flex gap-3",
-                      isOutgoing && "flex-row-reverse"
-                    )}
+                    className={cn('flex gap-3', isOutgoing && 'flex-row-reverse')}
                   >
                     {/* Avatar */}
-                    <div className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0",
-                      author.isAgent ? "bg-primary/10" : "bg-muted"
-                    )}>
-                      {author.avatar || (author.isAgent ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />)}
+                    <div
+                      className={cn(
+                        'w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0',
+                        author.isAgent ? 'bg-primary/10' : 'bg-muted'
+                      )}
+                    >
+                      {author.avatar ||
+                        (author.isAgent ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />)}
                     </div>
 
                     {/* Message bubble */}
-                    <div className={cn(
-                      "max-w-[75%] rounded-lg p-3",
-                      isOutgoing 
-                        ? "bg-primary text-primary-foreground" 
-                        : "bg-muted"
-                    )}>
+                    <div
+                      className={cn(
+                        'max-w-[75%] rounded-lg p-3',
+                        isOutgoing ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                      )}
+                    >
                       {/* Header */}
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium opacity-80">
                           {author.name}
                           {target && (
-                            <span className="opacity-60"> → {target.avatar} {target.name}</span>
+                            <span className="opacity-60">
+                              {' '}
+                              → {target.avatar} {target.name}
+                            </span>
                           )}
                         </span>
                       </div>
@@ -293,8 +421,16 @@ export function ChatPage() {
 
                       {/* Footer */}
                       <div className="flex items-center justify-between gap-2 mt-2">
-                        <span className="text-[10px] opacity-60">{formatTime(msg.createdAt)}</span>
-                        
+                        <span className="text-[10px] opacity-60 flex items-center gap-0.5">
+                          {formatTime(msg.createdAt)}
+                          {isOutgoing && msg.targetAgentKey && (
+                            <DeliveryStatusBadge
+                              entry={delivery}
+                              onRetry={handleRetryDelivery}
+                            />
+                          )}
+                        </span>
+
                         {!isOutgoing && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -322,9 +458,22 @@ export function ChatPage() {
 
       {/* Composer */}
       <div className="p-4 border-t border-border">
+        <div className="flex items-center gap-2 mb-2">
+          <ModeIndicator />
+          {targetAgent && (
+            <span className="text-[10px] text-muted-foreground">
+              {isControlApiHealthy()
+                ? 'Will deliver directly'
+                : 'Will queue for later delivery'}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {/* Target agent selector */}
-          <Select value={targetAgent || '__general__'} onValueChange={(v) => setTargetAgent(v === '__general__' ? '' : v)}>
+          <Select
+            value={targetAgent || '__general__'}
+            onValueChange={(v) => setTargetAgent(v === '__general__' ? '' : v)}
+          >
             <SelectTrigger className="w-40 shrink-0">
               <SelectValue placeholder="To..." />
             </SelectTrigger>
@@ -362,7 +511,7 @@ export function ChatPage() {
             onClick={handleSend}
             disabled={!messageText.trim() || isSending}
           >
-            <Send className="w-4 h-4" />
+            {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>
       </div>

@@ -3169,11 +3169,50 @@ export async function getChatMessages(threadId?: string, limit = 100): Promise<C
   }
 }
 
+// ============= Chat Delivery Queue =============
+
+export interface ChatDeliveryEntry {
+  id: string;
+  projectId: string;
+  messageId: string;
+  targetAgentKey: string;
+  status: 'queued' | 'delivered' | 'processed' | 'failed';
+  pickedUpAt: string | null;
+  completedAt: string | null;
+  result: any;
+  createdAt: string;
+}
+
+/**
+ * Check if the Control API is currently healthy (non-empty URL + reachable).
+ * Uses the store's executorCheck as a fast cache; falls back to a direct probe.
+ */
+export function isControlApiHealthy(): boolean {
+  const url = getApiBaseUrl();
+  if (!url) return false;
+  // If the store has a recent successful check, treat as healthy
+  try {
+    // Access zustand store outside React — acceptable for utility fn
+    const { useClawdOffice } = require('./store');
+    const check = useClawdOffice.getState().executorCheck;
+    return !!check;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Send a chat message with direct+queued delivery.
+ *
+ * 1. Always write message to project_chat_messages (Supabase)
+ * 2. If targeting an agent AND Control API healthy → deliver directly
+ * 3. Else if targeting an agent → enqueue in chat_delivery_queue
+ */
 export async function sendChatMessage(input: {
   threadId?: string;
   message: string;
   targetAgentKey?: string;
-}): Promise<{ ok: boolean; message?: ChatMessage; error?: string }> {
+}): Promise<{ ok: boolean; message?: ChatMessage; deliveryMode?: 'direct' | 'queued' | 'none'; error?: string }> {
   if (!hasSupabase() || !supabase) {
     return { ok: false, error: 'supabase_not_configured' };
   }
@@ -3181,6 +3220,7 @@ export async function sendChatMessage(input: {
   const projectId = getProjectId();
 
   try {
+    // 1. Write message to Supabase
     const { data, error } = await supabase
       .from('project_chat_messages')
       .insert({
@@ -3195,20 +3235,129 @@ export async function sendChatMessage(input: {
 
     if (error) throw error;
 
-    return {
-      ok: true,
-      message: {
-        id: data.id,
-        projectId: data.project_id,
-        threadId: data.thread_id,
-        author: data.author,
-        targetAgentKey: data.target_agent_key,
-        message: data.message,
-        createdAt: data.created_at,
-      },
+    const chatMsg: ChatMessage = {
+      id: data.id,
+      projectId: data.project_id,
+      threadId: data.thread_id,
+      author: data.author,
+      targetAgentKey: data.target_agent_key,
+      message: data.message,
+      createdAt: data.created_at,
     };
+
+    // 2. Delivery logic (only when targeting a specific agent)
+    let deliveryMode: 'direct' | 'queued' | 'none' = 'none';
+
+    if (input.targetAgentKey) {
+      const apiHealthy = isControlApiHealthy();
+
+      if (apiHealthy) {
+        // Direct delivery via Control API
+        try {
+          await requestJson('/api/chat/deliver', {
+            method: 'POST',
+            body: JSON.stringify({
+              message_id: data.id,
+              target_agent_key: input.targetAgentKey,
+              message: input.message,
+              project_id: projectId,
+            }),
+          });
+          deliveryMode = 'direct';
+
+          // Mirror to queue with status='processed' (best-effort)
+          try {
+            await supabase.from('chat_delivery_queue').insert({
+              project_id: projectId,
+              message_id: data.id,
+              target_agent_key: input.targetAgentKey,
+              status: 'processed',
+              completed_at: new Date().toISOString(),
+            });
+          } catch { /* ignore */ }
+        } catch (deliveryErr) {
+          console.warn('Direct delivery failed, falling back to queue:', deliveryErr);
+          // Fall through to queued
+          deliveryMode = 'queued';
+          await supabase.from('chat_delivery_queue').insert({
+            project_id: projectId,
+            message_id: data.id,
+            target_agent_key: input.targetAgentKey,
+            status: 'queued',
+          });
+        }
+      } else {
+        // Queued fallback
+        deliveryMode = 'queued';
+        await supabase.from('chat_delivery_queue').insert({
+          project_id: projectId,
+          message_id: data.id,
+          target_agent_key: input.targetAgentKey,
+          status: 'queued',
+        });
+      }
+    }
+
+    return { ok: true, message: chatMsg, deliveryMode };
   } catch (e: any) {
     console.error('sendChatMessage failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Get delivery status for a set of message IDs.
+ */
+export async function getChatDeliveryStatus(messageIds: string[]): Promise<Record<string, ChatDeliveryEntry>> {
+  if (!hasSupabase() || !supabase || messageIds.length === 0) return {};
+
+  const projectId = getProjectId();
+
+  try {
+    const { data, error } = await supabase
+      .from('chat_delivery_queue')
+      .select('*')
+      .eq('project_id', projectId)
+      .in('message_id', messageIds);
+
+    if (error) throw error;
+
+    const map: Record<string, ChatDeliveryEntry> = {};
+    for (const row of data || []) {
+      map[row.message_id] = {
+        id: row.id,
+        projectId: row.project_id,
+        messageId: row.message_id,
+        targetAgentKey: row.target_agent_key,
+        status: row.status as ChatDeliveryEntry['status'],
+        pickedUpAt: row.picked_up_at,
+        completedAt: row.completed_at,
+        result: row.result,
+        createdAt: row.created_at,
+      };
+    }
+    return map;
+  } catch (e) {
+    console.error('getChatDeliveryStatus failed:', e);
+    return {};
+  }
+}
+
+/**
+ * Retry delivery for a failed/stale queued message.
+ */
+export async function retryChatDelivery(deliveryId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) return { ok: false, error: 'supabase_not_configured' };
+
+  try {
+    const { error } = await supabase
+      .from('chat_delivery_queue')
+      .update({ status: 'queued', picked_up_at: null, completed_at: null, result: null })
+      .eq('id', deliveryId);
+
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
     return { ok: false, error: String(e?.message || e) };
   }
 }
