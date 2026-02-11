@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Clock, RefreshCw, Sparkles } from 'lucide-react';
-import { getActivity, getAgents, type ActivityItem, type Agent } from '@/lib/api';
+import { ChevronRight, Clock, RefreshCw, Sparkles, Target } from 'lucide-react';
+import { getActivity, getAgents, getProjectMission, type ActivityItem, type Agent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -57,6 +57,7 @@ export function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [limit, setLimit] = useState(75);
+  const [missionText, setMissionText] = useState<string>('');
   
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -85,7 +86,10 @@ export function ActivityPage() {
     if (showSpinner) setIsRefreshing(true);
     setLoadError(null);
     try {
-      const [act, agentList] = await Promise.all([getActivity(limit), getAgents()]);
+      const [act, agentList, missionDoc] = await Promise.all([getActivity(limit), getAgents(), getProjectMission()]);
+      setItems(act);
+      setAgents(agentList);
+      setMissionText(missionDoc?.content || '');
       setItems(act);
       setAgents(agentList);
 
@@ -264,6 +268,13 @@ export function ActivityPage() {
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
+          {/* Mission Banner */}
+          {missionText && (
+            <div className="mb-3 p-3 rounded-lg border border-accent/20 bg-accent/5 flex items-center gap-2">
+              <Target className="w-4 h-4 text-accent-foreground shrink-0" />
+              <span className="text-sm font-medium">{missionText}</span>
+            </div>
+          )}
           {filtered.length === 0 ? (
             <div className="text-sm text-muted-foreground py-8 text-center">
               No activity yet.

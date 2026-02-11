@@ -1190,9 +1190,9 @@ export function CronPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold">Scheduled Jobs</h1>
+              <h1 className="text-2xl font-semibold">Schedule</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Manage cron jobs and scheduled tasks.
+                Heartbeats and scheduled jobs running on the executor.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1336,9 +1336,12 @@ export function CronPage() {
           </Card>
         )}
 
-        {/* Job List */}
-        <div className="space-y-3">
-          {filteredJobs.map((job) => (
+        {/* Split into Heartbeats and Scheduled Jobs */}
+        {(() => {
+          const heartbeats = filteredJobs.filter(j => j.jobIntent === 'heartbeat');
+          const scheduledJobs = filteredJobs.filter(j => j.jobIntent !== 'heartbeat');
+
+          const renderJobRow = (job: CronMirrorJob) => (
             <CronJobRow
               key={job.id}
               job={job}
@@ -1366,8 +1369,41 @@ export function CronPage() {
               onRefreshRuns={() => loadRuns(job.jobId, { force: true })}
               agents={agents}
             />
-          ))}
-        </div>
+          );
+
+          return (
+            <>
+              {/* Heartbeats Section */}
+              {heartbeats.length > 0 && (
+                <div className="mb-6">
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                    💓 Heartbeats
+                    <Badge variant="secondary" className="text-[10px]">{heartbeats.length}</Badge>
+                  </h2>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Periodic, non-destructive checks. Agents report findings and propose actions for approval.
+                  </p>
+                  <div className="space-y-3">
+                    {heartbeats.map(renderJobRow)}
+                  </div>
+                </div>
+              )}
+
+              {/* Scheduled Jobs Section */}
+              {scheduledJobs.length > 0 && (
+                <div className="mb-6">
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                    📅 Scheduled Jobs
+                    <Badge variant="secondary" className="text-[10px]">{scheduledJobs.length}</Badge>
+                  </h2>
+                  <div className="space-y-3">
+                    {scheduledJobs.map(renderJobRow)}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* No results after filtering */}
         {mirrorJobs.length > 0 && filteredJobs.length === 0 && (

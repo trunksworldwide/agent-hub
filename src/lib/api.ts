@@ -2943,6 +2943,83 @@ export async function saveProjectOverview(content: string): Promise<{ ok: boolea
   }
 }
 
+// ============= Project Mission (brain_docs, doc_type='mission') =============
+
+export interface ProjectMission {
+  content: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export async function getProjectMission(): Promise<ProjectMission | null> {
+  if (!hasSupabase() || !supabase) return null;
+
+  const projectId = getProjectId();
+
+  const { data, error } = await supabase
+    .from('brain_docs')
+    .select('content, updated_at, updated_by')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'mission')
+    .is('agent_key', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getProjectMission error:', error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  return {
+    content: data.content || '',
+    updatedAt: data.updated_at,
+    updatedBy: data.updated_by,
+  };
+}
+
+export async function saveProjectMission(content: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { error } = await supabase.from('brain_docs').upsert(
+      {
+        project_id: projectId,
+        agent_key: null,
+        doc_type: 'mission',
+        content,
+        updated_by: 'ui',
+      },
+      { onConflict: 'project_id,agent_key,doc_type' }
+    );
+
+    if (error) throw error;
+    return { ok: true };
+  } catch (e: any) {
+    console.error('saveProjectMission failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ============= Skill Check =============
+
+export async function checkSkillEligibility(skillId: string): Promise<{ ok: boolean; error?: string }> {
+  const url = getApiBaseUrl();
+  if (!url) return { ok: false, error: 'Control API not configured' };
+
+  try {
+    const res = await fetch(`${url}/api/skills/${encodeURIComponent(skillId)}/check`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 // ============= SOUL Template =============
 
 export async function getSoulTemplate(): Promise<string | null> {
