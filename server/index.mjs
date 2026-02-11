@@ -1510,8 +1510,8 @@ const server = http.createServer(async (req, res) => {
           // non-fatal
         }
 
-        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
-        const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n`;
+        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Dashboard updates (IMPORTANT)\nThis project uses a Mission Control dashboard (Supabase).\n- Do NOT write task progress into local memory files.\n- To post task thread updates, call the Control API endpoint:\n  POST /api/tasks/:taskId/events\n  with { event_type, content, metadata?, author }.\n- To post team-room/chat notes, call:\n  POST /api/chat/post\n  with { message, thread_id?, author, message_type?, metadata? }.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
+        const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n\n## Working style\n- Prefer posting progress to the dashboard task thread via Control API (see SOUL.md).\n`;
         const memoryContent = `# MEMORY.md\n\n`;
 
         const seedFiles = [
