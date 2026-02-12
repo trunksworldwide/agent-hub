@@ -416,19 +416,35 @@ const server = http.createServer(async (req, res) => {
         // ignore
       }
 
+      // IMPORTANT: /api/status must never hang.
+      // Supabase writes are best-effort and MUST be bounded by a short timeout.
+      const withTimeout = async (p, ms) => {
+        try {
+          return await Promise.race([
+            p,
+            new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+          ]);
+        } catch {
+          return null;
+        }
+      };
+
       // Best-effort: keep agent presence fresh for the selected project.
       // `/api/status` is polled frequently by the UI, so throttle Supabase writes.
-      await syncAgentPresenceFromSessions({ projectId, throttleMs: 30_000 });
+      void withTimeout(syncAgentPresenceFromSessions({ projectId, throttleMs: 30_000 }), 1500);
 
       // Always upsert main agent in case Supabase is empty or the sync is throttled.
       // Use per-agent session count when available.
       const mainActiveCount = typeof mainSessions === 'number' ? mainSessions : activeSessions;
-      await upsertSupabaseAgentStatus({
-        projectId,
-        agentKey: 'agent:main:main',
-        state: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? 'working' : 'idle',
-        note: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? `${mainActiveCount} active session(s)` : null,
-      });
+      void withTimeout(
+        upsertSupabaseAgentStatus({
+          projectId,
+          agentKey: 'agent:main:main',
+          state: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? 'working' : 'idle',
+          note: typeof mainActiveCount === 'number' && mainActiveCount > 0 ? `${mainActiveCount} active session(s)` : null,
+        }),
+        1500
+      );
 
       return sendJson(res, 200, {
         online: true,
@@ -922,16 +938,40 @@ const server = http.createServer(async (req, res) => {
             (typeof j.nextRunAtMs === 'number' ? j.nextRunAtMs : null) ??
             (typeof j.nextRunAt === 'number' ? j.nextRunAt : null);
 
+          // Normalize schedule into simple fields the UI can reliably display.
+          const sch = j?.schedule;
+          let scheduleKind = null;
+          let scheduleExpr = null;
+          let tz = null;
+          if (sch && typeof sch === 'object') {
+            scheduleKind = sch.kind || null;
+            if (sch.kind === 'cron') {
+              scheduleExpr = sch.expr || '';
+              tz = sch.tz || null;
+            } else if (sch.kind === 'every') {
+              scheduleExpr = typeof sch.everyMs === 'number' ? String(sch.everyMs) : (sch.everyMs ? String(sch.everyMs) : '');
+            }
+          }
+
+          const payload = j?.payload || {};
+          const instructions =
+            (typeof payload.message === 'string' && payload.message) ||
+            (typeof payload.text === 'string' && payload.text) ||
+            (typeof j.text === 'string' && j.text) ||
+            (typeof j.instructions === 'string' && j.instructions) ||
+            '';
+
           return {
             id: j.id || j.jobId || j.name,
             name: j.name || j.id,
-            schedule: j.cron || j.schedule || '',
             enabled: j.enabled !== false,
-            // nextRun is used for display; prefer a computed ISO string when possible.
+            scheduleKind,
+            scheduleExpr,
+            tz,
             nextRun: j.nextRun || (nextRunAtMs ? new Date(Number(nextRunAtMs)).toISOString() : ''),
             nextRunAtMs,
             lastRunStatus: j?.state?.lastStatus || null,
-            instructions: j.text || j.instructions || '',
+            instructions,
           };
         });
         return sendJson(res, 200, jobs);
@@ -1447,8 +1487,35 @@ const server = http.createServer(async (req, res) => {
         if (messageType) insertRow.message_type = messageType;
         if (metadata) insertRow.metadata = metadata;
 
-        const { data, error } = await sb.from('project_chat_messages').insert(insertRow).select('id').single();
+        // Insert. Some Supabase envs may not have optional columns (message_type/metadata) yet.
+        // If we hit an "unknown column" error, retry without optional fields.
+        let inserted;
+        let error;
+        {
+          const r = await sb.from('project_chat_messages').insert(insertRow).select('id').single();
+          inserted = r.data;
+          error = r.error;
+        }
+
+        if (error) {
+          const msg = String(error?.message || error);
+          const isUnknownColumn = msg.includes("Could not find the 'message_type' column") || msg.includes("Could not find the 'metadata' column") || msg.includes('schema cache');
+          if (isUnknownColumn) {
+            const fallbackRow = {
+              project_id: insertRow.project_id,
+              thread_id: insertRow.thread_id,
+              author: insertRow.author,
+              target_agent_key: insertRow.target_agent_key,
+              message: insertRow.message,
+            };
+            const r2 = await sb.from('project_chat_messages').insert(fallbackRow).select('id').single();
+            inserted = r2.data;
+            error = r2.error;
+          }
+        }
+
         if (error) throw error;
+        const data = inserted;
 
         await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
 
