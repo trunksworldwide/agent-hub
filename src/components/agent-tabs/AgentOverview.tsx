@@ -333,7 +333,7 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete {agent?.name}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove the agent from Supabase and notify the executor to clean up its workspace. Brain docs, status, and scheduled jobs for this agent will be deleted. This cannot be undone.
+                  This will delete the agent runtime and workspace, disable its scheduled jobs, and remove operational data. Historical messages, task events, and outputs will remain. This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

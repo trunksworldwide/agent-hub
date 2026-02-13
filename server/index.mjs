@@ -435,7 +435,7 @@ function sendJson(res, statusCode, obj) {
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': ALLOW_ORIGIN,
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
     // Needed so the browser can send the selected project id.
     'access-control-allow-headers': 'content-type,x-clawdos-project',
   });
@@ -2263,6 +2263,133 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
+    }
+
+    // ============= Agent Deletion (Safe Cascade Cleanup) =============
+
+    const agentDeleteMatch = url.pathname.match(/^\/api\/agents\/([a-zA-Z0-9_:%-]+)$/);
+    if (agentDeleteMatch && req.method === 'DELETE') {
+      const agentKey = decodeURIComponent(agentDeleteMatch[1]);
+
+      if (!/^[a-zA-Z0-9_:-]+$/.test(agentKey)) {
+        return sendJson(res, 400, { ok: false, error: 'invalid_agent_key' });
+      }
+      if (agentKey === 'agent:main:main') {
+        return sendJson(res, 403, { ok: false, error: 'cannot_delete_primary_agent' });
+      }
+
+      const projectId = getProjectIdFromReq(req);
+      const parts = agentKey.split(':');
+      const agentIdShort = parts.length >= 2 ? parts[1] : agentKey;
+      const homedir = process.env.HOME || '/Users/trunks';
+      const report = {};
+
+      console.log(`[delete-agent] Starting cascade delete for ${agentKey} (short: ${agentIdShort})`);
+
+      // Step A: Delete cron jobs targeting this agent
+      try {
+        const { stdout } = await execExecutor('cron list --json --timeout 10000', { timeout: 15000 });
+        const cronData = JSON.parse(stdout || '{"jobs":[]}');
+        const allJobs = Array.isArray(cronData?.jobs) ? cronData.jobs : (Array.isArray(cronData) ? cronData : []);
+        const targetJobs = allJobs.filter(j => {
+          if (j.sessionTarget === agentIdShort) return true;
+          const msg = j.payload?.message || '';
+          if (msg.includes(`@agent:${agentKey}`) || msg.includes(`@agent:${agentIdShort}`)) return true;
+          if ((j.name || '').includes(agentIdShort)) return true;
+          return false;
+        });
+        report.cronJobsFound = targetJobs.length;
+        report.cronJobsDeleted = 0;
+        for (const j of targetJobs) {
+          try {
+            await execExecutor(`cron delete ${JSON.stringify(j.id || j.name)}`, { timeout: 15000 });
+            report.cronJobsDeleted++;
+          } catch (e) {
+            console.warn(`[delete-agent] Failed to delete cron job ${j.id || j.name}:`, e?.message || e);
+          }
+        }
+      } catch (e) {
+        report.cronJobsError = String(e?.message || e);
+        console.warn('[delete-agent] Cron list/delete failed:', e?.message || e);
+      }
+
+      // Step B: Remove OpenClaw agent
+      try {
+        await execExecutor(`agents remove ${JSON.stringify(agentIdShort)}`, { timeout: 15000 });
+        report.agentRemoved = true;
+      } catch (e) {
+        const msg = String(e?.message || e);
+        report.agentRemoved = msg.includes('not found') || msg.includes('does not exist') ? 'already_gone' : false;
+        if (report.agentRemoved !== 'already_gone') {
+          console.warn('[delete-agent] agents remove failed:', msg);
+        }
+      }
+
+      // Step C: Remove workspace directory (strict path validation)
+      try {
+        const workspaceDir = path.join(homedir, '.openclaw', `workspace-${agentIdShort}`);
+        const expectedPrefix = path.join(homedir, '.openclaw', 'workspace-');
+        if (workspaceDir.startsWith(expectedPrefix) && agentIdShort && !agentIdShort.includes('/') && !agentIdShort.includes('..')) {
+          const wsStat = await safeStat(workspaceDir);
+          if (wsStat) {
+            await exec(`rm -rf ${JSON.stringify(workspaceDir)}`);
+            report.workspaceRemoved = true;
+          } else {
+            report.workspaceRemoved = 'already_gone';
+          }
+        } else {
+          report.workspaceRemoved = 'skipped_path_safety';
+          console.warn(`[delete-agent] Skipped workspace deletion — path safety check failed: ${workspaceDir}`);
+        }
+      } catch (e) {
+        report.workspaceRemoved = false;
+        console.warn('[delete-agent] Workspace removal failed:', e?.message || e);
+      }
+
+      // Step D: Supabase cleanup (all best-effort, each independent)
+      const sb = getSupabaseServerClient();
+      if (sb) {
+        const cleanup = async (label, fn) => {
+          try {
+            const result = await fn();
+            const count = result?.data?.length ?? result?.count ?? null;
+            report[label] = count !== null ? count : true;
+          } catch (e) {
+            report[label] = `error: ${e?.message || e}`;
+            console.warn(`[delete-agent] ${label} cleanup failed:`, e?.message || e);
+          }
+        };
+
+        await Promise.all([
+          cleanup('agent_status', () => sb.from('agent_status').delete().eq('project_id', projectId).eq('agent_key', agentKey)),
+          cleanup('agent_mention_cursor', () => sb.from('agent_mention_cursor').delete().eq('project_id', projectId).eq('agent_key', agentKey)),
+          cleanup('agent_provision_requests', () => sb.from('agent_provision_requests').delete().eq('project_id', projectId).eq('agent_key', agentKey)),
+          cleanup('brain_docs', () => sb.from('brain_docs').delete().eq('project_id', projectId).eq('agent_key', agentKey)),
+          cleanup('cron_mirror', () => sb.from('cron_mirror').delete().eq('project_id', projectId).eq('target_agent_key', agentKey)),
+          cleanup('chat_delivery_queue', () => sb.from('chat_delivery_queue').delete().eq('project_id', projectId).eq('target_agent_key', agentKey).in('status', ['queued', 'claimed'])),
+          cleanup('mentions', () => sb.from('mentions').delete().eq('project_id', projectId).eq('agent_key', agentIdShort)),
+        ]);
+
+        // Delete agent row last
+        await cleanup('agents_row', () => sb.from('agents').delete().eq('project_id', projectId).eq('agent_key', agentKey));
+
+        // Log activity
+        try {
+          await sb.from('activities').insert({
+            project_id: projectId,
+            type: 'agent_deleted',
+            message: `Deleted agent ${agentKey} (${agentIdShort}) — full cascade cleanup`,
+            actor_agent_key: 'dashboard',
+          });
+        } catch (e) {
+          console.warn('[delete-agent] Activity log failed:', e?.message || e);
+        }
+      } else {
+        report.supabase = 'service_role_not_configured';
+      }
+
+      console.log(`[delete-agent] Cleanup complete for ${agentKey}:`, JSON.stringify(report));
+      return sendJson(res, 200, { ok: true, cleanup_report: report });
     }
 
     return notFound(res);
