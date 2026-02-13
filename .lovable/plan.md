@@ -1,99 +1,128 @@
 
-# Eliminate "Unassigned" Scheduled Jobs
+
+# Delete Agent with Safe Cascade Cleanup
 
 ## Summary
 
-Remove the concept of unassigned scheduled jobs. All jobs default to the main agent (Trunks) when no owner is specified. This affects the agent filter dropdown, the create/edit dialogs, the inline assignment dropdown, the cron mirror script, and the Control API response normalization.
+Replace the current frontend-driven delete (direct Supabase deletes + non-existent `/api/agents/delete` call) with a single authoritative Control API endpoint that performs full cascade cleanup on both the Mac mini and Supabase, while preserving all audit history.
+
+## What Gets DELETED
+
+| Target | Details |
+|--------|---------|
+| OpenClaw agent runtime | `openclaw agents remove <agentIdShort>` |
+| Agent workspace directory | `~/.openclaw/workspace-<agentIdShort>/` (recursive, path-validated) |
+| Cron jobs targeting agent | All cron jobs found via `openclaw cron list` where agent matches, deleted via `openclaw cron delete` |
+| `agents` row | The agent definition row |
+| `agent_status` row | Operational status |
+| `agent_mention_cursor` row | Mention tracking cursor |
+| `agent_provision_requests` rows | Any queued/pending provision requests |
+| `brain_docs` rows (agent-scoped) | SOUL/USER/MEMORY docs where `agent_key = agentKey` |
+| `cron_mirror` rows | Mirror rows targeting this agent |
+| `chat_delivery_queue` rows | Queued/claimed deliveries targeting this agent |
+| `mentions` rows | Mentions addressed to this agent |
+
+## What Gets KEPT (audit history)
+
+| Table | Rationale |
+|-------|-----------|
+| `tasks` | Task records stay even if assigned to deleted agent |
+| `task_events` | Comments, status changes authored by agent stay |
+| `task_outputs` | Deliverables stay |
+| `project_chat_messages` | Chat history stays |
+| `activities` | Activity log stays (plus a new "agent_deleted" entry is added) |
 
 ## Changes
 
-### 1. CronPage UI (`src/components/pages/CronPage.tsx`)
+### 1. Control API Endpoint (`server/index.mjs`)
 
-**Agent Filter dropdown (lines 1236-1253):**
-- Remove `<SelectItem value="unassigned">Unassigned</SelectItem>` from the filter dropdown
-- Remove the `agentFilter === 'unassigned'` branch in the filter logic (lines 584-585)
+Add `DELETE /api/agents/:agentKey` (placed near the existing provisioning section):
 
-**Edit Dialog (lines 1619-1639):**
-- Remove the "No agent assigned" / `value="none"` option from the agent selector
-- Default `editTargetAgent` to `'agent:main:main'` when the job has no agent (instead of empty string)
-- In `openEdit()`, if the decoded target agent is null/empty, set `editTargetAgent` to `'agent:main:main'`
+- **Validate** agentKey: must match `/^[a-zA-Z0-9_:-]+$/`, reject `agent:main:main`
+- **Derive** `agentIdShort` from the key (e.g. `agent:ricky:main` -> `ricky`)
+- **Step A**: List cron jobs via `openclaw cron list --json`, find jobs targeting this agent, delete each via `openclaw cron delete <jobId>` (best-effort, log failures)
+- **Step B**: Remove OpenClaw agent via `openclaw agents remove <agentIdShort>` (best-effort, agent may not exist)
+- **Step C**: Remove workspace directory `~/.openclaw/workspace-<agentIdShort>/` using `rm -rf` with strict path validation (must be under `~/.openclaw/workspace-`)
+- **Step D**: Supabase cleanup (service role, all best-effort, each step independent):
+  - Delete from `agent_status` where `agent_key = agentKey`
+  - Delete from `agent_mention_cursor` where `agent_key = agentKey`
+  - Delete from `agent_provision_requests` where `agent_key = agentKey`
+  - Delete from `brain_docs` where `agent_key = agentKey`
+  - Delete from `cron_mirror` where `target_agent_key = agentKey`
+  - Delete from `chat_delivery_queue` where `target_agent_key = agentKey` and `status` in `('queued', 'claimed')`
+  - Delete from `mentions` where `agent_key` equals the short key
+  - Delete from `agents` where `agent_key = agentKey`
+  - Insert `activities` row: type `agent_deleted`
+- **Return** `{ ok: true, cleanup_report: { ... } }` with details of what was removed/skipped
+- **Idempotent**: every sub-step checks before acting, never errors on "already gone"
 
-**Create Dialog (lines 1790-1808):**
-- Remove `<SelectItem value="">No specific agent</SelectItem>` from the agent selector
-- Change `createTargetAgent` initial state from `''` to find the main agent or default to `'agent:main:main'`
-- After resetting on create, reset `createTargetAgent` to the main agent key instead of `''`
+### 2. Dashboard API (`src/lib/api.ts`)
 
-**`handleAgentChange` toast (line 866):**
-- Remove the `'Unassigned'` fallback text; always show agent name since null assignments are no longer possible
+Rewrite `deleteAgent()` to:
+- Call `DELETE /api/agents/:agentKey` on the Control API as the primary path
+- If Control API is unavailable, fall back to the existing direct Supabase cleanup (current behavior, preserved as fallback)
+- Add `chat_delivery_queue` and `mentions` cleanup to the Supabase fallback path (currently missing)
 
-**`getEffectiveTargetAgent` helper (lines 531-538 and 180-187):**
-- If the function returns null, default to `'agent:main:main'` (the main agent key)
+### 3. UI Dialog (`src/components/agent-tabs/AgentOverview.tsx`)
 
-### 2. AgentAssignmentDropdown (`src/components/schedule/AgentAssignmentDropdown.tsx`)
+Update the delete confirmation dialog copy:
+- Current: "This will remove the agent from Supabase and notify the executor to clean up its workspace."
+- New: "This will delete the agent runtime and workspace, disable its scheduled jobs, and remove operational data. Historical messages, task events, and outputs will remain."
 
-**Compact mode (lines 67-72):**
-- Replace "Needs assignment" amber warning with the main agent display when value is null/empty
+No other UI changes needed -- the existing delete button and confirmation dialog structure stays.
 
-**Compact popover (lines 83-87):**
-- Remove the "Unassigned" command item (`value=""`)
+### 4. Changelog (`changes.md`)
 
-**Full mode (lines 134-138):**
-- Remove the "No specific agent" command item (`value=""`)
-
-**`onChange` handler:**
-- When the component would call `onChange(null)`, instead call `onChange('agent:main:main')` or simply prevent the unassign action
-
-### 3. Cron Mirror Script (`scripts/cron-mirror.mjs`)
-
-**`mirrorCronList()` rows mapping (lines 184-204):**
-- Extract agent key from `j.payload.message` (parse the `@agent:` header) or from `j.sessionTarget` or equivalent executor field
-- If no agent is found, set `target_agent_key: 'agent:main:main'`
-- Add `target_agent_key` to the upsert row data
-
-This ensures every mirrored row always has a non-null `target_agent_key`.
-
-### 4. Control API (`server/index.mjs`)
-
-In the `/api/cron` response (wherever cron jobs are returned to the UI):
-- Normalize `target_agent_key`: if null/empty, set to `'agent:main:main'`
-
-In cron create/edit endpoints:
-- If no `targetAgentKey` is provided, default to `'agent:main:main'`
-
-### 5. One-time Cleanup (optional, in `scripts/cron-mirror.mjs`)
-
-After the mirror upsert, run a best-effort cleanup:
-```sql
-UPDATE cron_mirror 
-SET target_agent_key = 'agent:main:main' 
-WHERE project_id = ? AND (target_agent_key IS NULL OR target_agent_key = '')
-```
-
-This catches any existing rows that were mirrored before the fix.
-
-### 6. Changelog (`changes.md`)
-
-Log all changes with verification steps.
+Log all changes with the verification checklist from the prompt.
 
 ## Technical Details
 
-### Main Agent Key Convention
-The main agent (Trunks) uses `agent:main:main` as its canonical agent key. This matches the existing identity system documented in the memories.
+### Path Safety
+
+The workspace deletion uses strict validation:
+```javascript
+const expectedPrefix = path.join(homedir, '.openclaw', 'workspace-');
+if (!workspaceDir.startsWith(expectedPrefix)) {
+  // Skip deletion, log warning
+}
+```
+
+### Cron Job Identification
+
+Jobs targeting the agent are identified by checking:
+- `j.sessionTarget` matching agentIdShort
+- `j.payload?.message` containing `@agent:<agentIdShort>` header
+- `j.name` containing the agentIdShort (e.g. `heartbeat-ricky`)
+
+### Agent Key Normalization
+
+Uses the same pattern as provisioning:
+```javascript
+const parts = agentKey.split(':');
+const agentIdShort = parts.length >= 2 ? parts[1] : agentKey;
+```
+
+### Mention Cleanup
+
+The `mentions` table stores the short key (e.g. `ricky`), so cleanup queries use `agentIdShort` for that table while using the full `agentKey` for other tables.
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `src/components/pages/CronPage.tsx` | Remove "Unassigned" filter option, default create/edit agent to main, normalize `getEffectiveTargetAgent` to never return null |
-| `src/components/schedule/AgentAssignmentDropdown.tsx` | Remove "Unassigned"/"No specific agent" options, default to main agent display |
-| `scripts/cron-mirror.mjs` | Add `target_agent_key` to mirror rows (default to `agent:main:main`), add one-time cleanup UPDATE |
-| `server/index.mjs` | Normalize `target_agent_key` in cron responses, default to main in create/edit |
-| `changes.md` | Log changes and verification checklist |
+| `server/index.mjs` | Add `DELETE /api/agents/:agentKey` endpoint with full cascade cleanup |
+| `src/lib/api.ts` | Rewrite `deleteAgent()` to call Control API first, enhanced Supabase fallback |
+| `src/components/agent-tabs/AgentOverview.tsx` | Update confirmation dialog copy |
+| `changes.md` | Log changes with verification checklist |
 
 ### Verification Checklist
-1. Open Schedule page -- no "Unassigned" filter option in the Agent dropdown
-2. Existing jobs that had no agent now show "Trunks (main)" or the main agent badge
-3. Create a new job -- agent selector defaults to main, no "No specific agent" option
-4. Edit a job -- agent selector has no "No agent assigned" option, defaults to main
-5. Run cron-mirror -- all `cron_mirror` rows have non-null `target_agent_key`
-6. Inline agent dropdown on job rows -- no "Unassigned" or "Needs assignment" display
+1. Delete agent via dashboard -- OpenClaw no longer lists it (`openclaw agents list`)
+2. Workspace directory `~/.openclaw/workspace-ricky` is removed
+3. No cron jobs targeting ricky remain (`openclaw cron list`)
+4. Supabase: no `agent_status`, `agent_mention_cursor`, `brain_docs`, `cron_mirror` rows for ricky
+5. Supabase: queued `chat_delivery_queue` rows for ricky are removed
+6. Supabase: `agents` row for ricky is gone
+7. Supabase: `task_events` and `project_chat_messages` authored by ricky still exist
+8. Supabase: `tasks` previously assigned to ricky still exist
+9. Deleting again returns `{ ok: true }` (idempotent)
+10. Cannot delete `agent:main:main` (blocked)
