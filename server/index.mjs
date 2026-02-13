@@ -300,7 +300,67 @@ function resolveWorkspace(projectId) {
   return p?.workspace || DEFAULT_WORKSPACE;
 }
 
+// ---- Mention extraction ----
+// Matches @word and @agent:key:main forms, normalizes to short agent key, validates against known keys.
+let _agentKeysCache = null;
+let _agentKeysCacheMs = 0;
+async function getKnownAgentKeys(projectId) {
+  const now = Date.now();
+  if (_agentKeysCache && now - _agentKeysCacheMs < 60_000) return _agentKeysCache;
+  try {
+    const sb = getSupabaseServerClient();
+    if (!sb) return new Set();
+    const { data } = await sb.from('agents').select('agent_key').eq('project_id', projectId);
+    const keys = new Set();
+    for (const row of data || []) {
+      const parts = (row.agent_key || '').split(':');
+      // Store short key (e.g. "ricky" from "agent:ricky:main")
+      if (parts[0] === 'agent' && parts.length >= 2) keys.add(parts[1]);
+      else if (row.agent_key) keys.add(row.agent_key);
+    }
+    _agentKeysCache = keys;
+    _agentKeysCacheMs = now;
+    return keys;
+  } catch { return new Set(); }
+}
+
+function extractMentionKeys(text, knownAgentKeys) {
+  if (!text || !knownAgentKeys || knownAgentKeys.size === 0) return [];
+  const raw = [];
+  const regex = /@([a-zA-Z0-9_:-]+)/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) raw.push(match[1]);
+  const normalized = raw.map(r => {
+    const parts = r.split(':');
+    return parts[0] === 'agent' && parts.length >= 2 ? parts[1] : r;
+  });
+  return [...new Set(normalized)].filter(k => knownAgentKeys.has(k));
+}
+
+async function insertMentions({ sb, projectId, mentionKeys, sourceType, sourceId, taskId, threadId, author, excerpt }) {
+  if (!sb || !mentionKeys || mentionKeys.length === 0) return;
+  try {
+    const rows = mentionKeys.map(key => ({
+      project_id: projectId,
+      agent_key: key,
+      source_type: sourceType,
+      source_id: sourceId,
+      task_id: taskId || null,
+      thread_id: threadId || null,
+      author: author || 'unknown',
+      excerpt: excerpt ? String(excerpt).slice(0, 200) : null,
+    }));
+    await sb.from('mentions').upsert(rows, { onConflict: 'project_id,agent_key,source_type,source_id', ignoreDuplicates: true });
+  } catch (e) {
+    console.error('[mentions] insert failed (non-blocking):', e?.message || e);
+  }
+}
+
 function buildHeartbeatInstructions({ agentKey, displayName, role }) {
+  // Derive short key for mention API
+  const parts = agentKey.split(':');
+  const agentIdShort = parts.length >= 2 ? parts[1] : agentKey;
+
   return `@agent:${agentKey}
 
 HEARTBEAT — You are ${displayName} (${role}).
@@ -308,6 +368,18 @@ HEARTBEAT — You are ${displayName} (${role}).
 Your goal: make the project better every hour with minimal noise.
 
 BEFORE ACTING: Read the Context Pack injected above. Use project overview, shared priorities, and recent activity as your guide. Do NOT use long personal memory.
+
+STEP 0 — CHECK @MENTIONS (do this first)
+- GET /api/mentions?agent_key=${agentIdShort}&since=<your last cursor>
+  (If you don't know your cursor, use a recent timestamp like 1 hour ago.)
+- For each new mention:
+  - If source_type = "task_event": respond via POST /api/tasks/:taskId/events
+    with { event_type: "comment", content: "<your response>", author: "${agentKey}" }
+  - If source_type = "chat_message": respond via POST /api/chat/post
+    with { message: "<your response>", thread_id: <same thread_id or null>, author: "${agentKey}" }
+  - Keep responses brief, helpful, and on-topic.
+- After responding to all: POST /api/mentions/ack
+  with { agent_key: "${agentIdShort}", last_seen_at: "<max created_at from mentions you processed>" }
 
 STEP 1 — PROPOSE TASKS (Inbox)
 - Check how many proposed tasks from you are still pending. If 3+ exist, propose 0-1 instead.
@@ -323,12 +395,15 @@ STEP 2 — ASSIST AN ACTIVE TASK
 - If claiming ownership and role permits: POST /api/tasks/:taskId/assign with { assignee_agent_key: "${agentKey}" }
 
 STEP 3 — WAR ROOM
-- GET /api/chat/recent?limit=50
+- GET /api/chat/recent?limit=100 (bounded read, never request more).
 - Contribute 0-2 messages MAX. Only if genuinely additive.
 - Good: unblock someone, summarize progress, flag a risk, propose a micro-task.
 - Bad: "checking in!", echoing what was just said, empty encouragement.
 - POST /api/chat/post with { author: "${agentKey}", message: "<contribution>" }
 - If nothing meaningful to say, say nothing.
+- When proposing a task derived from war room discussion, include a
+  "Context (war room)" section in the description with relevant message
+  excerpts (max 5 messages, include timestamps).
 
 STEP 4 — COMPLETE YOUR OWN WORK
 - GET /api/tasks?status=in_progress,assigned&limit=30
@@ -1705,6 +1780,17 @@ const server = http.createServer(async (req, res) => {
 
         if (error) throw error;
 
+        // Best-effort: extract and store mentions
+        try {
+          if (content) {
+            const knownKeys = await getKnownAgentKeys(projectId);
+            const mentionKeys = extractMentionKeys(content, knownKeys);
+            if (mentionKeys.length > 0) {
+              await insertMentions({ sb, projectId, mentionKeys, sourceType: 'task_event', sourceId: data.id, taskId, threadId: null, author, excerpt: content });
+            }
+          }
+        } catch { /* non-blocking */ }
+
         await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
 
         return sendJson(res, 200, { ok: true, id: data?.id || null });
@@ -1771,6 +1857,17 @@ const server = http.createServer(async (req, res) => {
 
         if (error) throw error;
         const data = inserted;
+
+        // Best-effort: extract and store mentions
+        try {
+          if (message) {
+            const knownKeys = await getKnownAgentKeys(projectId);
+            const mentionKeys = extractMentionKeys(message, knownKeys);
+            if (mentionKeys.length > 0) {
+              await insertMentions({ sb, projectId, mentionKeys, sourceType: 'chat_message', sourceId: data.id, taskId: null, threadId: threadId || null, author, excerpt: message });
+            }
+          }
+        } catch { /* non-blocking */ }
 
         await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
 
@@ -2019,6 +2116,136 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 200, result);
+    }
+
+    // ============= Task Stop & Delete =============
+
+    // POST /api/tasks/:taskId/stop — stop a task (non-destructive, auditable)
+    const taskStopMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/stop$/);
+    if (taskStopMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(taskStopMatch[1]);
+        const body = await readBodyJson(req);
+        const author = String(body.author || 'dashboard').trim();
+        const reason = body.reason ? String(body.reason).trim() : null;
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data: currentTask } = await sb.from('tasks').select('status').eq('id', taskId).eq('project_id', projectId).maybeSingle();
+        const oldStatus = currentTask?.status || null;
+
+        const { error: updErr } = await sb.from('tasks')
+          .update({ status: 'stopped', updated_at: new Date().toISOString() })
+          .eq('id', taskId).eq('project_id', projectId);
+        if (updErr) throw updErr;
+
+        try {
+          await sb.from('task_events').insert({
+            project_id: projectId, task_id: taskId, event_type: 'status_change', author,
+            content: `Task stopped${reason ? ': ' + reason : ''}`,
+            metadata: { old_status: oldStatus, new_status: 'stopped', reason },
+          });
+        } catch { /* best effort */ }
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // POST /api/tasks/:taskId/delete — soft-delete a task (set deleted_at, auditable)
+    const taskDeleteMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/delete$/);
+    if (taskDeleteMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(taskDeleteMatch[1]);
+        const body = await readBodyJson(req);
+        const author = String(body.author || 'dashboard').trim();
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const nowIso = new Date().toISOString();
+        const { error: updErr } = await sb.from('tasks')
+          .update({ deleted_at: nowIso, deleted_by: author, updated_at: nowIso })
+          .eq('id', taskId).eq('project_id', projectId);
+        if (updErr) throw updErr;
+
+        try {
+          await sb.from('task_events').insert({
+            project_id: projectId, task_id: taskId, event_type: 'task_deleted', author,
+            content: `Task soft-deleted by ${author}`,
+          });
+        } catch { /* best effort */ }
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // ============= Mentions =============
+
+    // GET /api/mentions?agent_key=<key>&since=<ISO>&limit=50
+    if (req.method === 'GET' && url.pathname === '/api/mentions') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const agentKey = url.searchParams.get('agent_key') || '';
+        const since = url.searchParams.get('since') || '1970-01-01T00:00:00Z';
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '50')));
+
+        if (!agentKey) return sendJson(res, 400, { ok: false, error: 'missing_agent_key' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data, error } = await sb.from('mentions')
+          .select('id,source_type,source_id,task_id,thread_id,author,excerpt,created_at')
+          .eq('project_id', projectId).eq('agent_key', agentKey)
+          .gt('created_at', since)
+          .order('created_at', { ascending: true })
+          .limit(limit);
+
+        if (error) throw error;
+        return sendJson(res, 200, { mentions: data || [] });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // POST /api/mentions/ack — update agent mention cursor (GREATEST semantics)
+    if (req.method === 'POST' && url.pathname === '/api/mentions/ack') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const agentKey = String(body.agent_key || '').trim();
+        const lastSeenAt = String(body.last_seen_at || '').trim();
+
+        if (!agentKey) return sendJson(res, 400, { ok: false, error: 'missing_agent_key' });
+        if (!lastSeenAt) return sendJson(res, 400, { ok: false, error: 'missing_last_seen_at' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // Manual GREATEST: fetch existing, compare, upsert
+        const { data: existing } = await sb.from('agent_mention_cursor')
+          .select('last_seen_at').eq('project_id', projectId).eq('agent_key', agentKey).maybeSingle();
+
+        const effectiveLastSeen = existing?.last_seen_at && new Date(existing.last_seen_at) > new Date(lastSeenAt)
+          ? existing.last_seen_at : lastSeenAt;
+
+        const { error: upsertErr } = await sb.from('agent_mention_cursor').upsert({
+          project_id: projectId, agent_key: agentKey, last_seen_at: effectiveLastSeen, updated_at: new Date().toISOString(),
+        }, { onConflict: 'project_id,agent_key' });
+
+        if (upsertErr) throw upsertErr;
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
     }
 
     return notFound(res);

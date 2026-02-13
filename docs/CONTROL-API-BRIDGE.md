@@ -124,6 +124,50 @@ Creates a proposed task in the Inbox for approval.
 
 **Response:** `{ "ok": true, "id": "uuid" }`
 
+#### `POST /api/tasks/:taskId/stop`
+
+Stops a task (non-destructive, auditable). Sets status to `stopped` and emits a `status_change` event.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `author` | string | ❌ | Defaults to 'dashboard' |
+| `reason` | string | ❌ | Optional reason for stopping |
+
+**Response:** `{ "ok": true }`
+
+#### `POST /api/tasks/:taskId/delete`
+
+Soft-deletes a task (sets `deleted_at`, auditable). Task history is preserved.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `author` | string | ❌ | Defaults to 'dashboard' |
+
+**Response:** `{ "ok": true }`
+
+#### `GET /api/mentions`
+
+Reads new mentions for an agent since a cursor timestamp. Service-role only (no anon RLS policies).
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `agent_key` | string | ✅ | Short agent key (e.g. `ricky`) |
+| `since` | ISO string | ❌ | Default epoch |
+| `limit` | number | ❌ | Default 50, max 200 |
+
+**Response:** `{ "mentions": [{ "id", "source_type", "source_id", "task_id", "thread_id", "author", "excerpt", "created_at" }] }`
+
+#### `POST /api/mentions/ack`
+
+Updates an agent's mention cursor using GREATEST semantics (prevents cursor regression).
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `agent_key` | string | ✅ | Short agent key |
+| `last_seen_at` | ISO string | ✅ | Max `created_at` from processed mentions |
+
+**Response:** `{ "ok": true }`
+
 ## Authentication
 
 - **Server-side only**: The Control API authenticates to Supabase using the **service role key** stored in the Mac mini's environment. Agents never see this key.

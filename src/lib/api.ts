@@ -258,7 +258,7 @@ export interface ProjectDocument {
   docNotes?: DocumentNotes | null;
 }
 
-export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
+export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked' | 'stopped';
 
 export interface Task {
   id: string;
@@ -274,6 +274,9 @@ export interface Task {
   rejectedReason?: string | null;
   blockedReason?: string | null;
   blockedAt?: string | null;
+  // Soft-delete fields
+  deletedAt?: string | null;
+  deletedBy?: string | null;
 }
 
 // Task comments interface
@@ -2186,8 +2189,9 @@ export async function getTasks(): Promise<Task[]> {
     const projectId = getProjectId();
     const { data, error } = await supabase
       .from('tasks')
-      .select('id,title,description,status,assignee_agent_key,created_at,updated_at,is_proposed,rejected_at,rejected_reason,blocked_reason,blocked_at')
+      .select('id,title,description,status,assignee_agent_key,created_at,updated_at,is_proposed,rejected_at,rejected_reason,blocked_reason,blocked_at,deleted_at,deleted_by')
       .eq('project_id', projectId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -2205,6 +2209,8 @@ export async function getTasks(): Promise<Task[]> {
       rejectedReason: t.rejected_reason ?? null,
       blockedReason: t.blocked_reason ?? null,
       blockedAt: t.blocked_at ?? null,
+      deletedAt: t.deleted_at ?? null,
+      deletedBy: t.deleted_by ?? null,
     }));
   }
 
@@ -4211,4 +4217,88 @@ export async function updateTaskStatusViaControlApi(
 
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+// ---- Task Stop & Delete ----
+
+export async function stopTask(taskId: string, reason?: string, author?: string): Promise<{ ok: boolean }> {
+  // Try Control API first
+  if (isControlApiHealthy()) {
+    try {
+      return await requestJson<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(taskId)}/stop`, {
+        method: 'POST',
+        body: JSON.stringify({ author: author || DASHBOARD_ACTOR_KEY, reason: reason || null }),
+      });
+    } catch (e) {
+      console.warn('stopTask: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  // Supabase fallback
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+
+    // Get old status for audit event
+    let oldStatus: string | null = null;
+    try {
+      const { data } = await supabase.from('tasks').select('status').eq('id', taskId).eq('project_id', projectId).maybeSingle();
+      oldStatus = (data as any)?.status ?? null;
+    } catch { /* ignore */ }
+
+    const { error } = await supabase.from('tasks')
+      .update({ status: 'stopped', updated_at: new Date().toISOString() })
+      .eq('id', taskId).eq('project_id', projectId);
+    if (error) return { ok: false };
+
+    // Best-effort audit event
+    try {
+      await supabase.from('task_events').insert({
+        project_id: projectId, task_id: taskId, event_type: 'status_change',
+        author: author || DASHBOARD_ACTOR_KEY,
+        content: `Task stopped${reason ? ': ' + reason : ''}`,
+        metadata: { old_status: oldStatus, new_status: 'stopped', reason },
+      });
+    } catch { /* best effort */ }
+
+    return { ok: true };
+  }
+
+  return { ok: false };
+}
+
+export async function softDeleteTask(taskId: string, author?: string): Promise<{ ok: boolean }> {
+  // Try Control API first
+  if (isControlApiHealthy()) {
+    try {
+      return await requestJson<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(taskId)}/delete`, {
+        method: 'POST',
+        body: JSON.stringify({ author: author || DASHBOARD_ACTOR_KEY }),
+      });
+    } catch (e) {
+      console.warn('softDeleteTask: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  // Supabase fallback
+  if (hasSupabase() && supabase) {
+    const projectId = getProjectId();
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase.from('tasks')
+      .update({ deleted_at: nowIso, deleted_by: author || DASHBOARD_ACTOR_KEY, updated_at: nowIso } as any)
+      .eq('id', taskId).eq('project_id', projectId);
+    if (error) return { ok: false };
+
+    // Best-effort audit event
+    try {
+      await supabase.from('task_events').insert({
+        project_id: projectId, task_id: taskId, event_type: 'task_deleted',
+        author: author || DASHBOARD_ACTOR_KEY,
+        content: `Task soft-deleted by ${author || DASHBOARD_ACTOR_KEY}`,
+      });
+    } catch { /* best effort */ }
+
+    return { ok: true };
+  }
+
+  return { ok: false };
 }

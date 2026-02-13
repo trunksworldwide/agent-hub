@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Play, XCircle, User, AlertTriangle, Loader2 } from 'lucide-react';
+import { Check, Play, XCircle, User, AlertTriangle, Loader2, Square, Trash2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,8 @@ import {
   createActivity,
   getTaskOutputs,
   createTaskEvent,
+  stopTask,
+  softDeleteTask,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -23,6 +25,8 @@ import { BlockedReasonModal } from './BlockedReasonModal';
 import { TaskOutputSection } from './TaskOutputSection';
 import { AddOutputDialog } from './AddOutputDialog';
 import { TaskTimeline } from './TaskTimeline';
+import { StopTaskDialog } from './StopTaskDialog';
+import { DeleteTaskConfirmDialog } from './DeleteTaskConfirmDialog';
 
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'inbox', label: 'Inbox' },
@@ -31,6 +35,7 @@ const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'review', label: 'Review' },
   { id: 'done', label: 'Done' },
   { id: 'blocked', label: 'Blocked' },
+  { id: 'stopped', label: 'Stopped' },
 ];
 
 interface TaskDetailSheetProps {
@@ -50,6 +55,8 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [showAddOutput, setShowAddOutput] = useState(false);
   const [pendingBlockedStatus, setPendingBlockedStatus] = useState<TaskStatus | null>(null);
+  const [showStopDialog, setShowStopDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Load outputs when task changes
   useEffect(() => {
@@ -273,6 +280,38 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
   };
 
 
+  const handleStop = async (reason: string) => {
+    if (!task) return;
+    setIsUpdating(true);
+    try {
+      await stopTask(task.id, reason);
+      toast({ title: 'Task stopped' });
+      onTaskUpdated();
+      onOpenChange(false);
+    } catch (e) {
+      toast({ title: 'Failed to stop task', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+      setShowStopDialog(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!task) return;
+    setIsUpdating(true);
+    try {
+      await softDeleteTask(task.id);
+      toast({ title: 'Task deleted' });
+      onTaskUpdated();
+      onOpenChange(false);
+    } catch (e) {
+      toast({ title: 'Failed to delete task', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
   if (!task) return null;
 
   const assigneeAgent = task.assigneeAgentKey ? agents.find((a) => a.id === task.assigneeAgentKey) : null;
@@ -315,6 +354,14 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <Button variant="outline" size="icon" className="h-8 w-8 text-orange-600 hover:text-orange-700" onClick={() => setShowStopDialog(true)} disabled={isUpdating || task.status === 'stopped'} title="Stop task">
+                  <Square className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setShowDeleteDialog(true)} disabled={isUpdating} title="Delete task">
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           </SheetHeader>
@@ -484,6 +531,20 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
         taskId={task.id}
         taskTitle={task.title}
         onOutputAdded={loadOutputs}
+      />
+
+      <StopTaskDialog
+        open={showStopDialog}
+        onOpenChange={setShowStopDialog}
+        onConfirm={handleStop}
+        taskTitle={task.title}
+      />
+
+      <DeleteTaskConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={handleDelete}
+        taskTitle={task.title}
       />
     </>
   );

@@ -62,6 +62,27 @@ export type Database = {
           },
         ]
       }
+      agent_mention_cursor: {
+        Row: {
+          agent_key: string
+          last_seen_at: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          agent_key: string
+          last_seen_at?: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          agent_key?: string
+          last_seen_at?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agent_provision_requests: {
         Row: {
           agent_id_short: string
@@ -557,6 +578,45 @@ export type Database = {
         }
         Relationships: []
       }
+      mentions: {
+        Row: {
+          agent_key: string
+          author: string
+          created_at: string
+          excerpt: string | null
+          id: string
+          project_id: string
+          source_id: string
+          source_type: string
+          task_id: string | null
+          thread_id: string | null
+        }
+        Insert: {
+          agent_key: string
+          author: string
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          project_id: string
+          source_id: string
+          source_type: string
+          task_id?: string | null
+          thread_id?: string | null
+        }
+        Update: {
+          agent_key?: string
+          author?: string
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          project_id?: string
+          source_id?: string
+          source_type?: string
+          task_id?: string | null
+          thread_id?: string | null
+        }
+        Relationships: []
+      }
       project_chat_messages: {
         Row: {
           author: string
@@ -942,6 +1002,8 @@ export type Database = {
           blocked_reason: string | null
           context_snapshot: Json | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           id: string
           is_proposed: boolean | null
@@ -958,6 +1020,8 @@ export type Database = {
           blocked_reason?: string | null
           context_snapshot?: Json | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           is_proposed?: boolean | null
@@ -974,6 +1038,8 @@ export type Database = {
           blocked_reason?: string | null
           context_snapshot?: Json | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           is_proposed?: boolean | null
