@@ -300,6 +300,55 @@ function resolveWorkspace(projectId) {
   return p?.workspace || DEFAULT_WORKSPACE;
 }
 
+function buildHeartbeatInstructions({ agentKey, displayName, role }) {
+  return `@agent:${agentKey}
+
+HEARTBEAT — You are ${displayName} (${role}).
+
+Your goal: make the project better every hour with minimal noise.
+
+BEFORE ACTING: Read the Context Pack injected above. Use project overview, shared priorities, and recent activity as your guide. Do NOT use long personal memory.
+
+STEP 1 — PROPOSE TASKS (Inbox)
+- Check how many proposed tasks from you are still pending. If 3+ exist, propose 0-1 instead.
+- Propose 1-3 small, concrete tasks with clear outputs.
+- Each proposal must include "why now" and expected deliverable.
+- POST /api/tasks/propose with { author: "${agentKey}", title, description, assignee_agent_key: "${agentKey}" }
+
+STEP 2 — ASSIST AN ACTIVE TASK
+- GET /api/tasks?status=assigned,in_progress,blocked,review&limit=30
+- Pick 1 task matching your role (${role}) that you can meaningfully help with.
+- POST /api/tasks/:taskId/events with { event_type: "comment", content: "<your contribution>", author: "${agentKey}" }
+- Contributions: clarifying question, next step, risk/edge case, or "I can take this".
+- If claiming ownership and role permits: POST /api/tasks/:taskId/assign with { assignee_agent_key: "${agentKey}" }
+
+STEP 3 — WAR ROOM
+- GET /api/chat/recent?limit=50
+- Contribute 0-2 messages MAX. Only if genuinely additive.
+- Good: unblock someone, summarize progress, flag a risk, propose a micro-task.
+- Bad: "checking in!", echoing what was just said, empty encouragement.
+- POST /api/chat/post with { author: "${agentKey}", message: "<contribution>" }
+- If nothing meaningful to say, say nothing.
+
+STEP 4 — COMPLETE YOUR OWN WORK
+- GET /api/tasks?status=in_progress,assigned&limit=30
+- Filter for tasks where assignee_agent_key = "${agentKey}".
+- For each task you own that has moved past "assigned": review progress, post an update, and if done, update status.
+- POST /api/tasks/:taskId/status with { status: "done", author: "${agentKey}" } when complete.
+- POST /api/tasks/:taskId/events with { event_type: "comment", content: "Completed: <summary>", author: "${agentKey}" }
+
+ROLE-BASED GUIDANCE:
+- Builder: propose implementable tasks, offer code patches, focus on shipping.
+- QA: propose tests, edge cases, reproduction steps.
+- PM/Operator: propose sequencing, acceptance criteria, progress summaries.
+- Default to your role as defined in SOUL.md.
+
+ANTI-SPAM RULES:
+- Max 3 proposed tasks per heartbeat (fewer if many pending).
+- Max 2 war room messages per heartbeat.
+- If nothing is valuable, do nothing and exit quietly.`;
+}
+
 function resolveBrainRepo(workspace) {
   return process.env.CLAWD_BRAIN_REPO || workspace;
 }
@@ -636,18 +685,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, commit });
     }
 
-    if (req.method === 'GET' && url.pathname === '/api/tasks') {
-      try {
-        const fp = path.join(workspace, 'memory', 'tasks.json');
-        const st = await safeStat(fp);
-        if (!st) return sendJson(res, 200, []);
-        const raw = await readFile(fp, 'utf8');
-        const data = JSON.parse(raw || '[]');
-        return sendJson(res, 200, Array.isArray(data) ? data : []);
-      } catch (err) {
-        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
-      }
-    }
+    // NOTE: GET /api/tasks is now handled in the Heartbeat v2 bridge section (reads from Supabase).
+    // The old file-based GET /api/tasks has been replaced.
 
     if (req.method === 'POST' && url.pathname === '/api/tasks') {
       try {
@@ -1417,6 +1456,222 @@ const server = http.createServer(async (req, res) => {
 
     // ============= Agent → Dashboard Bridge (Control API) =============
 
+    // ---- READ ENDPOINTS (Heartbeat v2) ----
+
+    // GET /api/tasks — list tasks from Supabase (scoped to project)
+    // Query params: status (comma-separated), limit (default 50), updated_since (ISO)
+    if (req.method === 'GET' && url.pathname === '/api/tasks') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const sb = getSupabaseServerClient();
+
+        if (sb) {
+          const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '50')));
+          let query = sb
+            .from('tasks')
+            .select('id,title,status,assignee_agent_key,is_proposed,description,updated_at,created_at')
+            .eq('project_id', projectId)
+            .order('updated_at', { ascending: false })
+            .limit(limit);
+
+          const statusParam = url.searchParams.get('status');
+          if (statusParam) {
+            const statuses = statusParam.split(',').map(s => s.trim()).filter(Boolean);
+            if (statuses.length === 1) {
+              query = query.eq('status', statuses[0]);
+            } else if (statuses.length > 1) {
+              query = query.in('status', statuses);
+            }
+          }
+
+          const updatedSince = url.searchParams.get('updated_since');
+          if (updatedSince) {
+            query = query.gte('updated_at', updatedSince);
+          }
+
+          const { data, error } = await query;
+          if (error) throw error;
+          return sendJson(res, 200, { tasks: data || [] });
+        }
+
+        // Fallback: file-based tasks.json
+        const fp = path.join(workspace, 'memory', 'tasks.json');
+        const st = await safeStat(fp);
+        if (!st) return sendJson(res, 200, { tasks: [] });
+        const raw = await readFile(fp, 'utf8');
+        const data = JSON.parse(raw || '[]');
+        return sendJson(res, 200, { tasks: Array.isArray(data) ? data : [] });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // GET /api/tasks/:taskId/events — read recent task_events for a task
+    const taskEventsGetMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/events$/);
+    if (taskEventsGetMatch && req.method === 'GET') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(taskEventsGetMatch[1]);
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '50')));
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data, error } = await sb
+          .from('task_events')
+          .select('id,event_type,author,content,metadata,created_at')
+          .eq('project_id', projectId)
+          .eq('task_id', taskId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (error) throw error;
+        return sendJson(res, 200, { events: data || [] });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // GET /api/chat/recent — read recent war-room / thread messages
+    if (req.method === 'GET' && url.pathname === '/api/chat/recent') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '50')));
+        const threadIdParam = url.searchParams.get('thread_id') || '';
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        let query = sb
+          .from('project_chat_messages')
+          .select('id,author,message,thread_id,created_at')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (threadIdParam) {
+          query = query.eq('thread_id', threadIdParam);
+        } else {
+          // War room = null thread_id (general channel)
+          query = query.is('thread_id', null);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return sendJson(res, 200, { messages: data || [] });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // ---- WRITE ENDPOINTS (Heartbeat v2) ----
+
+    // POST /api/tasks/:taskId/assign — update task assignment
+    const taskAssignMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/assign$/);
+    if (taskAssignMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(taskAssignMatch[1]);
+        const body = await readBodyJson(req);
+        const assigneeAgentKey = String(body.assignee_agent_key || '').trim();
+        const author = String(body.author || assigneeAgentKey || 'dashboard').trim();
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // Get current assignee for the event metadata
+        const { data: currentTask } = await sb
+          .from('tasks')
+          .select('assignee_agent_key')
+          .eq('id', taskId)
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        const { error: updErr } = await sb
+          .from('tasks')
+          .update({ assignee_agent_key: assigneeAgentKey || null, updated_at: new Date().toISOString() })
+          .eq('id', taskId)
+          .eq('project_id', projectId);
+
+        if (updErr) throw updErr;
+
+        // Emit assignment_change event
+        try {
+          await sb.from('task_events').insert({
+            project_id: projectId,
+            task_id: taskId,
+            event_type: 'assignment_change',
+            author,
+            content: `Assigned to ${assigneeAgentKey || '(unassigned)'}`,
+            metadata: {
+              old_assignee: currentTask?.assignee_agent_key || null,
+              new_assignee: assigneeAgentKey || null,
+            },
+          });
+        } catch { /* best effort */ }
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // POST /api/tasks/:taskId/status — update task status
+    const taskStatusMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/status$/);
+    if (taskStatusMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(taskStatusMatch[1]);
+        const body = await readBodyJson(req);
+        const newStatus = String(body.status || '').trim();
+        const author = String(body.author || 'dashboard').trim();
+
+        if (!newStatus) return sendJson(res, 400, { ok: false, error: 'missing_status' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // Get current status for event metadata
+        const { data: currentTask } = await sb
+          .from('tasks')
+          .select('status')
+          .eq('id', taskId)
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        const { error: updErr } = await sb
+          .from('tasks')
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', taskId)
+          .eq('project_id', projectId);
+
+        if (updErr) throw updErr;
+
+        // Emit status_change event
+        try {
+          await sb.from('task_events').insert({
+            project_id: projectId,
+            task_id: taskId,
+            event_type: 'status_change',
+            author,
+            content: `Status changed: ${currentTask?.status || '?'} → ${newStatus}`,
+            metadata: {
+              old_status: currentTask?.status || null,
+              new_status: newStatus,
+            },
+          });
+        } catch { /* best effort */ }
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/tasks/:taskId/events — insert a task_events row via service role (agents can call Control API; no Supabase keys in workspaces)
     if (req.method === 'POST' && url.pathname.startsWith('/api/tasks/') && url.pathname.endsWith('/events')) {
       try {
@@ -1703,6 +1958,29 @@ const server = http.createServer(async (req, res) => {
             message: `Provisioned agent ${displayName} (${agentIdShort}) on executor`,
             actor_agent_key: 'agent:provisioner:system',
           });
+        }
+
+        // 5. Auto-create heartbeat cron job (deterministic name to prevent duplicates)
+        const heartbeatJobName = `heartbeat-${agentIdShort}`;
+        try {
+          // Check if heartbeat already exists
+          const { stdout: cronListOut } = await execExecutor('cron list --json --timeout 10000', { timeout: 15000 });
+          const cronData = JSON.parse(cronListOut || '{"jobs":[]}');
+          const existingJobs = Array.isArray(cronData?.jobs) ? cronData.jobs : (Array.isArray(cronData) ? cronData : []);
+          const heartbeatExists = existingJobs.some(j => j.name === heartbeatJobName || j.id === heartbeatJobName);
+
+          if (!heartbeatExists) {
+            const heartbeatInstructions = buildHeartbeatInstructions({ agentKey, displayName, role: roleShort || 'General' });
+            await execExecutor(
+              `cron create ${JSON.stringify(heartbeatJobName)} --every 3600000 --agent ${JSON.stringify(agentIdShort)} --system-event ${JSON.stringify(heartbeatInstructions)}`,
+              { timeout: 30000 }
+            );
+            console.log(`[provision] Created heartbeat cron job: ${heartbeatJobName}`);
+          } else {
+            console.log(`[provision] Heartbeat already exists: ${heartbeatJobName}`);
+          }
+        } catch (e) {
+          console.error(`[provision] Heartbeat creation failed (non-fatal): ${e?.message || e}`);
         }
 
         return sendJson(res, 200, { ok: true, agentId: agentIdShort, workspaceDir });

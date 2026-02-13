@@ -62,6 +62,55 @@ function stableHash(s) {
   return (h >>> 0).toString(16);
 }
 
+function buildHeartbeatInstructions({ agentKey, displayName, role }) {
+  return `@agent:${agentKey}
+
+HEARTBEAT — You are ${displayName} (${role}).
+
+Your goal: make the project better every hour with minimal noise.
+
+BEFORE ACTING: Read the Context Pack injected above. Use project overview, shared priorities, and recent activity as your guide. Do NOT use long personal memory.
+
+STEP 1 — PROPOSE TASKS (Inbox)
+- Check how many proposed tasks from you are still pending. If 3+ exist, propose 0-1 instead.
+- Propose 1-3 small, concrete tasks with clear outputs.
+- Each proposal must include "why now" and expected deliverable.
+- POST /api/tasks/propose with { author: "${agentKey}", title, description, assignee_agent_key: "${agentKey}" }
+
+STEP 2 — ASSIST AN ACTIVE TASK
+- GET /api/tasks?status=assigned,in_progress,blocked,review&limit=30
+- Pick 1 task matching your role (${role}) that you can meaningfully help with.
+- POST /api/tasks/:taskId/events with { event_type: "comment", content: "<your contribution>", author: "${agentKey}" }
+- Contributions: clarifying question, next step, risk/edge case, or "I can take this".
+- If claiming ownership and role permits: POST /api/tasks/:taskId/assign with { assignee_agent_key: "${agentKey}" }
+
+STEP 3 — WAR ROOM
+- GET /api/chat/recent?limit=50
+- Contribute 0-2 messages MAX. Only if genuinely additive.
+- Good: unblock someone, summarize progress, flag a risk, propose a micro-task.
+- Bad: "checking in!", echoing what was just said, empty encouragement.
+- POST /api/chat/post with { author: "${agentKey}", message: "<contribution>" }
+- If nothing meaningful to say, say nothing.
+
+STEP 4 — COMPLETE YOUR OWN WORK
+- GET /api/tasks?status=in_progress,assigned&limit=30
+- Filter for tasks where assignee_agent_key = "${agentKey}".
+- For each task you own that has moved past "assigned": review progress, post an update, and if done, update status.
+- POST /api/tasks/:taskId/status with { status: "done", author: "${agentKey}" } when complete.
+- POST /api/tasks/:taskId/events with { event_type: "comment", content: "Completed: <summary>", author: "${agentKey}" }
+
+ROLE-BASED GUIDANCE:
+- Builder: propose implementable tasks, offer code patches, focus on shipping.
+- QA: propose tests, edge cases, reproduction steps.
+- PM/Operator: propose sequencing, acceptance criteria, progress summaries.
+- Default to your role as defined in SOUL.md.
+
+ANTI-SPAM RULES:
+- Max 3 proposed tasks per heartbeat (fewer if many pending).
+- Max 2 war room messages per heartbeat.
+- If nothing is valuable, do nothing and exit quietly.`;
+}
+
 function scheduleToMirror(job) {
   const sch = job?.schedule;
   if (!sch || typeof sch !== 'object') return { schedule_kind: null, schedule_expr: null, tz: null };
@@ -436,6 +485,35 @@ async function processProvisionRequests() {
           actor_agent_key: 'agent:cron-mirror',
         });
       } catch { /* ignore */ }
+
+      // 5. Auto-create heartbeat cron job (deterministic name to prevent duplicates)
+      const heartbeatJobName = `heartbeat-${agentIdShort}`;
+      try {
+        const { code: listCode, stdout: cronListOut } = await runCmd(EXECUTOR_BIN, ['cron', 'list', '--json'], 15_000);
+        let heartbeatExists = false;
+        if (listCode === 0) {
+          try {
+            const cronData = JSON.parse(cronListOut || '{"jobs":[]}');
+            const existingJobs = Array.isArray(cronData?.jobs) ? cronData.jobs : (Array.isArray(cronData) ? cronData : []);
+            heartbeatExists = existingJobs.some(j => j.name === heartbeatJobName || j.id === heartbeatJobName);
+          } catch { /* ignore parse errors */ }
+        }
+
+        if (!heartbeatExists) {
+          const heartbeatInstructions = buildHeartbeatInstructions({ agentKey, displayName, role: roleShort || 'General' });
+          await runCmd(EXECUTOR_BIN, [
+            'cron', 'create', heartbeatJobName,
+            '--every', '3600000',
+            '--agent', agentIdShort,
+            '--system-event', heartbeatInstructions,
+          ], 30_000);
+          console.log(`[provision] Created heartbeat cron job: ${heartbeatJobName}`);
+        } else {
+          console.log(`[provision] Heartbeat already exists: ${heartbeatJobName}`);
+        }
+      } catch (e) {
+        console.error(`[provision] Heartbeat creation failed (non-fatal): ${e?.message || e}`);
+      }
 
     } catch (e) {
       const result = { agentIdShort, error: String(e?.message || e) };

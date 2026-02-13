@@ -4045,3 +4045,170 @@ export async function resolveApproval(
     return { ok: false, error: String(e?.message || e) };
   }
 }
+
+// ============= Heartbeat v2: Control API Read/Write Helpers =============
+// These helpers call the new Control API read endpoints with Supabase fallback.
+
+export async function fetchTasksViaControlApi(params?: {
+  status?: string;
+  limit?: number;
+  updatedSince?: string;
+}): Promise<{ tasks: any[] }> {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      const qp = new URLSearchParams();
+      if (params?.status) qp.set('status', params.status);
+      if (params?.limit) qp.set('limit', String(params.limit));
+      if (params?.updatedSince) qp.set('updated_since', params.updatedSince);
+      const qs = qp.toString();
+      return await requestJson<{ tasks: any[] }>(`/api/tasks${qs ? `?${qs}` : ''}`);
+    } catch (e) {
+      console.warn('fetchTasksViaControlApi: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  // Supabase fallback
+  const projectId = getProjectId();
+  let query = supabase
+    .from('tasks')
+    .select('id,title,status,assignee_agent_key,is_proposed,description,updated_at,created_at')
+    .eq('project_id', projectId)
+    .order('updated_at', { ascending: false })
+    .limit(params?.limit || 50);
+
+  if (params?.status) {
+    const statuses = params.status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.length === 1) {
+      query = query.eq('status', statuses[0]);
+    } else if (statuses.length > 1) {
+      query = query.in('status', statuses);
+    }
+  }
+
+  if (params?.updatedSince) {
+    query = query.gte('updated_at', params.updatedSince);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return { tasks: data || [] };
+}
+
+export async function fetchTaskEventsViaControlApi(
+  taskId: string,
+  limit = 50
+): Promise<{ events: any[] }> {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      return await requestJson<{ events: any[] }>(`/api/tasks/${encodeURIComponent(taskId)}/events?limit=${limit}`);
+    } catch (e) {
+      console.warn('fetchTaskEventsViaControlApi: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  const projectId = getProjectId();
+  const { data, error } = await supabase
+    .from('task_events')
+    .select('id,event_type,author,content,metadata,created_at')
+    .eq('project_id', projectId)
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return { events: data || [] };
+}
+
+export async function fetchRecentChatViaControlApi(
+  threadId?: string,
+  limit = 50
+): Promise<{ messages: any[] }> {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      const qp = new URLSearchParams({ limit: String(limit) });
+      if (threadId) qp.set('thread_id', threadId);
+      return await requestJson<{ messages: any[] }>(`/api/chat/recent?${qp.toString()}`);
+    } catch (e) {
+      console.warn('fetchRecentChatViaControlApi: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  const projectId = getProjectId();
+  let query = supabase
+    .from('project_chat_messages')
+    .select('id,author,message,thread_id,created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (threadId) {
+    query = query.eq('thread_id', threadId);
+  } else {
+    query = query.is('thread_id', null);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return { messages: data || [] };
+}
+
+export async function assignTaskViaControlApi(
+  taskId: string,
+  assigneeAgentKey: string,
+  author?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      return await requestJson<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(taskId)}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ assignee_agent_key: assigneeAgentKey, author: author || DASHBOARD_ACTOR_KEY }),
+      });
+    } catch (e) {
+      console.warn('assignTaskViaControlApi: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  // Supabase fallback
+  const projectId = getProjectId();
+  const { error } = await supabase
+    .from('tasks')
+    .update({ assignee_agent_key: assigneeAgentKey || null, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
+    .eq('project_id', projectId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateTaskStatusViaControlApi(
+  taskId: string,
+  status: string,
+  author?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      return await requestJson<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(taskId)}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status, author: author || DASHBOARD_ACTOR_KEY }),
+      });
+    } catch (e) {
+      console.warn('updateTaskStatusViaControlApi: Control API failed, falling back to Supabase', e);
+    }
+  }
+
+  // Supabase fallback
+  const projectId = getProjectId();
+  const { error } = await supabase
+    .from('tasks')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
+    .eq('project_id', projectId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
