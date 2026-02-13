@@ -44,12 +44,10 @@ import {
 import {
   type ScheduleConfig,
   type FrequencyType,
-  type JobIntent,
   type ContextPolicy,
   SCHEDULE_PRESETS,
   DAY_OPTIONS,
   COMMON_TIMEZONES,
-  JOB_INTENTS,
   CONTEXT_POLICIES,
   parseScheduleToConfig,
   configToScheduleExpression,
@@ -60,7 +58,6 @@ import {
   decodeTargetAgent,
 } from '@/lib/schedule-utils';
 import { InlineScheduleEditor } from '@/components/schedule/ScheduleEditor';
-import { JobIntentBadge } from '@/components/schedule/JobIntentBadge';
 import { AgentAssignmentDropdown } from '@/components/schedule/AgentAssignmentDropdown';
 import { formatDateTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
@@ -189,18 +186,7 @@ function CronJobRow({
     return null;
   };
 
-  // Get effective intent (prefer explicit field, fallback to instructions header)
-  const getEffectiveIntent = (): string | null => {
-    if (job.jobIntent) return job.jobIntent;
-    if (job.instructions) {
-      const { intent } = decodeJobHeaders(job.instructions);
-      return intent;
-    }
-    return null;
-  };
-  
   const targetAgentKey = getEffectiveTargetAgent();
-  const effectiveIntent = getEffectiveIntent();
   const targetAgent = agents.find(a => a.id === targetAgentKey);
   const getStatusIcon = (status: string | null | undefined) => {
     switch (status) {
@@ -480,8 +466,6 @@ export function CronPage() {
   const [editInstructionsOriginal, setEditInstructionsOriginal] = useState('');
   const [editTargetAgent, setEditTargetAgent] = useState('');
   const [editTargetAgentOriginal, setEditTargetAgentOriginal] = useState('');
-  const [editJobIntent, setEditJobIntent] = useState<JobIntent>('custom');
-  const [editJobIntentOriginal, setEditJobIntentOriginal] = useState<JobIntent>('custom');
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Create dialog state - human-friendly
@@ -494,7 +478,6 @@ export function CronPage() {
   const [createTz, setCreateTz] = useState('America/New_York');
   const [createInstructions, setCreateInstructions] = useState('');
   const [createTargetAgent, setCreateTargetAgent] = useState('');
-  const [createJobIntent, setCreateJobIntent] = useState<JobIntent>('custom');
   const [createContextPolicy, setCreateContextPolicy] = useState<ContextPolicy>('default');
   const [savingCreate, setSavingCreate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -573,7 +556,6 @@ export function CronPage() {
         ...(patch.tz ? { tz: patch.tz } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
         ...(patch.targetAgentKey !== undefined ? { targetAgentKey: patch.targetAgentKey } : {}),
-        ...(patch.jobIntent ? { jobIntent: patch.jobIntent } : {}),
       };
     });
   }, [mirrorJobs, patchRequests]);
@@ -604,11 +586,6 @@ export function CronPage() {
         } else if (jobAgent !== agentFilter) {
           return false;
         }
-      }
-
-      // Intent filter
-      if (intentFilter !== 'all') {
-        if (job.jobIntent !== intentFilter) return false;
       }
 
       return true;
@@ -871,8 +848,8 @@ export function CronPage() {
       // Parse existing instructions to get body without old headers
       const { intent, body } = decodeJobHeaders(job.instructions);
       
-      // Re-encode with new agent + existing intent
-      const newInstructions = encodeJobHeaders(agentKey, intent || job.jobIntent || null, body);
+      // Re-encode with new agent and existing body
+      const newInstructions = encodeJobHeaders(agentKey, null, body);
       
       const result = await queueCronPatchRequest(job.jobId, {
         targetAgentKey: agentKey,
@@ -920,7 +897,7 @@ export function CronPage() {
     // Encode agent + intent into instructions for durability (belt + suspenders)
     const encodedInstructions = encodeJobHeaders(
       createTargetAgent || null,
-      createJobIntent || null,
+      null,
       createInstructions || ''
     );
     
@@ -934,7 +911,6 @@ export function CronPage() {
         tz: createTz || undefined,
         instructions: encodedInstructions || undefined,
         targetAgentKey: createTargetAgent || undefined,
-        jobIntent: createJobIntent || undefined,
         contextPolicy: createContextPolicy || undefined,
       });
       
@@ -950,11 +926,10 @@ export function CronPage() {
         setCreateDays(['mon']);
         setCreateCustomCron('');
         setCreateTz('America/New_York');
-        setCreateInstructions('');
-        setCreateTargetAgent('');
-        setCreateJobIntent('custom');
-        setCreateContextPolicy('default');
-        setShowAdvanced(false);
+         setCreateInstructions('');
+         setCreateTargetAgent('');
+         setCreateContextPolicy('default');
+         setShowAdvanced(false);
         await loadJobs();
       } else {
         throw new Error(result.error || 'Failed to queue creation');
@@ -1041,13 +1016,10 @@ export function CronPage() {
     // Parse instructions to get body without headers
     const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
     setEditInstructions(body);
-    setEditInstructionsOriginal(body);
-    const ta = targetAgent || job.targetAgentKey || '';
-    const ji = (intent || job.jobIntent || 'custom') as JobIntent;
-    setEditTargetAgent(ta);
-    setEditTargetAgentOriginal(ta);
-    setEditJobIntent(ji);
-    setEditJobIntentOriginal(ji);
+     setEditInstructionsOriginal(body);
+     const ta = targetAgent || job.targetAgentKey || '';
+     setEditTargetAgent(ta);
+     setEditTargetAgentOriginal(ta);
   };
 
   // Save edit via Control API or queue request for offline mode
@@ -1056,17 +1028,16 @@ export function CronPage() {
     setSavingEdit(true);
     try {
       // Encode agent + intent into instructions for durability
-      const encodedInstructions = encodeJobHeaders(
-        editTargetAgent || null,
-        editJobIntent || null,
-        editInstructions || ''
-      );
+     const encodedInstructions = encodeJobHeaders(
+       editTargetAgent || null,
+       null,
+       editInstructions || ''
+     );
 
       // Only mark instructions dirty if the user actually changed the body, agent, or intent
       const instructionsChanged =
-        editInstructions !== editInstructionsOriginal ||
-        editTargetAgent !== editTargetAgentOriginal ||
-        editJobIntent !== editJobIntentOriginal;
+       editInstructions !== editInstructionsOriginal ||
+       editTargetAgent !== editTargetAgentOriginal;
       
       // Convert friendly schedule config to expression
       const editSchedConfig: ScheduleConfig = {
@@ -1113,10 +1084,9 @@ export function CronPage() {
           name: editName,
           scheduleExpr: scheduleChanged ? editSchedResult.expr : undefined,
           scheduleKind: scheduleChanged ? editSchedResult.kind : undefined,
-          instructions: instructionsChanged ? encodedInstructions : undefined,
-          targetAgentKey: editTargetAgent || undefined,
-          jobIntent: editJobIntent || undefined,
-        });
+         instructions: instructionsChanged ? encodedInstructions : undefined,
+         targetAgentKey: editTargetAgent || undefined,
+       });
         if (result.ok) {
           toast({
             title: 'Edit queued',
@@ -1261,58 +1231,40 @@ export function CronPage() {
                 </SelectContent>
               </Select>
             </div>
-            
-            {/* Agent and Intent Filters */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Agent:</span>
-                <Select value={agentFilter} onValueChange={setAgentFilter}>
-                  <SelectTrigger className="w-[140px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-popover">
-                    <SelectItem value="all">All Agents</SelectItem>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {agents.map(agent => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.avatar || '🤖'} {agent.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Intent:</span>
-                <Select value={intentFilter} onValueChange={setIntentFilter}>
-                  <SelectTrigger className="w-[140px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-popover">
-                    <SelectItem value="all">All Intents</SelectItem>
-                    {JOB_INTENTS.map(intent => (
-                      <SelectItem key={intent.id} value={intent.id}>
-                        {intent.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {(agentFilter !== 'all' || intentFilter !== 'all') && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setAgentFilter('all');
-                    setIntentFilter('all');
-                  }}
-                  className="h-8 text-xs"
-                >
-                  Clear Filters
-                </Button>
-              )}
-            </div>
+             
+             {/* Agent Filter */}
+             <div className="flex items-center gap-3 flex-wrap">
+               <div className="flex items-center gap-2">
+                 <span className="text-xs text-muted-foreground">Agent:</span>
+                 <Select value={agentFilter} onValueChange={setAgentFilter}>
+                   <SelectTrigger className="w-[140px] h-8">
+                     <SelectValue />
+                   </SelectTrigger>
+                   <SelectContent className="bg-popover">
+                     <SelectItem value="all">All Agents</SelectItem>
+                     <SelectItem value="unassigned">Unassigned</SelectItem>
+                     {agents.map(agent => (
+                       <SelectItem key={agent.id} value={agent.id}>
+                         {agent.avatar || '🤖'} {agent.name}
+                       </SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
+               </div>
+               
+               {agentFilter !== 'all' && (
+                 <Button
+                   variant="ghost"
+                   size="sm"
+                   onClick={() => {
+                     setAgentFilter('all');
+                   }}
+                   className="h-8 text-xs"
+                 >
+                   Clear Filters
+                 </Button>
+               )}
+             </div>
           </div>
         )}
 
@@ -1856,47 +1808,25 @@ export function CronPage() {
               </Select>
             </div>
 
-            {/* Job Intent */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-1">
-                Job Intent
-                <InfoTooltip text="What type of job is this? Helps with filtering and understanding job purpose." />
-              </label>
-              <Select value={createJobIntent} onValueChange={(v) => setCreateJobIntent(v as JobIntent)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover">
-                  {JOB_INTENTS.map((intent) => (
-                    <SelectItem key={intent.id} value={intent.id}>
-                      {intent.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {JOB_INTENTS.find(i => i.id === createJobIntent)?.description}
-              </p>
-            </div>
-
-            {/* Context Policy */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-1">
-                Context Pack Size
-                <InfoTooltip text="How much context the agent receives when this job runs. Default is recommended." />
-              </label>
-              <Select value={createContextPolicy} onValueChange={(v) => setCreateContextPolicy(v as ContextPolicy)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover">
-                  {CONTEXT_POLICIES.map((policy) => (
-                    <SelectItem key={policy.id} value={policy.id}>
-                      {policy.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+             
+             {/* Context Policy */}
+             <div className="space-y-2">
+               <label className="text-sm font-medium flex items-center gap-1">
+                 Context Pack Size
+                 <InfoTooltip text="How much context the agent receives when this job runs. Default is recommended." />
+               </label>
+               <Select value={createContextPolicy} onValueChange={(v) => setCreateContextPolicy(v as ContextPolicy)}>
+                 <SelectTrigger>
+                   <SelectValue />
+                 </SelectTrigger>
+                 <SelectContent className="bg-popover">
+                   {CONTEXT_POLICIES.map((policy) => (
+                     <SelectItem key={policy.id} value={policy.id}>
+                       {policy.label}
+                     </SelectItem>
+                   ))}
+                 </SelectContent>
+               </Select>
               <p className="text-xs text-muted-foreground">
                 {CONTEXT_POLICIES.find(p => p.id === createContextPolicy)?.description}
               </p>
