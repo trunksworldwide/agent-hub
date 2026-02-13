@@ -1,3 +1,10 @@
+### Remove all Job Intent dropdowns from scheduled jobs
+- Removed the "Job Intent" filter dropdown from the Schedule page filters.
+- Removed the "Job Intent" field from the Create dialog.
+- Removed the "Job Intent" field from the Edit dialog.
+- Removed JobIntentBadge import and all intent-related state/logic from CronPage.
+- Intent metadata is no longer needed for filtering or UI categorization.
+
 ### Rename: Team Room → War Room
 - Renamed "Team Room" to "War Room" across sidebar and chat page header. No route or feature flag changes.
 
