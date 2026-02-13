@@ -1,159 +1,198 @@
 
 
-# Agent Heartbeat v2: Hourly Wake with Task Proposals, War Room, and Task Adoption
+# Task Stop/Delete, @Mentions, and War Room Context
 
 ## Summary
 
-Extend the Control API with read endpoints so agents can autonomously inspect tasks and chat, then auto-create an hourly heartbeat cron job at agent provisioning time. The heartbeat prompt instructs agents to propose tasks, assist active work, contribute to the war room, and complete their own assigned tasks.
+Three features implemented with minimal diffs: (A) stop and soft-delete tasks with audit trails, (B) @mentions system with server-side extraction and cursor-based deduplication, (C) updated heartbeat prompt for mention responses and war room context in proposals.
 
-## What Changes
+## A. Task Stop and Delete
 
-### 1. New Control API Read Endpoints (server/index.mjs)
+### Database Migration
 
-Four new GET endpoints using the service-role Supabase client (agents never get keys):
+Add two columns to the `tasks` table:
+- `deleted_at` (timestamptz, nullable, default null)
+- `deleted_by` (text, nullable, default null)
 
-**A) `GET /api/tasks?status=...&limit=50&updated_since=...`**
-- Reads from Supabase `tasks` table, scoped to project via `X-ClawdOS-Project` header
-- Returns: `{ tasks: [{ id, title, status, assignee_agent_key, is_proposed, description, updated_at, created_at }] }`
-- `status` param supports comma-separated values (e.g. `status=inbox,in_progress`)
-- This replaces the existing `GET /api/tasks` (which reads from local `tasks.json`) -- the new version reads from Supabase when the service role is available, falling back to the file-based version
+Add `stopped` as a recognized status (no schema change needed -- `status` is already text).
 
-**B) `GET /api/tasks/:taskId/events?limit=50`**
-- Reads recent `task_events` rows for a given task
-- Returns: `{ events: [{ id, event_type, author, content, metadata, created_at }] }`
+### Control API Endpoints (`server/index.mjs`)
 
-**C) `GET /api/chat/recent?thread_id=&limit=50`**
-- Reads recent `project_chat_messages` rows
-- If `thread_id` is omitted or empty, returns the war room thread (first thread created for the project, or all messages with null thread_id)
-- Returns: `{ messages: [{ id, author, message, thread_id, created_at }] }`
+**`POST /api/tasks/:taskId/stop`**
+- Body: `{ author?, reason? }`
+- Sets `tasks.status = 'stopped'`
+- Emits `task_events` row with `event_type: 'status_change'`, metadata `{ old_status, new_status: 'stopped', reason }`
+- Returns `{ ok: true }`
 
-**D) `POST /api/tasks/:taskId/assign`**
-- Body: `{ assignee_agent_key }`
-- Updates `tasks.assignee_agent_key` and emits a `task_events` row with `event_type: 'assignment_change'`
-- Returns: `{ ok: true }`
+**`POST /api/tasks/:taskId/delete`** (using POST instead of DELETE to avoid CORS complexity)
+- Body: `{ author? }`
+- Sets `tasks.deleted_at = now()`, `tasks.deleted_by = author`
+- Emits `task_events` row with `event_type: 'task_deleted'`
+- Idempotent: if already deleted, returns `{ ok: true }` without error
 
-**E) `POST /api/tasks/:taskId/status`**
-- Body: `{ status, author? }`
-- Updates `tasks.status` and emits a `task_events` row with `event_type: 'status_change'`
-- Returns: `{ ok: true }`
+### Dashboard Helpers (`src/lib/api.ts`)
 
-### 2. Auto-Create Heartbeat at Provisioning
+- Add `stopTask(taskId, reason?, author?)` -- calls `POST /api/tasks/:taskId/stop` with Supabase fallback
+- Add `softDeleteTask(taskId, author?)` -- calls `POST /api/tasks/:taskId/delete` with Supabase fallback
+- Update `TaskStatus` type to include `'stopped'`
+- Update `Task` interface to include `deletedAt?: string | null`
+- Update `getTasks()` to filter out rows where `deleted_at IS NOT NULL`
+- Update `updateTask()` patch type to include `deletedAt` and `deletedBy`
 
-Modify **two places** where agents get provisioned:
+### UI Changes
 
-**A) `server/index.mjs` -- `POST /api/agents/provision`** (direct provisioning path)
-After seeding workspace files, create an hourly heartbeat cron job via the executor CLI:
+**`TaskDetailSheet.tsx`:**
+- Add "Stop" button (Square icon, orange variant) and "Delete" button (Trash2 icon, ghost/destructive) in the header area
+- Stop triggers a `StopTaskDialog` (confirmation + optional reason, same pattern as `RejectConfirmDialog`)
+- Delete triggers a `DeleteTaskConfirmDialog` with copy: "This will hide the task from the board. Task history is preserved for audit."
+- Add `stopped` to the `STATUS_COLUMNS` array
+
+**New components:**
+- `StopTaskDialog.tsx` -- confirmation with optional reason textarea
+- `DeleteTaskConfirmDialog.tsx` -- simple confirmation dialog
+
+**`TaskListView.tsx`:**
+- Add `stopped` to `STATUS_LABELS` and `STATUS_COLORS`
+- Add "Show Stopped" checkbox filter (same pattern as "Show Done")
+
+## B. @Mentions System
+
+### Database Migration
+
+**`mentions` table:**
+- `id` uuid PK default gen_random_uuid()
+- `project_id` text NOT NULL
+- `agent_key` text NOT NULL (normalized short key, e.g. `ricky`)
+- `source_type` text NOT NULL (`chat_message` or `task_event`)
+- `source_id` uuid NOT NULL
+- `task_id` uuid nullable
+- `thread_id` uuid nullable
+- `author` text NOT NULL (who wrote the mention)
+- `excerpt` text nullable (first 200 chars of source content)
+- `created_at` timestamptz default now()
+- Unique: `(project_id, agent_key, source_type, source_id)`
+- RLS: **enabled but no permissive policies for anon** -- all access goes through Control API (service role)
+
+**`agent_mention_cursor` table:**
+- `project_id` text NOT NULL
+- `agent_key` text NOT NULL
+- `last_seen_at` timestamptz NOT NULL default '1970-01-01T00:00:00Z'
+- `updated_at` timestamptz default now()
+- PK: `(project_id, agent_key)`
+- RLS: **enabled but no permissive policies for anon** -- all access goes through Control API (service role)
+
+### Mention Extraction Logic (`server/index.mjs`)
+
+Shared function:
+
+```javascript
+function extractMentionKeys(text, knownAgentKeys) {
+  // Match @word (simple) and @agent:key:main (full form)
+  const raw = [];
+  const simpleRegex = /@([a-zA-Z0-9_-]+)/g;
+  let match;
+  while ((match = simpleRegex.exec(text)) !== null) {
+    raw.push(match[1]);
+  }
+  // Normalize: "agent:ricky:main" -> "ricky", "ricky" -> "ricky"
+  const normalized = raw.map(r => {
+    const parts = r.split(':');
+    return parts[0] === 'agent' && parts.length >= 2 ? parts[1] : r;
+  });
+  // Validate against known agent keys
+  return [...new Set(normalized)].filter(k => knownAgentKeys.has(k));
+}
 ```
-openclaw cron create "Heartbeat — {displayName}" --every 3600000 --agent {agentIdShort} --system-event "{heartbeat instructions}"
+
+The `knownAgentKeys` set is fetched lazily from the `agents` table (cached briefly) to validate mentions.
+
+### Server-Side Population
+
+After inserting in:
+- `POST /api/tasks/:taskId/events` -- extract mentions from `content`, insert into `mentions` (best-effort)
+- `POST /api/chat/post` -- extract mentions from `message`, insert into `mentions` (best-effort)
+
+### Control API Read/Write Endpoints
+
+**`GET /api/mentions?agent_key=<key>&since=<ISO>&limit=50`**
+- Reads from `mentions` table where `agent_key = key` and `created_at > since`
+- Returns `{ mentions: [{ id, source_type, source_id, task_id, thread_id, author, excerpt, created_at }] }`
+
+**`POST /api/mentions/ack`**
+- Body: `{ agent_key, last_seen_at }` (the max `created_at` from processed mentions)
+- Updates `agent_mention_cursor` using `GREATEST(existing.last_seen_at, incoming.last_seen_at)` to prevent skipping
+- Upserts to handle first-time ack
+- Returns `{ ok: true }`
+
+## C. Heartbeat Prompt Updates (`server/index.mjs`)
+
+Update `buildHeartbeatInstructions()` to prepend a new **STEP 0**:
+
 ```
-Use a deterministic job name pattern (`heartbeat-{agentIdShort}`) to prevent duplicates on re-provision.
-
-**B) `scripts/cron-mirror.mjs` -- `processProvisionRequests()`** (queued provisioning path)
-Same logic: after provisioning succeeds, create the heartbeat cron job via the executor CLI.
-
-### 3. Heartbeat Prompt (Instructions Baked into Cron Payload)
-
-The heartbeat cron job's instructions will be a structured prompt (stored in the `instructions` field):
-
-```
-@agent:{agent_key}
-
-HEARTBEAT — You are {displayName} ({role}).
-
-Your goal: make the project better every hour with minimal noise.
-
-BEFORE ACTING: Read the Context Pack injected above. Use project overview, shared priorities, and recent activity as your guide. Do NOT use long personal memory.
-
-STEP 1 — PROPOSE TASKS (Inbox)
-- Check how many proposed tasks from you are still pending. If 3+ exist, propose 0-1 instead.
-- Propose 1-3 small, concrete tasks with clear outputs.
-- Each proposal must include "why now" and expected deliverable.
-- POST /api/tasks/propose with { author: "{agent_key}", title, description, assignee_agent_key: "{agent_key}" }
-
-STEP 2 — ASSIST AN ACTIVE TASK
-- GET /api/tasks?status=assigned,in_progress,blocked,review&limit=30
-- Pick 1 task matching your role ({role}) that you can meaningfully help with.
-- POST /api/tasks/:taskId/events with { event_type: "comment", content: "<your contribution>", author: "{agent_key}" }
-- Contributions: clarifying question, next step, risk/edge case, or "I can take this".
-- If claiming ownership and role permits: POST /api/tasks/:taskId/assign with { assignee_agent_key: "{agent_key}" }
-
-STEP 3 — WAR ROOM
-- GET /api/chat/recent?limit=50
-- Contribute 0-2 messages MAX. Only if genuinely additive.
-- Good: unblock someone, summarize progress, flag a risk, propose a micro-task.
-- Bad: "checking in!", echoing what was just said, empty encouragement.
-- POST /api/chat/post with { author: "{agent_key}", message: "<contribution>" }
-- If nothing meaningful to say, say nothing.
-
-STEP 4 — COMPLETE YOUR OWN WORK
-- GET /api/tasks?status=in_progress,assigned&limit=30
-- Filter for tasks where assignee_agent_key = "{agent_key}".
-- For each task you own that has moved past "assigned": review progress, post an update, and if done, update status.
-- POST /api/tasks/:taskId/status with { status: "done", author: "{agent_key}" } when complete.
-- POST /api/tasks/:taskId/events with { event_type: "comment", content: "Completed: <summary>", author: "{agent_key}" }
-
-ROLE-BASED GUIDANCE:
-- Builder: propose implementable tasks, offer code patches, focus on shipping.
-- QA: propose tests, edge cases, reproduction steps.
-- PM/Operator: propose sequencing, acceptance criteria, progress summaries.
-- Default to your role as defined in SOUL.md.
-
-ANTI-SPAM RULES:
-- Max 3 proposed tasks per heartbeat (fewer if many pending).
-- Max 2 war room messages per heartbeat.
-- If nothing is valuable, do nothing and exit quietly.
+STEP 0 -- CHECK @MENTIONS (do this first)
+- GET /api/mentions?agent_key={agentIdShort}&since=<your last cursor>
+  (If you don't know your cursor, use a recent timestamp like 1 hour ago.)
+- For each new mention:
+  - If source_type = "task_event": respond via POST /api/tasks/:taskId/events
+    with { event_type: "comment", content: "<your response>", author: "{agentKey}" }
+  - If source_type = "chat_message": respond via POST /api/chat/post
+    with { message: "<your response>", thread_id: <same thread_id or null>, author: "{agentKey}" }
+  - Keep responses brief, helpful, and on-topic.
+- After responding to all: POST /api/mentions/ack
+  with { agent_key: "{agentIdShort}", last_seen_at: "<max created_at from mentions you processed>" }
 ```
 
-### 4. Dashboard-Side Read Helpers (src/lib/api.ts)
+Update **STEP 3 (War Room)** to add context inclusion guidance:
 
-Add corresponding dashboard helpers that call the new read endpoints (with Supabase fallback for when Control API is offline):
-
-- `fetchTasksViaControlApi(params)` -- calls `GET /api/tasks`, falls back to Supabase query
-- `fetchTaskEventsViaControlApi(taskId)` -- calls `GET /api/tasks/:taskId/events`, falls back to Supabase
-- `fetchRecentChatViaControlApi(threadId?)` -- calls `GET /api/chat/recent`, falls back to Supabase
-- `assignTaskViaControlApi(taskId, agentKey)` -- calls `POST /api/tasks/:taskId/assign`, falls back to direct Supabase update
-- `updateTaskStatusViaControlApi(taskId, status)` -- calls `POST /api/tasks/:taskId/status`, falls back to direct Supabase update
-
-These are additive -- existing UI continues to work through Supabase directly. The helpers exist so agents (via Control API) and future dashboard features share the same bridge pattern.
-
-### 5. Documentation and Changelog
-
-**Update `docs/CONTROL-API-BRIDGE.md`** with the new endpoints.
-
-**Update `changes.md`** with:
-- New read endpoints added to Control API
-- Auto-heartbeat created at agent provisioning
-- Heartbeat prompt with 4-step autonomous behavior
-- Verification checklist
+```
+- When proposing a task derived from war room discussion, include a
+  "Context (war room)" section in the description with relevant message
+  excerpts (max 5 messages, include timestamps).
+- GET /api/chat/recent?limit=100 (bounded read, never request more).
+```
 
 ## Technical Details
-
-### War Room Thread Convention
-- Thread ID = `null` means "war room" (general channel). The `GET /api/chat/recent` endpoint treats missing/null `thread_id` as the war room.
-- This matches existing behavior in `ChatPage` where the general thread is the default.
-
-### Duplicate Heartbeat Prevention
-- Use deterministic cron job name: `heartbeat-{agentIdShort}`
-- Before creating, check existing jobs via `openclaw cron list --json` and skip if a job with that name already exists.
-- The `scheduleAgentDigest` function already exists as a pattern for this.
-
-### Task Status Values Used
-Based on the `TaskStatus` type: `'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked'`
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `server/index.mjs` | Add 5 new endpoints (GET tasks, GET task events, GET chat recent, POST task assign, POST task status). Modify provisioning to auto-create heartbeat cron. |
-| `scripts/cron-mirror.mjs` | Add heartbeat cron creation in `processProvisionRequests()` after successful provisioning. |
-| `src/lib/api.ts` | Add dashboard-side read/write helpers with Control API + Supabase fallback. |
-| `docs/CONTROL-API-BRIDGE.md` | Document new endpoints and heartbeat contract. |
-| `changes.md` | Log all changes with verification checklist. |
+| `supabase/migrations/YYYYMMDD_task_stop_delete_mentions.sql` | Add `deleted_at`/`deleted_by` to tasks, create `mentions` table with RLS enabled (no anon policies), create `agent_mention_cursor` table with RLS enabled (no anon policies) |
+| `server/index.mjs` | Add `POST /api/tasks/:taskId/stop`, `POST /api/tasks/:taskId/delete`, `GET /api/mentions`, `POST /api/mentions/ack`. Add `extractMentionKeys()`. Populate mentions on chat/event writes. Update `buildHeartbeatInstructions()`. No CORS changes needed (all endpoints use POST). |
+| `src/lib/api.ts` | Add `stopTask()`, `softDeleteTask()`. Update `TaskStatus` to include `stopped`. Update `Task` interface with `deletedAt`/`deletedBy`. Update `getTasks()` to filter deleted. |
+| `src/components/tasks/TaskDetailSheet.tsx` | Add Stop and Delete buttons with confirmation dialogs, add `stopped` to status columns |
+| `src/components/tasks/TaskListView.tsx` | Add `stopped` to status labels/colors, add "Show Stopped" filter |
+| `src/components/tasks/StopTaskDialog.tsx` | New: confirmation dialog with optional reason |
+| `src/components/tasks/DeleteTaskConfirmDialog.tsx` | New: confirmation dialog with accurate soft-delete copy |
+| `docs/CONTROL-API-BRIDGE.md` | Document new endpoints (stop, delete, mentions, ack) |
+| `changes.md` | Log all changes with verification checklist |
+
+### Key Design Decisions
+
+1. **Mentions RLS**: No anon policies. All mention I/O goes through Control API (service role). This keeps the security posture consistent with the bridge architecture.
+
+2. **Mention syntax**: `@ricky` is canonical. `@agent:ricky:main` is also accepted and normalized to `ricky`. Stored as `agent_key = 'ricky'` in the `mentions` table.
+
+3. **Ack semantics**: Client sends `{ last_seen_at: <max created_at> }`. Server uses `GREATEST(existing, incoming)` to prevent cursor regression.
+
+4. **Delete copy**: "This will hide the task from the board. Task history is preserved for audit." -- accurately reflects soft-delete behavior.
+
+5. **POST for delete endpoint**: Using `POST /api/tasks/:taskId/delete` instead of `DELETE /api/tasks/:taskId` to avoid adding DELETE to CORS allow-methods (keeps diff minimal).
+
+6. **No UI for mentions**: Mentions are agent-facing only. Users type `@ricky` naturally in chat/task threads. No autocomplete or highlighting needed now.
+
+### Task Status Values After Change
+`'inbox' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked' | 'stopped'`
+
+Deleted tasks are filtered by `deleted_at IS NOT NULL`, not by status.
 
 ### Verification Checklist
-1. Provision a new agent -- heartbeat cron job appears in Schedule page
-2. Run heartbeat once manually -- proposed tasks appear in Inbox
-3. Heartbeat posts a comment on an active task (check TaskTimeline)
-4. Heartbeat posts at most 2 war room messages (check Chat page)
-5. Re-provisioning same agent does NOT create duplicate heartbeat job
+1. Stop a task from TaskDetailSheet -- status changes to `stopped`, event in timeline
+2. Delete a task -- disappears from board, `deleted_at` set, task_event logged
+3. Type `@ricky` in war room chat via Control API -- mention row created in `mentions` table
+4. Type `@agent:ricky:main` -- same result, normalized to `ricky`
+5. Call `GET /api/mentions?agent_key=ricky&since=...` -- returns new mentions
+6. Call `POST /api/mentions/ack` with max created_at -- cursor updated
+7. Re-call `GET /api/mentions` with new cursor -- returns empty
+8. Agent heartbeat responds to mention, then acks -- no re-response on next run
 
