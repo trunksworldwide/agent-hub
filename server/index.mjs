@@ -1075,6 +1075,18 @@ const server = http.createServer(async (req, res) => {
             (typeof j.instructions === 'string' && j.instructions) ||
             '';
 
+          // Normalize target agent: extract from instructions or default to main
+          let targetAgentKey = null;
+          if (instructions) {
+            const agentMatch = instructions.match(/@agent:([a-zA-Z0-9_:-]+)/);
+            if (agentMatch) {
+              targetAgentKey = agentMatch[0].startsWith('@') ? agentMatch[0].slice(1) : agentMatch[0];
+              // Normalize: ensure it starts with "agent:"
+              if (!targetAgentKey.startsWith('agent:')) targetAgentKey = `agent:${targetAgentKey}`;
+            }
+          }
+          if (!targetAgentKey) targetAgentKey = 'agent:main:main';
+
           return {
             id: j.id || j.jobId || j.name,
             name: j.name || j.id,
@@ -1086,6 +1098,7 @@ const server = http.createServer(async (req, res) => {
             nextRunAtMs,
             lastRunStatus: j?.state?.lastStatus || null,
             instructions,
+            targetAgentKey,
           };
         });
         return sendJson(res, 200, jobs);
@@ -1200,6 +1213,10 @@ const server = http.createServer(async (req, res) => {
             if (typeof body.name === 'string' && body.name.trim()) partial.name = body.name.trim();
             if (typeof body.instructions === 'string') partial.instructions = body.instructions;
             if (typeof body.enabled === 'boolean') partial.enabled = body.enabled;
+            // Normalize target agent key — never leave null
+            if (body.targetAgentKey) {
+              partial.target_agent_key = body.targetAgentKey;
+            }
             if (Object.keys(partial).length > 0) {
               await supabase
                 .from('cron_mirror')

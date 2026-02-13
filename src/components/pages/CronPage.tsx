@@ -177,13 +177,13 @@ function CronJobRow({
   const pendingDelete = deleteState === 'pending';
   const deleteFailed = deleteState === 'failed';
   // Get effective target agent (prefer explicit field, fallback to instructions header)
-  const getEffectiveTargetAgent = (): string | null => {
+  const getEffectiveTargetAgent = (): string => {
     if (job.targetAgentKey) return job.targetAgentKey;
     if (job.instructions) {
       const { targetAgent } = decodeJobHeaders(job.instructions);
-      return targetAgent;
+      if (targetAgent) return targetAgent;
     }
-    return null;
+    return 'agent:main:main';
   };
 
   const targetAgentKey = getEffectiveTargetAgent();
@@ -477,7 +477,7 @@ export function CronPage() {
   const [createCustomCron, setCreateCustomCron] = useState('');
   const [createTz, setCreateTz] = useState('America/New_York');
   const [createInstructions, setCreateInstructions] = useState('');
-  const [createTargetAgent, setCreateTargetAgent] = useState('');
+  const [createTargetAgent, setCreateTargetAgent] = useState('agent:main:main');
   const [createContextPolicy, setCreateContextPolicy] = useState<ContextPolicy>('default');
   const [savingCreate, setSavingCreate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -528,13 +528,13 @@ export function CronPage() {
   }, [deleteRequests]);
 
   // Helper to get effective target agent (from field or instructions prefix)
-  const getEffectiveTargetAgent = (job: CronMirrorJob): string | null => {
+  const getEffectiveTargetAgent = (job: CronMirrorJob): string => {
     if (job.targetAgentKey) return job.targetAgentKey;
     if (job.instructions) {
       const { targetAgent } = decodeTargetAgent(job.instructions);
-      return targetAgent;
+      if (targetAgent) return targetAgent;
     }
-    return null;
+    return 'agent:main:main';
   };
 
   // Overlay pending patches on mirror data so UI reflects intended state
@@ -581,9 +581,7 @@ export function CronPage() {
       // Agent filter
       if (agentFilter !== 'all') {
         const jobAgent = getEffectiveTargetAgent(job);
-        if (agentFilter === 'unassigned') {
-          if (jobAgent) return false;
-        } else if (jobAgent !== agentFilter) {
+        if (jobAgent !== agentFilter) {
           return false;
         }
       }
@@ -863,7 +861,7 @@ export function CronPage() {
             ? { ...j, targetAgentKey: agentKey, instructions: newInstructions }
             : j
         ));
-        const agentName = agentKey ? agents.find(a => a.id === agentKey)?.name || agentKey : 'Unassigned';
+        const agentName = agents.find(a => a.id === agentKey)?.name || agentKey;
         toast({
           title: 'Agent assignment queued',
           description: `${job.name} will be assigned to ${agentName} when the Mac mini executor picks up the request.`,
@@ -927,7 +925,7 @@ export function CronPage() {
         setCreateCustomCron('');
         setCreateTz('America/New_York');
          setCreateInstructions('');
-         setCreateTargetAgent('');
+         setCreateTargetAgent('agent:main:main');
          setCreateContextPolicy('default');
          setShowAdvanced(false);
         await loadJobs();
@@ -1017,7 +1015,7 @@ export function CronPage() {
     const { body, targetAgent, intent } = decodeJobHeaders(job.instructions);
     setEditInstructions(body);
      setEditInstructionsOriginal(body);
-     const ta = targetAgent || job.targetAgentKey || '';
+     const ta = targetAgent || job.targetAgentKey || 'agent:main:main';
      setEditTargetAgent(ta);
      setEditTargetAgentOriginal(ta);
   };
@@ -1240,10 +1238,9 @@ export function CronPage() {
                    <SelectTrigger className="w-[140px] h-8">
                      <SelectValue />
                    </SelectTrigger>
-                   <SelectContent className="bg-popover">
-                     <SelectItem value="all">All Agents</SelectItem>
-                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                     {agents.map(agent => (
+                    <SelectContent className="bg-popover">
+                      <SelectItem value="all">All Agents</SelectItem>
+                      {agents.map(agent => (
                        <SelectItem key={agent.id} value={agent.id}>
                          {agent.avatar || '🤖'} {agent.name}
                        </SelectItem>
@@ -1619,14 +1616,11 @@ export function CronPage() {
             {/* Target Agent */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Assigned Agent</label>
-              <Select value={editTargetAgent || 'none'} onValueChange={(v) => setEditTargetAgent(v === 'none' ? '' : v)}>
+              <Select value={editTargetAgent || 'agent:main:main'} onValueChange={setEditTargetAgent}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an agent..." />
                 </SelectTrigger>
                 <SelectContent className="bg-popover">
-                  <SelectItem value="none">
-                    <span className="text-muted-foreground">No agent assigned</span>
-                  </SelectItem>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
                       <span className="flex items-center gap-2">
@@ -1793,12 +1787,11 @@ export function CronPage() {
                 Target Agent
                 <InfoTooltip text="The agent that will execute this job. The agent will receive the job's context pack when the job runs." />
               </label>
-              <Select value={createTargetAgent} onValueChange={setCreateTargetAgent}>
+              <Select value={createTargetAgent || 'agent:main:main'} onValueChange={setCreateTargetAgent}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an agent..." />
                 </SelectTrigger>
                 <SelectContent className="bg-popover">
-                  <SelectItem value="">No specific agent</SelectItem>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
                       {agent.avatar || '🤖'} {agent.name}
