@@ -1,4 +1,37 @@
-### Eliminate "Unassigned" Scheduled Jobs
+### Delete Agent with Safe Cascade Cleanup
+- **Control API** (`server/index.mjs`):
+  - Added `DELETE /api/agents/:agentKey` endpoint with full cascade cleanup
+  - Step A: Lists and deletes cron jobs targeting the agent via `openclaw cron list/delete`
+  - Step B: Removes OpenClaw agent via `openclaw agents remove <agentIdShort>`
+  - Step C: Removes workspace directory `~/.openclaw/workspace-<agentIdShort>/` with strict path validation
+  - Step D: Supabase cleanup (service role, all best-effort): agent_status, agent_mention_cursor, agent_provision_requests, brain_docs, cron_mirror, chat_delivery_queue (queued/claimed), mentions, agents row
+  - Logs `agent_deleted` activity entry
+  - Blocks deletion of `agent:main:main` (returns 403)
+  - Idempotent: safe to call multiple times
+  - Updated CORS to allow DELETE method
+- **Dashboard API** (`src/lib/api.ts`):
+  - `deleteAgent()` now calls `DELETE /api/agents/:agentKey` on Control API as primary path
+  - Falls back to enhanced direct Supabase cleanup if Control API unavailable
+  - Fallback now includes chat_delivery_queue, mentions, and agent_mention_cursor cleanup (previously missing)
+- **UI** (`src/components/agent-tabs/AgentOverview.tsx`):
+  - Updated delete confirmation dialog copy to clarify what gets deleted vs kept
+
+**What gets DELETED:** OpenClaw agent runtime, workspace directory, cron jobs, agent_status, agent_mention_cursor, agent_provision_requests, brain_docs, cron_mirror, chat_delivery_queue, mentions, agents row
+**What gets KEPT:** tasks, task_events, task_outputs, project_chat_messages, activities
+
+**Verification checklist:**
+1. Delete agent via dashboard — OpenClaw no longer lists it
+2. Workspace directory removed
+3. No cron jobs targeting deleted agent remain
+4. Supabase: no operational rows (agent_status, brain_docs, cron_mirror, etc.) for deleted agent
+5. Supabase: queued chat_delivery_queue rows removed
+6. Supabase: agents row gone
+7. Supabase: task_events and project_chat_messages authored by agent still exist
+8. Supabase: tasks assigned to agent still exist
+9. Deleting again returns `{ ok: true }` (idempotent)
+10. Cannot delete `agent:main:main` (blocked)
+
+
 - **CronPage UI** (`src/components/pages/CronPage.tsx`):
   - Removed "Unassigned" option from Agent filter dropdown
   - Removed filter logic branch for `agentFilter === 'unassigned'`

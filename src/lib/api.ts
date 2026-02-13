@@ -629,48 +629,66 @@ export async function createAgent(input: {
   }
 }
 
-export async function deleteAgent(agentKey: string): Promise<{ ok: boolean; error?: string }> {
-  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+export async function deleteAgent(agentKey: string): Promise<{ ok: boolean; error?: string; cleanup_report?: any }> {
   if (agentKey === 'agent:main:main') return { ok: false, error: 'cannot_delete_primary_agent' };
 
   const projectId = getProjectId();
-  try {
-    // 1. Notify Control API to clean up workspace on the executor (best-effort)
-    const baseUrl = getApiBaseUrl();
-    if (baseUrl) {
-      try {
-        await fetch(`${baseUrl.replace(/\/+$/, '')}/api/agents/delete`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-clawdos-project': projectId,
-          },
-          body: JSON.stringify({ agentKey }),
-          signal: AbortSignal.timeout(10000),
-        });
-      } catch (e) {
-        console.warn('[deleteAgent] Control API cleanup failed (best-effort):', e);
-      }
-    }
 
-    // 2. Delete related Supabase rows (brain_docs, agent_status, provision requests, cron jobs targeting this agent)
+  // Primary path: call Control API DELETE /api/agents/:agentKey
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) {
+    try {
+      const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/agents/${encodeURIComponent(agentKey)}`, {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          'x-clawdos-project': projectId,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, cleanup_report: data.cleanup_report };
+      }
+      // If 403/400, don't fall back
+      if (res.status === 403 || res.status === 400) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: data.error || `HTTP ${res.status}` };
+      }
+      // Other errors: fall through to Supabase fallback
+      console.warn('[deleteAgent] Control API returned', res.status, '— falling back to Supabase');
+    } catch (e) {
+      console.warn('[deleteAgent] Control API unreachable — falling back to Supabase:', e);
+    }
+  }
+
+  // Fallback: direct Supabase cleanup (enhanced with missing tables)
+  if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
+
+  try {
+    const parts = agentKey.split(':');
+    const agentIdShort = parts.length >= 2 ? parts[1] : agentKey;
+
     await Promise.all([
       supabase.from('brain_docs').delete().eq('project_id', projectId).eq('agent_key', agentKey),
       supabase.from('agent_status').delete().eq('project_id', projectId).eq('agent_key', agentKey),
       supabase.from('agent_provision_requests').delete().eq('project_id', projectId).eq('agent_key', agentKey),
       supabase.from('cron_mirror').delete().eq('project_id', projectId).eq('target_agent_key', agentKey),
+      supabase.from('chat_delivery_queue').delete().eq('project_id', projectId).eq('target_agent_key', agentKey).in('status', ['queued', 'claimed']),
+      supabase.from('mentions').delete().eq('project_id', projectId).eq('agent_key', agentIdShort),
+      supabase.from('agent_mention_cursor').delete().eq('project_id', projectId).eq('agent_key', agentKey),
     ]);
 
-    // 3. Delete the agent row
+    // Delete agent row last
     const { error } = await supabase.from('agents').delete().eq('project_id', projectId).eq('agent_key', agentKey);
     if (error) throw error;
 
-    // 4. Activity log
+    // Activity log
     await supabase.from('activities').insert({
       project_id: projectId,
       type: 'agent_deleted',
-      message: `Deleted agent ${agentKey}`,
-      actor_agent_key: 'ui',
+      message: `Deleted agent ${agentKey} (Supabase fallback)`,
+      actor_agent_key: 'dashboard',
       task_id: null,
     });
 
@@ -679,7 +697,6 @@ export async function deleteAgent(agentKey: string): Promise<{ ok: boolean; erro
     return { ok: false, error: String(e?.message || e) };
   }
 }
-
 
 export async function queueProvisionRequest(
   projectId: string,
