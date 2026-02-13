@@ -1,4 +1,24 @@
-### Remove all Job Intent dropdowns from scheduled jobs
+### Agent Heartbeat v2: Autonomous hourly wake with task proposals, war room, and task adoption
+- **New Control API read endpoints** (`server/index.mjs`):
+  - `GET /api/tasks` — list tasks by status/limit/updated_since from Supabase (replaces file-based version)
+  - `GET /api/tasks/:taskId/events` — read recent task_events for context
+  - `GET /api/chat/recent` — read war room messages (null thread_id = general channel)
+- **New Control API write endpoints**:
+  - `POST /api/tasks/:taskId/assign` — update assignment + emit `assignment_change` event
+  - `POST /api/tasks/:taskId/status` — update status + emit `status_change` event
+- **Auto-heartbeat at provisioning**: Both `server/index.mjs` (direct) and `scripts/cron-mirror.mjs` (queued) now auto-create an hourly heartbeat cron job (`heartbeat-{agentIdShort}`) for every new agent. Deterministic naming prevents duplicates on re-provision.
+- **Heartbeat prompt**: 4-step autonomous behavior baked into cron instructions — propose tasks, assist active work, contribute to war room, complete own tasks. Role-based guidance (Builder/QA/PM) and anti-spam rules included.
+- **Dashboard helpers** (`src/lib/api.ts`): Added `fetchTasksViaControlApi`, `fetchTaskEventsViaControlApi`, `fetchRecentChatViaControlApi`, `assignTaskViaControlApi`, `updateTaskStatusViaControlApi` — all with Supabase fallback.
+- **Documentation**: Updated `docs/CONTROL-API-BRIDGE.md` with full endpoint contracts.
+
+**Verification checklist:**
+1. Provision a new agent → heartbeat cron job appears in Schedule page
+2. Run heartbeat once manually → proposed tasks appear in Inbox
+3. Heartbeat posts a comment on an active task (check TaskTimeline)
+4. Heartbeat posts at most 2 war room messages (check Chat page)
+5. Re-provisioning same agent does NOT create duplicate heartbeat job
+
+
 - Removed the "Job Intent" filter dropdown from the Schedule page filters.
 - Removed the "Job Intent" field from the Create dialog.
 - Removed the "Job Intent" field from the Edit dialog.
