@@ -187,6 +187,17 @@ async function mirrorCronList() {
     const lastRunAt = j?.state?.lastRunAtMs ? new Date(Number(j.state.lastRunAtMs)).toISOString() : null;
     const instructions = j?.payload?.message ? String(j.payload.message).slice(0, 2000) : null;
 
+    // Extract target agent from instructions @agent: header or sessionTarget
+    let target_agent_key = j?.sessionTarget || null;
+    if (!target_agent_key && instructions) {
+      const agentMatch = instructions.match(/@agent:([a-zA-Z0-9_:-]+)/);
+      if (agentMatch) {
+        target_agent_key = `agent:${agentMatch[1].replace(/^agent:/, '')}`;
+        if (!target_agent_key.includes(':')) target_agent_key = `agent:${target_agent_key}:main`;
+      }
+    }
+    if (!target_agent_key) target_agent_key = 'agent:main:main';
+
     return {
       project_id: PROJECT_ID,
       job_id: String(j.id),
@@ -200,11 +211,22 @@ async function mirrorCronList() {
       last_status: j?.state?.lastStatus ? String(j.state.lastStatus) : null,
       last_duration_ms: typeof j?.state?.lastDurationMs === 'number' ? j.state.lastDurationMs : null,
       instructions,
+      target_agent_key,
     };
   });
 
   const { error: upErr } = await sb.from('cron_mirror').upsert(rows, { onConflict: 'project_id,job_id' });
   if (upErr) throw upErr;
+
+  // One-time cleanup: ensure no null/empty target_agent_key rows exist
+  try {
+    await sb.from('cron_mirror')
+      .update({ target_agent_key: 'agent:main:main' })
+      .eq('project_id', PROJECT_ID)
+      .or('target_agent_key.is.null,target_agent_key.eq.');
+  } catch (e) {
+    console.error('[cron-mirror] cleanup null target_agent_key failed', e);
+  }
 
   const { error: fpErr } = await sb.from('cron_mirror').upsert(
     {

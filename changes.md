@@ -1,3 +1,32 @@
+### Eliminate "Unassigned" Scheduled Jobs
+- **CronPage UI** (`src/components/pages/CronPage.tsx`):
+  - Removed "Unassigned" option from Agent filter dropdown
+  - Removed filter logic branch for `agentFilter === 'unassigned'`
+  - Create dialog: agent selector defaults to `agent:main:main`, removed "No specific agent" option
+  - Edit dialog: agent selector defaults to `agent:main:main`, removed "No agent assigned" option
+  - `getEffectiveTargetAgent` now returns `'agent:main:main'` instead of `null` when no agent found
+  - Toast text no longer falls back to "Unassigned"
+- **AgentAssignmentDropdown** (`src/components/schedule/AgentAssignmentDropdown.tsx`):
+  - Removed "Unassigned" option from compact popover
+  - Removed "No specific agent" option from full mode
+  - Null/empty values now display main agent instead of "Needs assignment" amber warning
+  - `onChange` handler defaults to `agent:main:main` instead of `null`
+- **Cron mirror** (`scripts/cron-mirror.mjs`):
+  - Mirror rows now include `target_agent_key` extracted from instructions `@agent:` header or `sessionTarget`
+  - Falls back to `'agent:main:main'` if no agent found
+  - One-time cleanup: updates all null/empty `target_agent_key` rows to `'agent:main:main'`
+- **Control API** (`server/index.mjs`):
+  - `GET /api/cron` response now includes normalized `targetAgentKey` (default `'agent:main:main'`)
+  - Edit endpoint best-effort mirror includes `target_agent_key` from patch
+
+**Verification checklist:**
+1. Open Schedule page — no "Unassigned" filter option in Agent dropdown
+2. Existing jobs with no agent show "Trunks (main)" or main agent badge
+3. Create new job — agent defaults to main, no "No specific agent" option
+4. Edit a job — no "No agent assigned" option, defaults to main
+5. Run cron-mirror — all `cron_mirror` rows have non-null `target_agent_key`
+6. Inline agent dropdown — no "Unassigned" or "Needs assignment" display
+
 ### Task Stop/Delete, @Mentions, and War Room Context
 - **Task Stop & Delete** (`server/index.mjs`, `src/lib/api.ts`):
   - `POST /api/tasks/:taskId/stop` — sets status to `stopped`, emits `status_change` event with optional reason

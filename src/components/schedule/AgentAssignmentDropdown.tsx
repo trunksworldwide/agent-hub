@@ -39,8 +39,11 @@ export function AgentAssignmentDropdown({
   // Find the selected agent
   const selectedAgent = agents.find((a) => a.id === value);
 
+  const mainAgentKey = 'agent:main:main';
+  const mainAgent = agents.find((a) => a.id === mainAgentKey);
+
   const handleSelect = (agentId: string) => {
-    onChange(agentId === '' ? null : agentId);
+    onChange(agentId || mainAgentKey);
     setOpen(false);
   };
 
@@ -67,8 +70,8 @@ export function AgentAssignmentDropdown({
               </>
             ) : (
               <>
-                <User className="w-3 h-3" />
-                <span className="text-amber-600 dark:text-amber-400">Needs assignment</span>
+                <span className="text-sm">{mainAgent?.avatar || '🤖'}</span>
+                <span className="max-w-[100px] truncate">{mainAgent?.name || 'Main'}</span>
               </>
             )}
             <ChevronsUpDown className="w-2.5 h-2.5 opacity-40" />
@@ -80,11 +83,6 @@ export function AgentAssignmentDropdown({
             <CommandList>
               <CommandEmpty>No agents found.</CommandEmpty>
               <CommandGroup>
-                <CommandItem value="" onSelect={() => handleSelect('')}>
-                  <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Unassigned</span>
-                  {!value && <Check className="ml-auto h-4 w-4" />}
-                </CommandItem>
                 {agents.map((agent) => (
                   <CommandItem
                     key={agent.id}
@@ -131,11 +129,6 @@ export function AgentAssignmentDropdown({
           <CommandList>
             <CommandEmpty>No agents found.</CommandEmpty>
             <CommandGroup>
-              <CommandItem value="" onSelect={() => handleSelect('')}>
-                <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">No specific agent</span>
-                {!value && <Check className="ml-auto h-4 w-4" />}
-              </CommandItem>
               {agents.map((agent) => (
                 <CommandItem
                   key={agent.id}
