@@ -1,3 +1,37 @@
+### Task Stop/Delete, @Mentions, and War Room Context
+- **Task Stop & Delete** (`server/index.mjs`, `src/lib/api.ts`):
+  - `POST /api/tasks/:taskId/stop` — sets status to `stopped`, emits `status_change` event with optional reason
+  - `POST /api/tasks/:taskId/delete` — soft-deletes (sets `deleted_at`/`deleted_by`), emits `task_deleted` event, idempotent
+  - Dashboard helpers: `stopTask()`, `softDeleteTask()` with Control API + Supabase fallback
+  - `TaskStatus` type updated to include `'stopped'`; `Task` interface includes `deletedAt`/`deletedBy`
+  - `getTasks()` now filters out soft-deleted tasks (`deleted_at IS NOT NULL`)
+- **UI** (`TaskDetailSheet.tsx`, `TaskListView.tsx`):
+  - Stop button (Square icon, orange) and Delete button (Trash2 icon, destructive) in TaskDetailSheet header
+  - `StopTaskDialog` — confirmation with optional reason (same pattern as RejectConfirmDialog)
+  - `DeleteTaskConfirmDialog` — confirmation with accurate soft-delete copy
+  - `stopped` added to STATUS_COLUMNS, STATUS_LABELS, STATUS_COLORS
+  - "Show Stopped" filter checkbox in TaskListView
+- **@Mentions system** (`server/index.mjs`, DB migration):
+  - `mentions` table (RLS enabled, no anon policies — service-role only via Control API)
+  - `agent_mention_cursor` table for per-agent last-seen tracking
+  - `extractMentionKeys()` — matches `@ricky` and `@agent:ricky:main`, normalizes to short key, validates against agents table
+  - Mentions auto-populated on `POST /api/tasks/:taskId/events` and `POST /api/chat/post`
+  - `GET /api/mentions?agent_key=<key>&since=<ISO>` — read new mentions
+  - `POST /api/mentions/ack` — update cursor with GREATEST semantics (prevents regression)
+- **Heartbeat prompt updates** (`buildHeartbeatInstructions`):
+  - New STEP 0: check @mentions first, respond in-thread, then ack
+  - STEP 3 (War Room): bounded read (`limit=100`), include "Context (war room)" section when proposing tasks from chat
+- **Documentation**: Updated `docs/CONTROL-API-BRIDGE.md` with stop, delete, mentions, and ack endpoints
+
+**Verification checklist:**
+1. Stop a task from TaskDetailSheet → status changes to `stopped`, event in timeline
+2. Delete a task → disappears from board, `deleted_at` set, task_event logged
+3. Type `@ricky` in war room chat via Control API → mention row created in `mentions` table
+4. Call `GET /api/mentions?agent_key=ricky&since=...` → returns new mentions
+5. Call `POST /api/mentions/ack` with max created_at → cursor updated
+6. Re-call GET /api/mentions with new cursor → returns empty
+7. Agent heartbeat responds to mention, then acks → no re-response on next run
+
 ### Agent Heartbeat v2: Autonomous hourly wake with task proposals, war room, and task adoption
 - **New Control API read endpoints** (`server/index.mjs`):
   - `GET /api/tasks` — list tasks by status/limit/updated_since from Supabase (replaces file-based version)

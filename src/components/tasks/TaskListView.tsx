@@ -10,7 +10,7 @@ import { type Task, type Agent, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 
-const STATUS_ORDER: TaskStatus[] = ['in_progress', 'blocked', 'assigned', 'review', 'done'];
+const STATUS_ORDER: TaskStatus[] = ['in_progress', 'blocked', 'assigned', 'review', 'stopped', 'done'];
 const STATUS_LABELS: Record<TaskStatus, string> = {
   inbox: 'Inbox',
   assigned: 'Assigned',
@@ -18,6 +18,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   review: 'Review',
   done: 'Done',
   blocked: 'Blocked',
+  stopped: 'Stopped',
 };
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
@@ -27,6 +28,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   review: 'bg-purple-500/20 text-purple-700',
   done: 'bg-green-500/20 text-green-700',
   blocked: 'bg-red-500/20 text-red-700',
+  stopped: 'bg-orange-500/20 text-orange-700',
 };
 
 interface TaskListViewProps {
@@ -41,6 +43,7 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
   const [assigneeFilter, setAssigneeFilter] = useState<string>('__all__');
   const [showDone, setShowDone] = useState(false);
   const [showRejected, setShowRejected] = useState(false);
+  const [showStopped, setShowStopped] = useState(false);
   const [groupByStatus, setGroupByStatus] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<TaskStatus>>(new Set(['done']));
 
@@ -51,6 +54,9 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
       
       // Filter out done tasks unless showing them
       if (task.status === 'done' && !task.rejectedAt && !showDone) return false;
+
+      // Filter out stopped tasks unless showing them
+      if (task.status === 'stopped' && !showStopped) return false;
       
       // Filter out inbox tasks (those go to the board)
       if (task.status === 'inbox') return false;
@@ -77,7 +83,7 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
 
       return true;
     });
-  }, [tasks, search, assigneeFilter, showDone, showRejected]);
+  }, [tasks, search, assigneeFilter, showDone, showRejected, showStopped]);
 
   const groupedTasks = useMemo(() => {
     const groups: Record<string, Task[]> = {};
@@ -172,6 +178,16 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
             />
             <label htmlFor="showRejected" className="text-sm cursor-pointer">
               Show Rejected
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="showStopped"
+              checked={showStopped}
+              onCheckedChange={(c) => setShowStopped(c === true)}
+            />
+            <label htmlFor="showStopped" className="text-sm cursor-pointer">
+              Show Stopped
             </label>
           </div>
           <div className="flex items-center gap-2">

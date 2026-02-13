@@ -96,6 +96,7 @@ export function TasksPage() {
       review: [],
       done: [],
       blocked: [],
+      stopped: [],
     };
     for (const task of visibleTasks) {
       const col = map[task.status];
