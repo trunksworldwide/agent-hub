@@ -1366,23 +1366,23 @@ export async function createDocOverride(agentKey: string, docType: AgentFile['ty
       { type: 'memory_long', content: genResult.memory || '' },
     ];
 
-    // Write each doc: disk-first, then Supabase fallback
+    // Write each doc: best-effort disk sync, then always upsert to Supabase
     for (const doc of docsToWrite) {
-      const diskHandled = await trySyncToControlApi(agentKey, doc.type, doc.content);
-      if (!diskHandled) {
-        // Fallback: write to Supabase directly
-        const { error } = await supabase.from('brain_docs').upsert(
-          {
-            project_id: projectId,
-            agent_key: agentKey,
-            doc_type: doc.type,
-            content: doc.content,
-            updated_by: 'dashboard',
-          },
-          { onConflict: 'project_id,agent_key,doc_type' }
-        );
-        if (error) throw error;
-      }
+      // Best-effort: sync to disk for executor immediacy
+      await trySyncToControlApi(agentKey, doc.type, doc.content);
+
+      // Always write to Supabase so dashboard reflects the override immediately
+      const { error } = await supabase.from('brain_docs').upsert(
+        {
+          project_id: projectId,
+          agent_key: agentKey,
+          doc_type: doc.type,
+          content: doc.content,
+          updated_by: 'dashboard',
+        },
+        { onConflict: 'project_id,agent_key,doc_type' }
+      );
+      if (error) throw error;
     }
 
     // Update agents.description with the AI-generated blurb
@@ -1420,21 +1420,21 @@ export async function createSingleDocOverride(agentKey: string, docType: AgentFi
 
     const content = globalDoc?.content || '';
 
-    // Write as agent-specific row: disk-first, then Supabase fallback
-    const diskHandled = await trySyncToControlApi(agentKey, docType, content);
-    if (!diskHandled) {
-      const { error } = await supabase.from('brain_docs').upsert(
-        {
-          project_id: projectId,
-          agent_key: agentKey,
-          doc_type: docType,
-          content,
-          updated_by: 'dashboard',
-        },
-        { onConflict: 'project_id,agent_key,doc_type' }
-      );
-      if (error) throw error;
-    }
+    // Best-effort: sync to disk for executor immediacy
+    await trySyncToControlApi(agentKey, docType, content);
+
+    // Always write to Supabase so dashboard reflects the override immediately
+    const { error } = await supabase.from('brain_docs').upsert(
+      {
+        project_id: projectId,
+        agent_key: agentKey,
+        doc_type: docType,
+        content,
+        updated_by: 'dashboard',
+      },
+      { onConflict: 'project_id,agent_key,doc_type' }
+    );
+    if (error) throw error;
 
     return { ok: true };
   } catch (e: any) {
