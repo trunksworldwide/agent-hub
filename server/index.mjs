@@ -703,6 +703,32 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/project/overview — upsert project-level brain_docs for mission/overview
+    if (req.method === 'POST' && url.pathname === '/api/project/overview') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const mission = body.mission === undefined ? null : String(body.mission || '').trim();
+        const overview = body.overview === undefined ? null : String(body.overview || '').trim();
+        const updatedBy = String(body.updated_by || body.author || 'control-api').trim();
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const rows = [];
+        if (mission !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'project_mission', content: mission, updated_by: updatedBy });
+        if (overview !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'project_overview', content: overview, updated_by: updatedBy });
+        if (!rows.length) return sendJson(res, 400, { ok: false, error: 'missing_mission_or_overview' });
+
+        const { error } = await sb.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
+        if (error) throw error;
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/documents/note — create a text note in project_documents (service role)
     if (req.method === 'POST' && url.pathname === '/api/documents/note') {
       try {
