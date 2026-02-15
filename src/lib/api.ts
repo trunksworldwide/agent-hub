@@ -630,7 +630,7 @@ export async function createAgent(input: {
         `@agent:${agentKey}`,
         `@intent:heartbeat`,
         '',
-        `Hourly heartbeat for ${name}.`,
+        `30-minute heartbeat for ${name}.`,
         '',
         'STEP 0: Check for new @mentions or DMs addressed to you. Respond to each before doing anything else.',
         'STEP 1: Read the war room / project chat (last 50-100 messages). Note anything relevant to your role.',
@@ -641,13 +641,13 @@ export async function createAgent(input: {
         '  - Propose 1-3 small tasks for approval in the inbox.',
         'STEP 4: If blocked on anything, propose an "UNBLOCK:" task describing what access or info you need.',
         '',
-        'Anti-spam: if you already contributed in the last hour with nothing new to add, do nothing.',
+        'Anti-spam: if you already contributed recently with nothing new to add, do nothing.',
       ].join('\n');
 
       queueCronCreateRequest({
         name: `${name} Heartbeat`,
         scheduleKind: 'interval',
-        scheduleExpr: '60m',
+        scheduleExpr: '30m',
         tz: 'America/New_York',
         instructions: heartbeatInstructions,
         targetAgentKey: agentKey,

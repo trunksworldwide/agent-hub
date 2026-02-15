@@ -2622,7 +2622,7 @@ const server = http.createServer(async (req, res) => {
           if (!heartbeatExists) {
             const heartbeatInstructions = buildHeartbeatInstructions({ agentKey, displayName, role: roleShort || 'General' });
             await execExecutor(
-              `cron create ${JSON.stringify(heartbeatJobName)} --every 3600000 --agent ${JSON.stringify(agentIdShort)} --system-event ${JSON.stringify(heartbeatInstructions)}`,
+              `cron create ${JSON.stringify(heartbeatJobName)} --every 1800000 --agent ${JSON.stringify(agentIdShort)} --system-event ${JSON.stringify(heartbeatInstructions)}`,
               { timeout: 30000 }
             );
             console.log(`[provision] Created heartbeat cron job: ${heartbeatJobName}`);
