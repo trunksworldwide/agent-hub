@@ -1106,6 +1106,61 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/cron/consistency') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // Control API (gateway) view
+        let control = { ok: false, jobs: 0, error: null };
+        try {
+          const { stdout } = await execExecutor('cron list --json --timeout 15000', { timeout: 20000 });
+          const parsed = JSON.parse(stdout || '{}');
+          const jobs = Array.isArray(parsed?.jobs) ? parsed.jobs : (Array.isArray(parsed) ? parsed : []);
+          control = { ok: true, jobs: jobs.length, error: null };
+        } catch (e) {
+          control = { ok: false, jobs: 0, error: String(e?.message || e) };
+        }
+
+        // Mirror view
+        let mirror = { ok: true, jobs: 0, lastSuccessAt: null };
+        try {
+          const { count, error } = await sb
+            .from('cron_mirror')
+            .select('id', { count: 'exact', head: true })
+            .eq('project_id', projectId)
+            .neq('id', '__mirror_state__');
+          if (error) throw error;
+          mirror.jobs = Number(count || 0);
+        } catch (e) {
+          mirror.ok = false;
+        }
+
+        try {
+          const { data } = await sb
+            .from('cron_mirror')
+            .select('id,updated_at,metadata')
+            .eq('project_id', projectId)
+            .eq('id', '__mirror_state__')
+            .maybeSingle();
+          if (data?.metadata?.lastSuccessAt) mirror.lastSuccessAt = data.metadata.lastSuccessAt;
+          if (!mirror.lastSuccessAt && data?.updated_at) mirror.lastSuccessAt = data.updated_at;
+        } catch {
+          // ignore
+        }
+
+        const maxAgeMin = Number(url.searchParams.get('max_age_min') || process.env.CLAWDOS_CRON_MIRROR_MAX_AGE_MIN || '10');
+        const lastSuccessMs = mirror.lastSuccessAt ? Date.parse(String(mirror.lastSuccessAt)) : null;
+        const stale = lastSuccessMs ? (Date.now() - lastSuccessMs) > maxAgeMin * 60_000 : true;
+
+        const mismatch = control.ok && mirror.ok ? (control.jobs !== mirror.jobs) : null;
+        return sendJson(res, 200, { ok: true, control, mirror, stale, mismatch, maxAgeMin });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/cron') {
       try {
         // Cron list can take longer than the default gateway timeout.
@@ -2016,9 +2071,22 @@ const server = http.createServer(async (req, res) => {
 
         const findOrCreateFolder = async ({ name, parentId }) => {
           // Try search first (best-effort). gog drive search is full-text; we filter client-side.
+          // IMPORTANT: multiple folders can share the same name. Prefer exact matches under the expected parent.
           const results = await execGogJson(`drive search ${JSON.stringify(name)}`);
           const list = Array.isArray(results) ? results : (results?.files || results?.items || []);
-          const exact = (list || []).find((f) => f?.name === name && String(f?.mimeType || '').includes('folder')) || null;
+
+          const isFolder = (f) => String(f?.mimeType || '').includes('folder');
+          const parents = (f) => {
+            const p = f?.parents;
+            if (!p) return [];
+            return Array.isArray(p) ? p : [p];
+          };
+
+          let exact = (list || []).find((f) => f?.name === name && isFolder(f) && (!parentId || parents(f).includes(parentId))) || null;
+          if (!exact && parentId) {
+            // If search results don't include parent info, fall back to name+folder only.
+            exact = (list || []).find((f) => f?.name === name && isFolder(f)) || null;
+          }
           if (exact?.id) return exact;
 
           const created = await execGogJson(`drive mkdir ${JSON.stringify(name)}${parentId ? ` --parent ${JSON.stringify(parentId)}` : ''}`);
@@ -2043,6 +2111,7 @@ const server = http.createServer(async (req, res) => {
 
         // Upload spine doc into project folder; convert to Google Doc for readability.
         const spineDoc = await execGogJson(`drive upload ${JSON.stringify(tmpSpine)} --parent ${JSON.stringify(projectFolder?.id)} --name ${JSON.stringify('README_SPINE')} --convert-to doc`);
+        try { unlinkSync(tmpSpine); } catch { /* ignore */ }
 
         // Capabilities doc (single canonical contract for agents)
         const capabilitiesText = `# ${projectFolderName} — Capabilities (Mission Control Contract)\n\nThis doc lists what agents can do in this project and the exact endpoints to call. Keep it up to date.\n\nRequired header\n- x-clawdos-project: ${projectIdFromPath}\n\nCore actions\n\n1) Propose tasks (lands in Inbox for approval)\nPOST /api/tasks/propose\nBody: { title, description?, assignee_agent_key?, author }\n\n2) Post task timeline events (canonical thread)\nPOST /api/tasks/:taskId/events\nBody: { event_type, content, metadata?, author }\n\n3) Post to war room / chat\nPOST /api/chat/post\nBody: { message, thread_id?, author, message_type?, metadata? }\n\n4) Upload artifacts to Drive (recommended)\nPOST /api/drive/upload\nBody: { category: inbox|specs|ops|assets|exports, name, content, author, convertTo? }\nReturns: { fileId, url, folderId }\n\nDrive spine\n- Project folder: (see dashboard Project settings)\n- Default dump zone: 00_inbox\n\nBehavior rules\n- If unsure, upload to inbox and link it in the relevant task thread.\n- Use agent-browser as the default web browsing tool.\n`;
@@ -2053,6 +2122,7 @@ const server = http.createServer(async (req, res) => {
         // Upload capabilities doc into 02_ops for discoverability; convert to Google Doc.
         const opsFolderId = createdSub['02_ops'] || projectFolder?.id;
         const capabilitiesDoc = await execGogJson(`drive upload ${JSON.stringify(tmpCaps)} --parent ${JSON.stringify(opsFolderId)} --name ${JSON.stringify('CAPABILITIES')} --convert-to doc`);
+        try { unlinkSync(tmpCaps); } catch { /* ignore */ }
 
         const rootUrl = (await execGogJson(`drive url ${JSON.stringify(rootFolder?.id)}`))?.[0]?.url || null;
         const projectUrl = (await execGogJson(`drive url ${JSON.stringify(projectFolder?.id)}`))?.[0]?.url || null;
@@ -2096,6 +2166,64 @@ const server = http.createServer(async (req, res) => {
           capabilitiesDoc: { id: capabilitiesDoc?.id || null, url: capabilitiesUrl },
           subfolders: createdSub,
         });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // GET /api/projects/:projectId/drive/verify — verify Drive spine settings exist and are reachable
+    const driveVerifyMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/drive\/verify$/);
+    if (driveVerifyMatch && req.method === 'GET') {
+      const [, projectIdFromPath] = driveVerifyMatch;
+      try {
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const keys = [
+          'drive_project_folder_id',
+          'drive_folder_inbox_id',
+          'drive_folder_specs_id',
+          'drive_folder_ops_id',
+          'drive_folder_assets_id',
+          'drive_folder_exports_id',
+        ];
+
+        const { data, error } = await sb
+          .from('project_settings')
+          .select('key,value')
+          .eq('project_id', projectIdFromPath)
+          .in('key', keys);
+        if (error) throw error;
+
+        const settings = {};
+        for (const row of data || []) settings[row.key] = row.value;
+
+        const missing = keys.filter((k) => !settings[k]);
+        if (missing.length > 0) {
+          return sendJson(res, 200, { ok: false, reachable: false, missingKeys: missing });
+        }
+
+        // Best-effort reachability check: request URLs for the folder ids.
+        const account = String(process.env.GOG_ACCOUNT_EMAIL || 'trunksworldwide@gmail.com');
+        const client = String(process.env.GOG_CLIENT || 'trunksworldwide');
+        const ids = keys.map((k) => settings[k]).filter(Boolean);
+
+        const results = [];
+        for (const id of ids) {
+          try {
+            const { stdout } = await exec(
+              `gog drive url ${JSON.stringify(id)} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`,
+              { env: { ...process.env }, timeout: 30000, maxBuffer: 2 * 1024 * 1024 }
+            );
+            const url = (JSON.parse(stdout || 'null')?.[0]?.url) || null;
+            results.push({ id, ok: !!url, url });
+          } catch (e) {
+            results.push({ id, ok: false, error: String(e?.message || e) });
+          }
+        }
+
+        const reachable = results.every((r) => r.ok);
+        return sendJson(res, 200, { ok: reachable, reachable, results });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
