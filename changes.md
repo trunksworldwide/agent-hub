@@ -6,7 +6,10 @@
 - **Dashboard API** (`src/lib/api.ts`): Added `searchKnowledge()` and `ingestKnowledge()` helpers via Control API. Auto-ingestion hooks in `createNoteDocument()` and `uploadDocument()` (best-effort, non-blocking).
 - **Knowledge Page** (`DocumentsPage.tsx`): Added search bar with debounced query, compact results list (title, excerpt, source type badge). No similarity scores shown.
 - **Schedule Page** (`CronPage.tsx`): Added mirror staleness banner (amber warning when >10 min stale) and per-job "Mirror" badge when executor is offline.
-- **Remaining**: Phase 3 (Control API `/api/knowledge/ingest`, `/api/knowledge/search`, `/api/health/report` routes in `server/index.mjs`) must be implemented on the Mac mini executor side.
+- **Control API Phase 3** (`server/index.mjs`): Added three new routes:
+  - `POST /api/knowledge/ingest`: Async ingestion with YouTube transcript (oEmbed, no yt-dlp), URL extraction with junk-page heuristics (strip nav/footer/script, captcha detection, <500 char rejection), dedupe via SHA-256 content hash + normalized URL, placeholder records for unsupported file types, fire-and-forget embed via knowledge-worker edge function.
+  - `POST /api/knowledge/search`: Proxy to knowledge-worker edge function with service-role auth.
+  - `POST /api/health/report`: Checks executor version, cron mirror staleness (>10 min), chat delivery queue stuck items (>5 min), posts formatted report to war room.
 
 ### Autonomous Agent Wake Routine — War Room + Heartbeat
 - **Edge Function** (`generate-agent-docs`):

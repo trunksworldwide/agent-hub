@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { readFile, writeFile, stat, readdir, mkdir } from 'node:fs/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -2908,6 +2909,275 @@ const server = http.createServer(async (req, res) => {
 
       console.log(`[delete-agent] Cleanup complete for ${agentKey}:`, JSON.stringify(report));
       return sendJson(res, 200, { ok: true, cleanup_report: report });
+    }
+
+    // ── Knowledge: Ingest ────────────────────────────────────────────────
+    if (method === 'POST' && urlPath === '/api/knowledge/ingest') {
+      const body = await readBodyJson(req);
+      const { title, source_url, source_type, text } = body;
+
+      const sb = getSupabaseServerClient();
+      if (!sb) return sendJson(res, 500, { ok: false, error: 'service_role_not_configured' });
+
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+      // Detect source type
+      let detectedType = source_type || 'note';
+      let rawText = text || '';
+      let sourceUrl = source_url || null;
+      let indexError = null;
+      let shouldIndex = true;
+
+      if (sourceUrl) {
+        const urlLower = sourceUrl.toLowerCase();
+        const isYoutube = urlLower.includes('youtube.com/watch') || urlLower.includes('youtu.be/');
+
+        if (isYoutube) {
+          detectedType = 'youtube';
+          // Try YouTube transcript via public oEmbed (best-effort, no yt-dlp)
+          try {
+            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(sourceUrl)}&format=json`;
+            const oRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(5000) });
+            if (oRes.ok) {
+              const oData = await oRes.json();
+              rawText = `YouTube: ${oData.title || 'Unknown'}\n\nSource: ${sourceUrl}`;
+              // Transcript not available via oEmbed; mark accordingly
+              indexError = 'transcript_unavailable';
+              shouldIndex = false;
+            } else {
+              indexError = 'transcript_unavailable';
+              shouldIndex = false;
+            }
+          } catch {
+            indexError = 'transcript_unavailable';
+            shouldIndex = false;
+          }
+        } else {
+          detectedType = 'url';
+          // Fetch and extract text with junk-page heuristics
+          try {
+            const pageRes = await fetch(sourceUrl, {
+              signal: AbortSignal.timeout(10000),
+              headers: { 'User-Agent': 'ClawdOS-Knowledge/1.0' },
+            });
+            if (!pageRes.ok) {
+              return sendJson(res, 400, { ok: false, error: `fetch_failed_${pageRes.status}` });
+            }
+            let html = await pageRes.text();
+
+            // Strip scripts, styles, nav, footer, header tags
+            html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+            html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+            html = html.replace(/<nav[\s\S]*?<\/nav>/gi, '');
+            html = html.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+            html = html.replace(/<header[\s\S]*?<\/header>/gi, '');
+            html = html.replace(/<aside[\s\S]*?<\/aside>/gi, '');
+
+            // Count <p> tags before stripping
+            const pCount = (html.match(/<p[\s>]/gi) || []).length;
+
+            // Strip remaining HTML tags
+            rawText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+            // Junk-page heuristics
+            if (rawText.length < 500) {
+              return sendJson(res, 400, { ok: false, error: 'extraction_too_short' });
+            }
+            if (pCount < 3 && rawText.length < 1000) {
+              return sendJson(res, 400, { ok: false, error: 'page_blocked' });
+            }
+
+            // Captcha detection
+            const captchaPatterns = ['captcha', 'cf-browser-verification', 'challenge-platform'];
+            const lowerText = rawText.toLowerCase();
+            if (captchaPatterns.some(p => lowerText.includes(p)) && rawText.length < 2000) {
+              return sendJson(res, 400, { ok: false, error: 'page_blocked' });
+            }
+          } catch (e) {
+            return sendJson(res, 400, { ok: false, error: `fetch_error: ${e?.message || e}` });
+          }
+        }
+      } else if (!rawText && detectedType === 'file') {
+        // Unsupported file type (PDF, doc, etc.) — create placeholder
+        indexError = 'unsupported_file_type';
+        shouldIndex = false;
+      }
+
+      // Normalize URL for dedupe
+      let normalizedUrl = null;
+      if (sourceUrl) {
+        try {
+          const u = new URL(sourceUrl);
+          // Strip tracking params
+          for (const key of [...u.searchParams.keys()]) {
+            if (/^(utm_|fbclid|gclid|ref$)/.test(key)) u.searchParams.delete(key);
+          }
+          u.searchParams.sort();
+          // Strip trailing slash
+          normalizedUrl = u.toString().replace(/\/+$/, '');
+        } catch {
+          normalizedUrl = sourceUrl;
+        }
+      }
+
+      // Content hash for dedupe
+      const contentHash = crypto.createHash('sha256').update(rawText || sourceUrl || '').digest('hex');
+
+      // Check for duplicate
+      const { data: existing } = await sb
+        .from('knowledge_sources')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('content_hash', contentHash)
+        .maybeSingle();
+
+      if (existing) {
+        return sendJson(res, 200, { ok: true, sourceId: existing.id, wasDuplicate: true });
+      }
+
+      // Insert source
+      const { data: inserted, error: insertErr } = await sb
+        .from('knowledge_sources')
+        .insert({
+          project_id: projectId,
+          title: title || sourceUrl || 'Untitled',
+          source_type: detectedType,
+          source_url: sourceUrl,
+          normalized_url: normalizedUrl,
+          raw_text: rawText,
+          content_hash: contentHash,
+          char_count: rawText.length,
+          indexed: false,
+          index_error: indexError,
+        })
+        .select('id')
+        .single();
+
+      if (insertErr) {
+        console.error('[knowledge/ingest] Insert failed:', insertErr);
+        return sendJson(res, 500, { ok: false, error: insertErr.message });
+      }
+
+      const sourceId = inserted.id;
+
+      // Async embed (fire-and-forget) — only if we have text to index
+      if (shouldIndex && rawText.trim() && supabaseUrl && serviceKey) {
+        fetch(`${supabaseUrl}/functions/v1/knowledge-worker`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'embed', projectId, sourceId }),
+        }).catch(e => {
+          console.warn('[knowledge/ingest] Async embed fire-and-forget failed:', e?.message || e);
+        });
+      }
+
+      const status = shouldIndex ? 'indexing' : 'not_indexed';
+      return sendJson(res, 200, { ok: true, sourceId, status, reason: indexError || undefined });
+    }
+
+    // ── Knowledge: Search ─────────────────────────────────────────────────
+    if (method === 'POST' && urlPath === '/api/knowledge/search') {
+      const body = await readBodyJson(req);
+      const { query, limit } = body;
+
+      if (!query) return sendJson(res, 400, { ok: false, error: 'query is required' });
+
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+      if (!supabaseUrl || !serviceKey) {
+        return sendJson(res, 500, { ok: false, error: 'service_role_not_configured' });
+      }
+
+      try {
+        const workerRes = await fetch(`${supabaseUrl}/functions/v1/knowledge-worker`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'search', projectId, query, limit: limit || 5 }),
+        });
+
+        const workerData = await workerRes.json();
+        return sendJson(res, workerRes.ok ? 200 : workerRes.status, workerData);
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: `knowledge-worker call failed: ${e?.message || e}` });
+      }
+    }
+
+    // ── Health: Report ────────────────────────────────────────────────────
+    if (method === 'POST' && urlPath === '/api/health/report') {
+      const sb = getSupabaseServerClient();
+      if (!sb) return sendJson(res, 500, { ok: false, error: 'service_role_not_configured' });
+
+      const lines = [];
+
+      // 1. Executor self-check
+      try {
+        const { stdout } = await execExecutor('--version');
+        lines.push(`✅ Executor alive: ${stdout.trim()}`);
+      } catch (e) {
+        lines.push(`❌ Executor unreachable: ${e?.message || 'unknown'}`);
+      }
+
+      // 2. Cron mirror staleness
+      try {
+        const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        const { data: staleJobs } = await sb
+          .from('cron_mirror')
+          .select('name, updated_at')
+          .eq('project_id', projectId)
+          .lt('updated_at', tenMinAgo);
+
+        if (staleJobs && staleJobs.length > 0) {
+          lines.push(`⚠️ ${staleJobs.length} cron mirror(s) stale (>10min): ${staleJobs.map(j => j.name).slice(0, 5).join(', ')}`);
+        } else {
+          lines.push('✅ Cron mirrors fresh');
+        }
+      } catch {
+        lines.push('⚠️ Could not check cron mirror staleness');
+      }
+
+      // 3. Chat delivery queue stuck items
+      try {
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data: stuckItems, count } = await sb
+          .from('chat_delivery_queue')
+          .select('id', { count: 'exact', head: true })
+          .eq('project_id', projectId)
+          .in('status', ['queued', 'claimed'])
+          .lt('created_at', fiveMinAgo);
+
+        const stuckCount = count || 0;
+        if (stuckCount > 0) {
+          lines.push(`⚠️ ${stuckCount} chat delivery item(s) stuck (>5min)`);
+        } else {
+          lines.push('✅ Chat delivery queue clear');
+        }
+      } catch {
+        lines.push('⚠️ Could not check delivery queue');
+      }
+
+      // Cap at 5 lines
+      const report = lines.slice(0, 5).join('\n');
+
+      // Post to war room (thread_id = null)
+      try {
+        await sb.from('project_chat_messages').insert({
+          project_id: projectId,
+          author: 'system:health',
+          message: `📋 **Health Report**\n${report}`,
+          thread_id: null,
+        });
+      } catch (e) {
+        console.warn('[health/report] Failed to post to war room:', e?.message || e);
+      }
+
+      return sendJson(res, 200, { ok: true, report });
     }
 
     return notFound(res);
