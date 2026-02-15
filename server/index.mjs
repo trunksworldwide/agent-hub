@@ -1894,6 +1894,93 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/projects/:projectId/drive/init — create Drive folder spine + spine doc (idempotent)
+    const driveInitMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/drive\/init$/);
+    if (driveInitMatch && req.method === 'POST') {
+      const [, projectIdFromPath] = driveInitMatch;
+      try {
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const body = await readBodyJson(req).catch(() => ({}));
+        const account = String(body.account || process.env.GOG_ACCOUNT_EMAIL || 'trunksworldwide@gmail.com');
+        const client = String(body.client || process.env.GOG_CLIENT || 'trunksworldwide');
+        const rootName = String(body.rootName || 'Mission Control');
+        const projectFolderName = String(body.projectFolderName || projectIdFromPath);
+
+        // gog keyring uses GOG_KEYRING_PASSWORD for non-interactive storage.
+        if (!process.env.GOG_KEYRING_PASSWORD) {
+          return sendJson(res, 500, { ok: false, error: 'missing_gog_keyring_password' });
+        }
+
+        const execGogJson = async (cmd) => {
+          const full = `gog ${cmd} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`;
+          const { stdout } = await exec(full, {
+            env: { ...process.env },
+            timeout: 60000,
+            maxBuffer: 10 * 1024 * 1024,
+          });
+          return JSON.parse(stdout || 'null');
+        };
+
+        const findOrCreateFolder = async ({ name, parentId }) => {
+          // Try search first (best-effort). gog drive search is full-text; we filter client-side.
+          const results = await execGogJson(`drive search ${JSON.stringify(name)}`);
+          const list = Array.isArray(results) ? results : (results?.files || results?.items || []);
+          const exact = (list || []).find((f) => f?.name === name && String(f?.mimeType || '').includes('folder')) || null;
+          if (exact?.id) return exact;
+
+          const created = await execGogJson(`drive mkdir ${JSON.stringify(name)}${parentId ? ` --parent ${JSON.stringify(parentId)}` : ''}`);
+          return created;
+        };
+
+        const rootFolder = await findOrCreateFolder({ name: rootName, parentId: null });
+        const projectFolder = await findOrCreateFolder({ name: projectFolderName, parentId: rootFolder?.id });
+
+        const subfolders = ['00_inbox', '01_specs', '02_ops', '03_assets', '04_exports'];
+        const createdSub = {};
+        for (const sf of subfolders) {
+          const f = await findOrCreateFolder({ name: sf, parentId: projectFolder?.id });
+          createdSub[sf] = f?.id || null;
+        }
+
+        // Spine doc content
+        const spineText = `# ${projectFolderName} — Spine & Filing Rules\n\nThis project stores its shared artifacts in Google Drive.\n\nFolder map\n- 00_inbox — default dump zone when unsure\n- 01_specs — specs/PRDs/plans\n- 02_ops — runbooks/checklists/incidents\n- 03_assets — images/decks/brand\n- 04_exports — PDFs/reports/exports\n\nRules\n- If unsure, upload to 00_inbox and link it in the relevant task thread.\n- Prefer date+slug filenames: YYYY-MM-DD_short-slug.ext\n- Task progress goes in Mission Control task threads (not local memory).\n`;
+
+        const tmpPath = `/tmp/${projectFolderName}-README_SPINE.md`;
+        writeFileSync(tmpPath, spineText, 'utf8');
+
+        // Upload spine doc into project folder; convert to Google Doc for readability.
+        const uploaded = await execGogJson(`drive upload ${JSON.stringify(tmpPath)} --parent ${JSON.stringify(projectFolder?.id)} --name ${JSON.stringify('README_SPINE')} --convert-to doc`);
+
+        const rootUrl = (await execGogJson(`drive url ${JSON.stringify(rootFolder?.id)}`))?.[0]?.url || null;
+        const projectUrl = (await execGogJson(`drive url ${JSON.stringify(projectFolder?.id)}`))?.[0]?.url || null;
+        const spineUrl = (await execGogJson(`drive url ${JSON.stringify(uploaded?.id)}`))?.[0]?.url || null;
+
+        // Persist to project_settings so UI/agents can discover it.
+        const settings = [
+          { project_id: projectIdFromPath, key: 'drive_root_folder_id', value: rootFolder?.id || '' },
+          { project_id: projectIdFromPath, key: 'drive_root_folder_url', value: rootUrl || '' },
+          { project_id: projectIdFromPath, key: 'drive_project_folder_id', value: projectFolder?.id || '' },
+          { project_id: projectIdFromPath, key: 'drive_project_folder_url', value: projectUrl || '' },
+          { project_id: projectIdFromPath, key: 'drive_spine_doc_id', value: uploaded?.id || '' },
+          { project_id: projectIdFromPath, key: 'drive_spine_doc_url', value: spineUrl || '' },
+        ];
+
+        await sb.from('project_settings').upsert(settings, { onConflict: 'project_id,key' });
+
+        return sendJson(res, 200, {
+          ok: true,
+          root: { id: rootFolder?.id || null, url: rootUrl },
+          project: { id: projectFolder?.id || null, url: projectUrl },
+          spineDoc: { id: uploaded?.id || null, url: spineUrl },
+          subfolders: createdSub,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/tasks/propose — create a proposed task in Tasks inbox for approval
     if (req.method === 'POST' && url.pathname === '/api/tasks/propose') {
       try {
@@ -2033,7 +2120,7 @@ const server = http.createServer(async (req, res) => {
           // non-fatal
         }
 
-        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Dashboard updates (IMPORTANT)\nThis project uses a Mission Control dashboard (Supabase).\n- Do NOT write task progress into local memory files.\n- Always include the project header on Control API calls:\n  `x-clawdos-project: <projectId>`\n\n### Default web browsing (agent-browser)\nUse `agent-browser` as your default way to browse/automate the web.\nTypical loop:\n- `agent-browser open <url>`\n- `agent-browser snapshot` (prefer @refs)\n- `agent-browser click @e2` / `agent-browser fill @e3 \"...\"`\n- `agent-browser screenshot out.png` (when useful)\n- `agent-browser close`\n\n### System commands you can use (expand over time)\nUse these to operate Mission Control without any Supabase keys:\n\nTask + timeline\n- Propose a task (lands in Inbox for approval):\n  POST /api/tasks/propose\n  { title, description?, assignee_agent_key?, author }\n- Comment/update a task thread (canonical timeline):\n  POST /api/tasks/:taskId/events\n  { event_type, content, metadata?, author }.\n\nChat / war room\n- Post a message to the project chat (war room) or thread:\n  POST /api/chat/post\n  { message, thread_id?, author, message_type?, metadata? }.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
+        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Dashboard updates (IMPORTANT)\nThis project uses a Mission Control dashboard (Supabase).\n- Do NOT write task progress into local memory files.\n- Always include the project header on Control API calls:\n  x-clawdos-project: <projectId>\n\n### Default web browsing (agent-browser)\nUse agent-browser as your default way to browse/automate the web.\nTypical loop:\n- agent-browser open <url>\n- agent-browser snapshot (prefer @refs)\n- agent-browser click @e2 / agent-browser fill @e3 "..."\n- agent-browser screenshot out.png (when useful)\n- agent-browser close\n\n### System commands you can use (expand over time)\nUse these to operate Mission Control without any Supabase keys:\n\nTask + timeline\n- Propose a task (lands in Inbox for approval):\n  POST /api/tasks/propose\n  { title, description?, assignee_agent_key?, author }\n- Comment/update a task thread (canonical timeline):\n  POST /api/tasks/:taskId/events\n  { event_type, content, metadata?, author }.\n\nChat / war room\n- Post a message to the project chat (war room) or thread:\n  POST /api/chat/post\n  { message, thread_id?, author, message_type?, metadata? }.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
         const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n\n## Working style\n- Prefer posting progress to the dashboard task thread via Control API (see SOUL.md).\n`;
         const memoryContent = `# MEMORY.md\n\n`;
 

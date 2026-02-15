@@ -2147,6 +2147,20 @@ export async function createProject(input: { id: string; name: string }): Promis
         // ignore
       }
 
+      // Best-effort: initialize Google Drive spine if Control API is configured.
+      try {
+        const baseUrl = getApiBaseUrl();
+        if (baseUrl) {
+          await requestJson(`${baseUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(id)}/drive/init`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-clawdos-project': id },
+            body: JSON.stringify({}),
+          });
+        }
+      } catch (initErr) {
+        console.warn('[createProject] drive init best-effort failed:', initErr);
+      }
+
       return { ok: true, project: { id, name, workspace: '' } };
     } catch (e: any) {
       console.error('createProject (supabase) failed:', e);
