@@ -22,6 +22,7 @@ import { DocumentViewer } from '@/components/documents/DocumentViewer';
 import { ProjectOverviewCard } from '@/components/documents/ProjectOverviewCard';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 export function DocumentsPage() {
   const { selectedProjectId } = useClawdOffice();
@@ -41,6 +42,10 @@ export function DocumentsPage() {
   const [recentChanges, setRecentChanges] = useState<string>('');
   const [recentChangesOpen, setRecentChangesOpen] = useState(true);
   const [loadingChanges, setLoadingChanges] = useState(false);
+
+  // Drive spine link (optional)
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string>('');
+  const [copyingDriveUrl, setCopyingDriveUrl] = useState(false);
 
   const loadDocuments = async () => {
     setLoading(true);
@@ -75,9 +80,25 @@ export function DocumentsPage() {
     }
   };
 
+  const loadDriveFolderUrl = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('project_settings')
+        .select('value')
+        .eq('project_id', selectedProjectId)
+        .eq('key', 'drive_project_folder_url')
+        .maybeSingle();
+      if (error) return;
+      setDriveFolderUrl(data?.value || '');
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     loadDocuments();
     loadRecentChanges();
+    loadDriveFolderUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId]);
 
@@ -145,6 +166,31 @@ export function DocumentsPage() {
               <p className="text-muted-foreground text-sm">
                 Context and documents for your agents.
               </p>
+              {driveFolderUrl ? (
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">Drive folder: {driveFolderUrl}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2"
+                    disabled={copyingDriveUrl}
+                    onClick={async () => {
+                      try {
+                        setCopyingDriveUrl(true);
+                        await navigator.clipboard.writeText(driveFolderUrl);
+                        toast({ title: 'Copied Drive folder link' });
+                      } catch {
+                        toast({ title: 'Failed to copy', variant: 'destructive' });
+                      } finally {
+                        setCopyingDriveUrl(false);
+                      }
+                    }}
+                    title="Copy Drive folder link"
+                  >
+                    Copy
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2">
