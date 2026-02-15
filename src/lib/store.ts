@@ -64,6 +64,7 @@ interface ClawdOfficeState {
   setFileSaving: (key: string, isSaving: boolean) => void;
   markFileSaved: (key: string) => void;
   resetFile: (key: string) => void;
+  clearFileCache: (key: string) => void;
 
   // Control API URL (runtime-configurable)
   controlApiUrl: string;
@@ -184,6 +185,10 @@ export const useClawdOffice = create<ClawdOfficeState>((set, get) => ({
       },
     },
   })),
+  clearFileCache: (key) => set((state) => {
+    const { [key]: _, ...rest } = state.files;
+    return { files: rest };
+  }),
   
   // Control API URL
   controlApiUrl: getControlApiUrl(),
