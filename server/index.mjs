@@ -3080,7 +3080,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Knowledge: Search ─────────────────────────────────────────────────
-    if (method === 'POST' && urlPath === '/api/knowledge/search') {
+    if (req.method === 'POST' && url.pathname === '/api/knowledge/search') {
       const body = await readBodyJson(req);
       const { query, limit } = body;
 
@@ -3110,7 +3110,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Health: Report ────────────────────────────────────────────────────
-    if (method === 'POST' && urlPath === '/api/health/report') {
+    if (req.method === 'POST' && url.pathname === '/api/health/report') {
       const sb = getSupabaseServerClient();
       if (!sb) return sendJson(res, 500, { ok: false, error: 'service_role_not_configured' });
 
