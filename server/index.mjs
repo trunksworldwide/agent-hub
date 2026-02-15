@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFile, writeFile, stat, readdir, mkdir } from 'node:fs/promises';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -2059,10 +2059,15 @@ const server = http.createServer(async (req, res) => {
         const name = String(body.name || '').trim();
         const content = String(body.content || '').toString();
         const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
-        const convertTo = body.convertTo ? String(body.convertTo).trim() : null; // doc|sheet|slides
+        const convertToRaw = body.convertTo ? String(body.convertTo).trim() : null; // doc|sheet|slides
+        const convertTo = convertToRaw ? convertToRaw.toLowerCase() : null;
 
         if (!name) return sendJson(res, 400, { ok: false, error: 'missing_name' });
         if (!content) return sendJson(res, 400, { ok: false, error: 'missing_content' });
+        if (content.length > 500_000) return sendJson(res, 400, { ok: false, error: 'content_too_large' });
+        if (convertTo && !['doc', 'sheet', 'slides'].includes(convertTo)) {
+          return sendJson(res, 400, { ok: false, error: 'invalid_convertTo' });
+        }
 
         const sb = getSupabaseServerClient();
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
@@ -2097,10 +2102,19 @@ const server = http.createServer(async (req, res) => {
         const tmpPath = `/tmp/${projectId}-${Date.now()}-${safeBase}`;
         writeFileSync(tmpPath, content, 'utf8');
 
-        const convertFlag = convertTo ? ` --convert-to ${JSON.stringify(convertTo)}` : '';
-        const cmd = `gog drive upload ${JSON.stringify(tmpPath)} --parent ${JSON.stringify(folderId)} --name ${JSON.stringify(name)}${convertFlag} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`;
-        const { stdout } = await exec(cmd, { env: { ...process.env }, timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
-        const uploaded = JSON.parse(stdout || 'null');
+        let uploaded = null;
+        try {
+          const convertFlag = convertTo ? ` --convert-to ${JSON.stringify(convertTo)}` : '';
+          const cmd = `gog drive upload ${JSON.stringify(tmpPath)} --parent ${JSON.stringify(folderId)} --name ${JSON.stringify(name)}${convertFlag} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`;
+          const { stdout } = await exec(cmd, { env: { ...process.env }, timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
+          uploaded = JSON.parse(stdout || 'null');
+        } finally {
+          try {
+            unlinkSync(tmpPath);
+          } catch {
+            // ignore
+          }
+        }
 
         // Fetch URL
         let url = null;
