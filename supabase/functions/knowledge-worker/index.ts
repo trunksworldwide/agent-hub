@@ -149,7 +149,8 @@ async function handleEmbed(projectId: string, sourceId: string): Promise<Respons
       source_id: sourceId,
       chunk_index: i,
       chunk_text: chunk,
-      embedding: JSON.stringify(embeddings[i]),
+      // pgvector expects a numeric array (not a JSON string)
+      embedding: embeddings[i],
     }));
 
     // Insert in batches of 50
@@ -205,7 +206,8 @@ async function handleSearch(
     "match_knowledge_chunks",
     {
       p_project_id: projectId,
-      p_embedding: JSON.stringify(queryEmbedding),
+      // pgvector expects a numeric array (not a JSON string)
+      p_embedding: queryEmbedding,
       p_limit: Math.min(limit, 20),
     }
   );
