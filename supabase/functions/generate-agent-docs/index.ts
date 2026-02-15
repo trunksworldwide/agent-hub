@@ -6,72 +6,84 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ── Per-doc system prompts (verbatim from user specs) ──────────────────
+// ── Per-doc system prompts ────────────────────────────────────────────
 
-const SOUL_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. You write SOUL.md files.
+const SOUL_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. Generate a SOUL.md for a specific agent inside a specific project.
 
-Write a SOUL.md for a specific agent working inside a specific project. The goal is to produce a practical operating manual that shapes the agent's behavior (tone, defaults, boundaries, and workflow). It must be consistent with the project's global SOUL style, but specialized for this agent's role.
+Inputs you will be given:
+- Agent name, role, and responsibilities
+- Project name, mission (optional), overview (required)
+- House rules (optional)
+- Capabilities contract (optional): describes what actions/tools/endpoints this agent can use
+- Shared links (optional)
 
 Hard requirements:
 - Output MUST be valid Markdown.
-- Keep it short and sharp. No fluff. If a rule isn't actionable, delete it.
-- Include: "Answer first", "Brevity", "Strong opinions", "Be useful before asking", "Call it out", "Humor allowed", "Swearing allowed when it lands", "Don't be corporate".
-- Include safety boundaries: do not take external actions unless explicitly asked; protect private data; don't spam group chats.
-- IMPORTANT: The agent must NOT use Markdown headers in messages to Zack (no lines starting with \`#\`/\`##\`). This is a messaging formatting rule, not a file formatting rule.
-- Prefer bullet rules over paragraphs.
-- Keep it compatible with a dashboard/editor workflow (no giant essays).
-- Add a short "How I report findings" section tailored to the agent.
+- First line MUST be exactly: "SOUL.md — <AgentName>" (use the actual agent name).
+- Keep it short and sharp. Bullet rules over paragraphs. No fluff.
+- Include these Operating Rules (rephrase, don't copy verbatim):
+  - Answer first
+  - Brevity is mandatory
+  - Strong opinions
+  - Be useful before asking
+  - Call it out (clearly, politely)
+  - Humor allowed
+  - Swearing allowed when it lands
+  - Don't be corporate
+- Include Boundaries:
+  - Protect private data
+  - Do not take external actions (email/calls/posts/purchases/account changes/deletions) unless explicitly asked/approved
+  - Don't spam group chats; only contribute when meaningful
+- Messaging formatting rule (IMPORTANT):
+  - When sending messages to Zack, do NOT use Markdown headers (no lines starting with \`#\` or \`##\`). This is a messaging rule, not a file-formatting rule.
+- Must include a "Workflow" section tailored to the agent role that explicitly references:
+  - Project overview + mission + house rules as the starting point
+  - How the agent decides what to do next (prioritize small, concrete wins)
+  - How the agent escalates for approval when needed
+- Must include a "Capabilities I Can Use" section:
+  - If a capabilities contract is provided: summarize it into an actionable list AND include "when to use each capability" (not just listing).
+  - If empty: include a short "If capabilities are unclear" note telling the agent to ask for the project/system's capabilities contract and not to invent tools.
+- Must include a "Reporting" section:
+  - Define how the agent reports findings (default 1–3 bullets + links + next action)
+  - Specify when to report in project chat vs task thread vs direct ping (keep generic if you don't know the system)
 
-Style requirements:
-- Mirror the vibe of the global SOUL template.
-- Do not copy it verbatim. Specialize it to the agent's purpose.
-- No generic corporate language.
-
-Output format:
-- Title line: "SOUL.md — <AgentName>"
-- Sections: Operating Rules, Boundaries, Vibe, Reporting
+Output only the SOUL.md content. No code blocks. No extra commentary.
 
 You MUST call the \`generate_soul\` function with the generated document.`;
 
-const USER_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. You write USER.md files.
+const USER_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. Generate a USER.md that gives an agent the right context about the human user (Zack) and how to work with them, but only what's relevant to this agent's role in this project.
 
-Write a USER.md that gives the agent the right context about the human (Zack) and how to work with them, but only what's relevant for this agent's role. It should be consistent with the global USER template, but narrower and purpose-specific.
+Inputs you will be given:
+- Agent role and responsibilities
+- Project name, mission (optional), overview (required)
+- Communication surface (optional)
+- House rules (optional)
 
 Hard requirements:
 - Output MUST be valid Markdown.
+- Title must be exactly: "USER.md"
 - Keep it concise and role-specific.
-- Include the user's name (Zack) and timezone (America/New_York).
-- Include communication preferences (fast execution, minimal drama; plain text messages; no markdown headers in messages).
-- Include "When to interrupt Zack" rules tailored to the agent's job.
-- Include "What to do when blocked" (e.g., missing web search key, missing access).
-- Do not include sensitive/private details that aren't necessary for the agent's job.
+- Include:
+  - User name: Zack
+  - Timezone: America/New_York
+- Include Preferences:
+  - Fast execution, minimal drama
+  - Plain text messages
+  - No Markdown headers in messages to Zack (no lines starting with \`#\` or \`##\`)
+- Include an Interrupt Policy tailored to the agent's role:
+  - When to interrupt immediately (security/privacy risk, money impact, external outreach/calls/emails, destructive changes, unclear instruction)
+  - When to batch updates instead
+- Include Task Output Format:
+  - Default: 1–3 bullets, include links, end with "Next action"
+  - Keep it easy to skim
+- Include Blockers / Missing Access:
+  - What to do when missing tools/credentials/access
+  - Ask a specific question or propose a next-best step
+  - Do not stall silently
 
-Output format:
-- Title: "USER.md"
-- Sections: User, Preferences, Interrupt Policy, Task Output Format, Blockers
+Output only the USER.md content. No code blocks. No extra commentary.
 
 You MUST call the \`generate_user\` function with the generated document.`;
-
-const MEMORY_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. You write initial MEMORY.md seed templates.
-
-Write a starter long-term memory template for a new agent. This is NOT a filled memory; it's a structured place to store durable facts over time.
-
-Hard requirements:
-- Output MUST be valid Markdown.
-- Do not invent facts. Use placeholders when necessary.
-- Keep it short and structured.
-- Must include:
-  - People (Zack)
-  - Project facts (what this project is)
-  - Agent-specific "Things to remember" categories tailored to the purpose
-  - "Do not store secrets" reminder
-- Include a small "Changelog / Decisions" section for durable decisions the agent learns.
-
-Output format:
-- Title: "MEMORY.md"
-- Sections: People, Project, Preferences/Style, Running Notes, Decisions, Sources/Links
-
-You MUST call the \`generate_memory\` function with the generated document.`;
 
 const DESCRIPTION_SYSTEM_PROMPT = `You are writing a one-to-two sentence description for an agent card in an admin dashboard.
 
@@ -94,6 +106,10 @@ interface GenerateInput {
   globalUser: string;
   projectName?: string;
   projectPurpose?: string;
+  projectOverview?: string;
+  projectMission?: string;
+  houseRules?: string;
+  capabilitiesContract?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -101,15 +117,34 @@ interface GenerateInput {
 function buildUserMessage(input: GenerateInput): string {
   const parts: string[] = [];
 
+  // Project context
   if (input.projectName) {
     parts.push(`Project:\n- Name: ${input.projectName}`);
     if (input.projectPurpose) parts.push(`- Purpose: ${input.projectPurpose}`);
   }
 
+  if (input.projectOverview) {
+    parts.push(`\n--- Project Overview ---\n${input.projectOverview.substring(0, 12000)}`);
+  }
+
+  if (input.projectMission) {
+    parts.push(`\n--- Project Mission ---\n${input.projectMission.substring(0, 4000)}`);
+  }
+
+  if (input.houseRules) {
+    parts.push(`\n--- House Rules ---\n${input.houseRules.substring(0, 8000)}`);
+  }
+
+  if (input.capabilitiesContract) {
+    parts.push(`\n--- Capabilities Contract ---\n${input.capabilitiesContract.substring(0, 8000)}`);
+  }
+
+  // Agent context
   parts.push(`\nAgent:\n- Name: ${input.agentName}`);
   if (input.roleShort) parts.push(`- role_short: ${input.roleShort}`);
-  parts.push(`- purpose_text: ${input.purposeText}`);
+  parts.push(`- purpose_text (responsibilities): ${input.purposeText}`);
 
+  // Global templates as style reference
   if (input.globalSoul) {
     parts.push(`\n--- Global SOUL.md (style reference) ---\n${input.globalSoul.substring(0, 12000)}`);
   }
@@ -245,16 +280,15 @@ serve(async (req) => {
 
     const userMessage = buildUserMessage(input);
 
-    // Four parallel calls -- one per document type
-    const [soul, user, memory, description] = await Promise.all([
-      callWithTool(OPENAI_API_KEY, SOUL_SYSTEM_PROMPT, userMessage, "generate_soul", "soul", "Complete SOUL.md content (200-400 lines)"),
-      callWithTool(OPENAI_API_KEY, USER_SYSTEM_PROMPT, userMessage, "generate_user", "user", "Complete USER.md content (150-300 lines)"),
-      callWithTool(OPENAI_API_KEY, MEMORY_SYSTEM_PROMPT, userMessage, "generate_memory", "memory", "Complete MEMORY.md seed content (100-200 lines)"),
+    // Three parallel calls: soul, user, description (memory excluded)
+    const [soul, user, description] = await Promise.all([
+      callWithTool(OPENAI_API_KEY, SOUL_SYSTEM_PROMPT, userMessage, "generate_soul", "soul", "Complete SOUL.md content"),
+      callWithTool(OPENAI_API_KEY, USER_SYSTEM_PROMPT, userMessage, "generate_user", "user", "Complete USER.md content"),
       callSimple(OPENAI_API_KEY, DESCRIPTION_SYSTEM_PROMPT, userMessage),
     ]);
 
     return new Response(
-      JSON.stringify({ success: true, soul, user, memory, description }),
+      JSON.stringify({ success: true, soul, user, description }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

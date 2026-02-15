@@ -1262,19 +1262,31 @@ export async function generateAgentDocs(agentKey: string): Promise<{
   error?: string;
   soul?: string;
   user?: string;
-  memory?: string;
   description?: string;
 }> {
   if (!(hasSupabase() && supabase)) return { ok: false, error: 'supabase_not_configured' };
   const projectId = getProjectId();
 
   try {
-    // Fetch agent info + project name in parallel
-    const [{ data: agentRow }, { data: projectRow }, { data: globalSoul }, { data: globalUser }] = await Promise.all([
+    // Fetch agent info + project context docs in parallel
+    const [
+      { data: agentRow },
+      { data: projectRow },
+      { data: globalSoul },
+      { data: globalUser },
+      { data: overviewDoc },
+      { data: missionDoc },
+      { data: capabilitiesDoc },
+      { data: houseRulesDoc },
+    ] = await Promise.all([
       supabase.from('agents').select('name,purpose_text,role').eq('project_id', projectId).eq('agent_key', agentKey).maybeSingle(),
       supabase.from('projects').select('name').eq('id', projectId).maybeSingle(),
       supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'soul').is('agent_key', null).maybeSingle(),
       supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'user').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'project_overview').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'mission').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'capabilities').is('agent_key', null).maybeSingle(),
+      supabase.from('brain_docs').select('content').eq('project_id', projectId).eq('doc_type', 'house_rules').is('agent_key', null).maybeSingle(),
     ]);
 
     const agentName = agentRow?.name || agentKey;
@@ -1286,7 +1298,7 @@ export async function generateAgentDocs(agentKey: string): Promise<{
       return { ok: false, error: 'Agent has no purpose_text set. Please add a purpose first.' };
     }
 
-    // Call the edge function via the configured Supabase client (no hardcoded URL/key)
+    // Call the edge function with expanded context
     const { data: result, error: fnError } = await supabase.functions.invoke('generate-agent-docs', {
       body: {
         agentName,
@@ -1295,6 +1307,10 @@ export async function generateAgentDocs(agentKey: string): Promise<{
         globalSoul: globalSoul?.content || '',
         globalUser: globalUser?.content || '',
         projectName,
+        projectOverview: overviewDoc?.content || '',
+        projectMission: missionDoc?.content || '',
+        capabilitiesContract: capabilitiesDoc?.content || '',
+        houseRules: houseRulesDoc?.content || '',
       },
     });
 
@@ -1308,7 +1324,6 @@ export async function generateAgentDocs(agentKey: string): Promise<{
       ok: true,
       soul: result.soul,
       user: result.user,
-      memory: result.memory,
       description: result.description,
     };
   } catch (e: any) {
