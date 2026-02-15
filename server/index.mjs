@@ -2912,7 +2912,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Knowledge: Ingest ────────────────────────────────────────────────
-    if (method === 'POST' && urlPath === '/api/knowledge/ingest') {
+    if (req.method === 'POST' && url.pathname === '/api/knowledge/ingest') {
       const body = await readBodyJson(req);
       const { title, source_url, source_type, text } = body;
 
