@@ -1,67 +1,43 @@
 
 
-# Fix: "Create Override" Not Persisting to Supabase
+# Fix: brain_docs Unique Constraint Blocking Agent Overrides
 
 ## Problem
 
-When clicking "Create override" for a sub-agent (e.g. Ricky), the function `createSingleDocOverride` writes the doc to disk via the Control API, then **skips the Supabase upsert** because `diskHandled` is `true`. The UI immediately re-queries Supabase for the doc status, finds no agent-specific row, and shows "Inherited" again.
+The `brain_docs` table has two unique indexes:
+1. `brain_docs_project_type_uidx` on `(project_id, doc_type)` -- **this is the problem**
+2. `brain_docs_project_id_agent_key_doc_type_key` on `(project_id, agent_key, doc_type)` -- this is correct
 
-The same pattern exists in `createDocOverride` (AI regeneration) -- it also skips Supabase when the Control API succeeds.
+Index #1 was created before agent-specific overrides existed. It only allows ONE row per `(project_id, doc_type)` combination, so when the global row (with `agent_key = NULL`) already exists for e.g. `soul`, inserting an agent-specific override row (with `agent_key = 'agent:ricky:main'`, same `project_id` and `doc_type = 'soul'`) violates index #1.
 
-## Root Cause
-
-In `src/lib/api.ts`, line 1424:
-
-```
-const diskHandled = await trySyncToControlApi(agentKey, docType, content);
-if (!diskHandled) {
-  // Only writes to Supabase if disk write failed
-}
-```
-
-The disk write is correct (executor needs the file), but the Supabase write must also happen so the dashboard can immediately reflect the override status.
+Index #2 is the correct constraint -- it allows both a global row (`agent_key = NULL`) and agent-specific rows to coexist for the same doc type.
 
 ## Fix
 
-Change `createSingleDocOverride` to **always** upsert the Supabase row, regardless of whether the Control API write succeeded. The disk write remains best-effort for executor immediacy; the Supabase write is the source of truth for the dashboard.
+Drop the overly restrictive index #1 via a Supabase migration:
 
-Apply the same fix to the loop in `createDocOverride` (the AI regeneration path), which has the same skip pattern.
+```sql
+DROP INDEX IF EXISTS brain_docs_project_type_uidx;
+```
+
+Index #2 (`brain_docs_project_id_agent_key_doc_type_key`) already enforces the correct uniqueness: one row per `(project_id, agent_key, doc_type)` combination.
 
 ## Technical Details
-
-### `src/lib/api.ts` -- `createSingleDocOverride` (lines 1422-1437)
-
-Change from:
-```
-const diskHandled = await trySyncToControlApi(agentKey, docType, content);
-if (!diskHandled) {
-  // upsert to Supabase
-}
-```
-
-To:
-```
-// Best-effort: sync to disk for executor
-await trySyncToControlApi(agentKey, docType, content);
-
-// Always write to Supabase so dashboard reflects the override immediately
-const { error } = await supabase.from('brain_docs').upsert(...);
-if (error) throw error;
-```
-
-### `src/lib/api.ts` -- `createDocOverride` loop (lines 1369-1380)
-
-Same pattern fix: always upsert to Supabase after the disk write attempt.
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `src/lib/api.ts` | Remove the `if (!diskHandled)` guard in both `createSingleDocOverride` and `createDocOverride`, so Supabase upsert always runs |
+| New migration file | `DROP INDEX IF EXISTS brain_docs_project_type_uidx;` |
+
+### Why This Is Safe
+
+- Index #2 already prevents duplicate rows for the same agent + doc type combination
+- Global docs (where `agent_key IS NULL`) remain unique per project because PostgreSQL treats each NULL as distinct in unique indexes -- but that is already handled by application logic (upsert with `onConflict` on index #2)
+- No data changes, no column changes, just removing the redundant restrictive index
 
 ### Verification
-1. Click "Create override" for Ricky's Soul doc
-2. UI immediately shows "Override" badge (not "Inherited")
-3. Supabase `brain_docs` table has a row with `agent_key = 'agent:ricky:main'` and `doc_type = 'soul'`
-4. The Soul editor loads the agent-specific content
+1. Click "Create override" for an agent doc -- no error, badge shows "Override"
+2. Click "Generate with AI" -- all three docs (soul, user, memory) are created without errors
+3. Global docs still load correctly for agents without overrides
 
