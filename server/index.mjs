@@ -2010,6 +2010,46 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // GET /api/projects/:projectId/drive/meta — return Drive spine + docs + folder IDs from project_settings
+    const driveMetaMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/drive\/meta$/);
+    if (driveMetaMatch && req.method === 'GET') {
+      const [, projectIdFromPath] = driveMetaMatch;
+      try {
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const keys = [
+          'drive_root_folder_id',
+          'drive_root_folder_url',
+          'drive_project_folder_id',
+          'drive_project_folder_url',
+          'drive_spine_doc_id',
+          'drive_spine_doc_url',
+          'drive_capabilities_doc_id',
+          'drive_capabilities_doc_url',
+          'drive_folder_inbox_id',
+          'drive_folder_specs_id',
+          'drive_folder_ops_id',
+          'drive_folder_assets_id',
+          'drive_folder_exports_id',
+        ];
+
+        const { data, error } = await sb
+          .from('project_settings')
+          .select('key,value')
+          .eq('project_id', projectIdFromPath)
+          .in('key', keys);
+        if (error) throw error;
+
+        const out = {};
+        for (const row of data || []) out[row.key] = row.value;
+
+        return sendJson(res, 200, { ok: true, projectId: projectIdFromPath, settings: out });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/drive/upload — upload a text artifact to the correct Drive folder for this project
     if (req.method === 'POST' && url.pathname === '/api/drive/upload') {
       try {
@@ -2235,6 +2275,7 @@ const server = http.createServer(async (req, res) => {
         // Best-effort: fetch Google Drive spine links so the agent knows exactly where to file artifacts.
         let driveProjectFolderUrl = '';
         let driveSpineDocUrl = '';
+        let driveCapabilitiesDocUrl = '';
         try {
           const sb0 = getSupabaseServerClient();
           if (sb0) {
@@ -2242,17 +2283,18 @@ const server = http.createServer(async (req, res) => {
               .from('project_settings')
               .select('key,value')
               .eq('project_id', projectId)
-              .in('key', ['drive_project_folder_url', 'drive_spine_doc_url']);
+              .in('key', ['drive_project_folder_url', 'drive_spine_doc_url', 'drive_capabilities_doc_url']);
             for (const row of data || []) {
               if (row.key === 'drive_project_folder_url') driveProjectFolderUrl = row.value || '';
               if (row.key === 'drive_spine_doc_url') driveSpineDocUrl = row.value || '';
+              if (row.key === 'drive_capabilities_doc_url') driveCapabilitiesDocUrl = row.value || '';
             }
           }
         } catch {
           // ignore
         }
 
-        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Dashboard updates (IMPORTANT)\nThis project uses a Mission Control dashboard (Supabase).\n- Do NOT write task progress into local memory files.\n- Always include the project header on Control API calls:\n  x-clawdos-project: <projectId>\n\n### Default web browsing (agent-browser)\nUse agent-browser as your default way to browse/automate the web.\nTypical loop:\n- agent-browser open <url>\n- agent-browser snapshot (prefer @refs)\n- agent-browser click @e2 / agent-browser fill @e3 "..."\n- agent-browser screenshot out.png (when useful)\n- agent-browser close\n\n### Google Drive workspace (project spine)\nYour project has a Google Drive folder spine (Mission Control).\n- Project folder: ${driveProjectFolderUrl || '(not initialized yet)'}\n- Spine doc (filing rules): ${driveSpineDocUrl || '(not initialized yet)'}\n\nIf these links are missing, ask the operator to run:\nPOST /api/projects/:projectId/drive/init\n\nUploads\n- Upload an artifact to the right folder:\n  POST /api/drive/upload\n  { category: inbox|specs|ops|assets|exports, name, content, author, convertTo? }\n  (If unsure, use category=inbox.)\n\n### System commands you can use (expand over time)\nUse these to operate Mission Control without any Supabase keys:\n\nTask + timeline\n- Propose a task (lands in Inbox for approval):\n  POST /api/tasks/propose\n  { title, description?, assignee_agent_key?, author }\n- Comment/update a task thread (canonical timeline):\n  POST /api/tasks/:taskId/events\n  { event_type, content, metadata?, author }.\n\nChat / war room\n- Post a message to the project chat (war room) or thread:\n  POST /api/chat/post\n  { message, thread_id?, author, message_type?, metadata? }.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
+        const soulContent = `# SOUL.md - ${displayName}\n\n> ${roleShort || 'Agent'}\n\n## Core Behavior\n\n### Context Awareness\nBefore acting on any task, you receive a **Context Pack** containing:\n- Project overview and goals\n- Relevant documents assigned to you\n- Recent changes in the project\n\nRead and apply this context. Do not assume information not provided.\n\n### Dashboard updates (IMPORTANT)\nThis project uses a Mission Control dashboard (Supabase).\n- Do NOT write task progress into local memory files.\n- Always include the project header on Control API calls:\n  x-clawdos-project: <projectId>\n\n### Default web browsing (agent-browser)\nUse agent-browser as your default way to browse/automate the web.\nTypical loop:\n- agent-browser open <url>\n- agent-browser snapshot (prefer @refs)\n- agent-browser click @e2 / agent-browser fill @e3 "..."\n- agent-browser screenshot out.png (when useful)\n- agent-browser close\n\n### Google Drive workspace (project spine)\nYour project has a Google Drive folder spine (Mission Control).\n- Project folder: ${driveProjectFolderUrl || '(not initialized yet)'}\n- Spine doc (filing rules): ${driveSpineDocUrl || '(not initialized yet)'}\n- Capabilities doc (what you can do): ${driveCapabilitiesDocUrl || '(not initialized yet)'}\n\nIf these links are missing, ask the operator to run:\nPOST /api/projects/:projectId/drive/init\n\nUploads\n- Upload an artifact to the right folder:\n  POST /api/drive/upload\n  { category: inbox|specs|ops|assets|exports, name, content, author, convertTo? }\n  (If unsure, use category=inbox.)\n\n### System commands you can use (expand over time)\nUse these to operate Mission Control without any Supabase keys:\n\nTask + timeline\n- Propose a task (lands in Inbox for approval):\n  POST /api/tasks/propose\n  { title, description?, assignee_agent_key?, author }\n- Comment/update a task thread (canonical timeline):\n  POST /api/tasks/:taskId/events\n  { event_type, content, metadata?, author }.\n\nChat / war room\n- Post a message to the project chat (war room) or thread:\n  POST /api/chat/post\n  { message, thread_id?, author, message_type?, metadata? }.\n\n### Communication\n- Be direct and clear\n- Match the project's communication style\n- Ask clarifying questions when context is insufficient\n`;
         const userContent = `# USER.md\n\n## Profile\n- Agent: ${displayName}\n- Role: ${roleShort || 'General assistant'}\n\n## Working style\n- Prefer posting progress to the dashboard task thread via Control API (see SOUL.md).\n`;
         const memoryContent = `# MEMORY.md\n\n`;
 
