@@ -1889,6 +1889,22 @@ const server = http.createServer(async (req, res) => {
           });
         } catch { /* best effort */ }
 
+        // Activity feed: when a task is completed, log a clickable activity entry.
+        try {
+          if (newStatus === 'done') {
+            await sb.from('activities').insert({
+              project_id: projectId,
+              type: 'task_completed',
+              message: `Task completed: ${taskId}`,
+              actor_agent_key: author,
+              task_id: taskId,
+              metadata: { task_id: taskId, status: 'done' },
+            });
+          }
+        } catch {
+          // ignore
+        }
+
         await bumpSupabaseAgentLastActivity({ projectId, agentKey: author, whenIso: new Date().toISOString() });
 
         return sendJson(res, 200, { ok: true });
@@ -2355,9 +2371,10 @@ const server = http.createServer(async (req, res) => {
             await sb.from('activities').insert({
               project_id: projectId,
               type: 'drive_upload',
-              message: `Uploaded ${name} to Drive (${category})`,
+              message: `Uploaded ${name} to Drive (${category})${urlOut ? ` — ${urlOut}` : ''}`,
               actor_agent_key: author,
               task_id: null,
+              metadata: { url: urlOut, fileId: uploaded?.id || null, folderId, category, name },
             });
           } catch {
             // ignore
