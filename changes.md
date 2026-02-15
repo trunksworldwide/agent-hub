@@ -1,3 +1,13 @@
+### Autonomous Agent Wake Routine — War Room + Heartbeat
+- **Edge Function** (`generate-agent-docs`):
+  - SOUL.md prompt now requires a "War Room + Wake Routine (Policy)" section: contribution rules, anti-spam (0–2 posts/wake), bounded context reads, and capabilities_contract awareness
+  - USER.md prompt now requires an "Interrupt / Participation" section: war room vs direct ping guidance
+- **Agent Creation** (`src/lib/api.ts`):
+  - `createAgent()` now automatically queues a default hourly heartbeat cron job for sub-agents (when role is provided)
+  - Heartbeat follows 5-step structure: check mentions → read war room → read tasks → contribute one action → unblock if stuck
+  - Fire-and-forget; won't block agent creation if queue fails
+  - Server-side provisioning already creates heartbeats; this covers the Supabase-only (executor-offline) path
+
 ### Delete Agent with Safe Cascade Cleanup
 - **Control API** (`server/index.mjs`):
   - Added `DELETE /api/agents/:agentKey` endpoint with full cascade cleanup
