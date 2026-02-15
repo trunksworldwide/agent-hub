@@ -2194,7 +2194,7 @@ export async function getProjects(): Promise<Project[]> {
   ];
 }
 
-export async function createProject(input: { id: string; name: string }): Promise<{ ok: boolean; project?: Project; error?: string }> {
+export async function createProject(input: { id: string; name: string; mission?: string; overview?: string }): Promise<{ ok: boolean; project?: Project; error?: string }> {
   // Prefer Supabase projects if configured.
   // NOTE: In Supabase-only builds we may not have a Control API to create a workspace folder on disk.
   // This path creates the DB row so the UI can proceed; workspace_path can be set later by the Control API.
@@ -2202,6 +2202,8 @@ export async function createProject(input: { id: string; name: string }): Promis
     const id = (input.id || '').trim();
     if (!id) return { ok: false, error: 'missing_id' };
     const name = (input.name || id).trim() || id;
+    const missionIn = (input.mission ?? '').trim();
+    const overviewIn = (input.overview ?? '').trim();
 
     try {
       const { error } = await supabase.from('projects').upsert(
@@ -2223,6 +2225,28 @@ export async function createProject(input: { id: string; name: string }): Promis
           actor_agent_key: 'dashboard',
           task_id: null,
         });
+      } catch {
+        // ignore
+      }
+
+      // Best-effort: seed mission + overview so ProjectOverviewCard isn't blank.
+      // We DO NOT overwrite if already set.
+      try {
+        const [existingMission, existingOverview] = await Promise.all([
+          supabase.from('brain_docs').select('content').eq('project_id', id).eq('doc_type', 'project_mission').is('agent_key', null).maybeSingle(),
+          supabase.from('brain_docs').select('content').eq('project_id', id).eq('doc_type', 'project_overview').is('agent_key', null).maybeSingle(),
+        ]);
+
+        const missionExisting = existingMission?.data?.content || '';
+        const overviewExisting = existingOverview?.data?.content || '';
+
+        const missionToSet = missionExisting.trim() ? '' : (missionIn || `Mission: ship outcomes for ${name}.`);
+        const overviewToSet = overviewExisting.trim() ? '' : (overviewIn || `What this project is about:\n- (fill this in)\n\nSuccess criteria:\n- (fill this in)\n\nHow we’ll work:\n- Use tasks + timeline updates\n- Upload artifacts to Drive and link them\n- Ask for approval before external side effects`);
+
+        const rows: any[] = [];
+        if (missionToSet) rows.push({ project_id: id, agent_key: null, doc_type: 'project_mission', content: missionToSet, updated_by: 'dashboard' });
+        if (overviewToSet) rows.push({ project_id: id, agent_key: null, doc_type: 'project_overview', content: overviewToSet, updated_by: 'dashboard' });
+        if (rows.length) await supabase.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
       } catch {
         // ignore
       }
