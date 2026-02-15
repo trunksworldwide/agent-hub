@@ -1,0 +1,17 @@
+#!/bin/sh
+# Reject vague commit messages that make audits impossible.
+# Install with:
+#   git config core.hooksPath .githooks
+
+MSG_FILE="$1"
+SUBJECT=$(head -n 1 "$MSG_FILE" | tr -d '\r')
+
+case "$SUBJECT" in
+  "Changes"|"Updated plan file")
+    echo "ERROR: Commit message too vague: '$SUBJECT'" 1>&2
+    echo "Use something descriptive like: 'fix: harden drive upload limits'" 1>&2
+    exit 1
+    ;;
+esac
+
+exit 0

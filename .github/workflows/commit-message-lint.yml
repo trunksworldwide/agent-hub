@@ -1,0 +1,44 @@
+name: Commit message lint
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORBIDDEN_REGEX='^(Changes|Updated plan file)$'
+
+          # On PRs, check commits in the PR range. On push, just check the last commit.
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            RANGE="$BASE..$HEAD"
+          else
+            RANGE="-1"
+          fi
+
+          echo "Checking commit subjects in range: $RANGE"
+          if [[ "$RANGE" == "-1" ]]; then
+            SUBJECTS=$(git log -1 --pretty=%s)
+          else
+            SUBJECTS=$(git log --pretty=%s "$RANGE")
+          fi
+
+          echo "$SUBJECTS" | while IFS= read -r s; do
+            if [[ "$s" =~ $FORBIDDEN_REGEX ]]; then
+              echo "Forbidden commit subject detected: '$s'" >&2
+              exit 1
+            fi
+          done
+
+          echo "OK"

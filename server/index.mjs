@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFile, writeFile, stat, readdir, mkdir } from 'node:fs/promises';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -623,15 +623,80 @@ const server = http.createServer(async (req, res) => {
           saveProjectsSync(projects);
         }
 
-        // Best effort: register in Supabase
+        // Register in Supabase (if configured). If this fails, fail the request so callers don't end up with broken FK refs.
         const sb = getSupabaseServerClient();
         if (sb) {
-          await sb
-            .from('projects')
-            .upsert({ id, name, workspace_path: newWorkspace, tag: tag || null }, { onConflict: 'id' });
+          // Some deployments may not have the optional `tag` column yet.
+          {
+            const { error: upsertErr } = await sb
+              .from('projects')
+              .upsert({ id, name, workspace_path: newWorkspace, tag: tag || null }, { onConflict: 'id' });
+            if (upsertErr) {
+              const msg = String(upsertErr?.message || upsertErr);
+              if (msg.toLowerCase().includes("could not find the 'tag' column")) {
+                const { error: retryErr } = await sb
+                  .from('projects')
+                  .upsert({ id, name, workspace_path: newWorkspace }, { onConflict: 'id' });
+                if (retryErr) throw retryErr;
+              } else {
+                throw upsertErr;
+              }
+            }
+          }
         }
 
         return sendJson(res, 200, { ok: true, project: { id, name, workspace: newWorkspace, tag } });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // DELETE /api/projects/:projectId — remove a project workspace + unregister (intended for test artifacts)
+    const projectDeleteMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+    if (projectDeleteMatch && req.method === 'DELETE') {
+      try {
+        const projectIdToDelete = decodeURIComponent(projectDeleteMatch[1]);
+        if (!projectIdToDelete) return sendJson(res, 400, { ok: false, error: 'missing_project_id' });
+
+        // Load from local projects.json and remove entry.
+        const projects = loadProjectsSync();
+        const idx = projects.findIndex((p) => p.id === projectIdToDelete);
+        const proj = idx >= 0 ? projects[idx] : null;
+
+        if (idx >= 0) {
+          projects.splice(idx, 1);
+          saveProjectsSync(projects);
+        }
+
+        // Delete workspace folder (best effort). Only delete if it lives under CLAWD_PROJECTS_ROOT.
+        const root = process.env.CLAWD_PROJECTS_ROOT || '/Users/trunks/clawd-projects';
+        const ws = proj?.workspace || path.join(root, projectIdToDelete);
+        if (!path.resolve(ws).startsWith(path.resolve(root) + path.sep)) {
+          return sendJson(res, 400, { ok: false, error: 'refusing_to_delete_outside_projects_root' });
+        }
+
+        try {
+          await exec(`rm -rf ${JSON.stringify(ws)}`);
+        } catch {
+          // ignore
+        }
+
+        // Best-effort: delete from Supabase
+        try {
+          const sb = getSupabaseServerClient();
+          if (sb) {
+            await sb.from('projects').delete().eq('id', projectIdToDelete);
+            await sb.from('project_settings').delete().eq('project_id', projectIdToDelete);
+            await sb.from('tasks').delete().eq('project_id', projectIdToDelete);
+            await sb.from('task_events').delete().eq('project_id', projectIdToDelete);
+            await sb.from('project_chat_messages').delete().eq('project_id', projectIdToDelete);
+            await sb.from('agents').delete().eq('project_id', projectIdToDelete);
+          }
+        } catch {
+          // ignore
+        }
+
+        return sendJson(res, 200, { ok: true, id: projectIdToDelete });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
@@ -1726,12 +1791,24 @@ const server = http.createServer(async (req, res) => {
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
 
         // Get current status for event metadata
+        const allowedStatuses = new Set(['inbox', 'assigned', 'in_progress', 'review', 'blocked', 'stopped', 'done']);
+        if (!allowedStatuses.has(newStatus)) {
+          return sendJson(res, 400, { ok: false, error: 'invalid_status', allowed: Array.from(allowedStatuses) });
+        }
+
         const { data: currentTask } = await sb
           .from('tasks')
           .select('status')
           .eq('id', taskId)
           .eq('project_id', projectId)
           .maybeSingle();
+
+        if (!currentTask) return sendJson(res, 404, { ok: false, error: 'task_not_found' });
+
+        // Minimal invariant: don't resurrect completed tasks without a deliberate operator action.
+        if (String(currentTask.status || '').trim() === 'done' && newStatus !== 'done') {
+          return sendJson(res, 400, { ok: false, error: 'cannot_change_done_task' });
+        }
 
         const { error: updErr } = await sb
           .from('tasks')
@@ -1778,6 +1855,20 @@ const server = http.createServer(async (req, res) => {
         const metadata = body.metadata ?? null;
 
         if (!eventType) return sendJson(res, 400, { ok: false, error: 'missing_event_type' });
+
+        // Invariants: status/assignment changes have dedicated endpoints so the task row stays consistent.
+        if (eventType === 'status_change') {
+          return sendJson(res, 400, { ok: false, error: 'use_status_endpoint', hint: 'POST /api/tasks/:taskId/status' });
+        }
+        if (eventType === 'assignment_change') {
+          return sendJson(res, 400, { ok: false, error: 'use_assign_endpoint', hint: 'POST /api/tasks/:taskId/assign' });
+        }
+
+        // Guardrails: keep event types sane (extend intentionally).
+        const allowedEventTypes = new Set(['comment', 'approval_resolved', 'task_deleted']);
+        if (!allowedEventTypes.has(eventType)) {
+          return sendJson(res, 400, { ok: false, error: 'invalid_event_type', allowed: Array.from(allowedEventTypes) });
+        }
 
         const sb = getSupabaseServerClient();
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
@@ -2059,14 +2150,21 @@ const server = http.createServer(async (req, res) => {
         const name = String(body.name || '').trim();
         const content = String(body.content || '').toString();
         const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
-        const convertToRaw = body.convertTo ? String(body.convertTo).trim() : null; // doc|sheet|slides
-        const convertTo = convertToRaw ? convertToRaw.toLowerCase() : null;
+        const convertTo = body.convertTo ? String(body.convertTo).trim() : null; // doc|sheet|slides
 
         if (!name) return sendJson(res, 400, { ok: false, error: 'missing_name' });
         if (!content) return sendJson(res, 400, { ok: false, error: 'missing_content' });
-        if (content.length > 500_000) return sendJson(res, 400, { ok: false, error: 'content_too_large' });
-        if (convertTo && !['doc', 'sheet', 'slides'].includes(convertTo)) {
+
+        // Hard limits (keep endpoint predictable + safe)
+        const allowedConvertTo = new Set(['doc', 'sheet', 'slides']);
+        if (convertTo && !allowedConvertTo.has(convertTo)) {
           return sendJson(res, 400, { ok: false, error: 'invalid_convertTo' });
+        }
+
+        const maxBytes = Number(process.env.CLAWDOS_DRIVE_UPLOAD_MAX_BYTES || 500_000); // ~500KB default
+        const contentBytes = Buffer.byteLength(content, 'utf8');
+        if (Number.isFinite(maxBytes) && maxBytes > 0 && contentBytes > maxBytes) {
+          return sendJson(res, 413, { ok: false, error: 'content_too_large', maxBytes });
         }
 
         const sb = getSupabaseServerClient();
@@ -2100,48 +2198,65 @@ const server = http.createServer(async (req, res) => {
         // Write to temp file, then upload with gog.
         const safeBase = name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120) || 'artifact.txt';
         const tmpPath = `/tmp/${projectId}-${Date.now()}-${safeBase}`;
-        writeFileSync(tmpPath, content, 'utf8');
 
         let uploaded = null;
+        let urlOut = null;
+
         try {
+          writeFileSync(tmpPath, content, 'utf8');
+
           const convertFlag = convertTo ? ` --convert-to ${JSON.stringify(convertTo)}` : '';
           const cmd = `gog drive upload ${JSON.stringify(tmpPath)} --parent ${JSON.stringify(folderId)} --name ${JSON.stringify(name)}${convertFlag} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`;
           const { stdout } = await exec(cmd, { env: { ...process.env }, timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
           uploaded = JSON.parse(stdout || 'null');
-        } finally {
+
+          // Fetch URL (best-effort)
           try {
-            unlinkSync(tmpPath);
+            const { stdout: uo } = await exec(
+              `gog drive url ${JSON.stringify(uploaded?.id)} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`,
+              { env: { ...process.env }, timeout: 30000, maxBuffer: 2 * 1024 * 1024 }
+            );
+            urlOut = (JSON.parse(uo || 'null')?.[0]?.url) || null;
           } catch {
             // ignore
           }
-        }
 
-        // Fetch URL
-        let url = null;
-        try {
-          const { stdout: uo } = await exec(
-            `gog drive url ${JSON.stringify(uploaded?.id)} -j --results-only --account ${JSON.stringify(account)} --client ${JSON.stringify(client)}`,
-            { env: { ...process.env }, timeout: 30000, maxBuffer: 2 * 1024 * 1024 }
-          );
-          url = (JSON.parse(uo || 'null')?.[0]?.url) || null;
-        } catch {
-          // ignore
-        }
+          // Activity log (best-effort)
+          try {
+            await sb.from('activities').insert({
+              project_id: projectId,
+              type: 'drive_upload',
+              message: `Uploaded ${name} to Drive (${category})`,
+              actor_agent_key: author,
+              task_id: null,
+            });
+          } catch {
+            // ignore
+          }
 
-        // Activity log
-        try {
-          await sb.from('activities').insert({
-            project_id: projectId,
-            type: 'drive_upload',
-            message: `Uploaded ${name} to Drive (${category})`,
-            actor_agent_key: author,
-            task_id: null,
-          });
-        } catch {
-          // ignore
-        }
+          // Structured log (best-effort)
+          try {
+            console.log(JSON.stringify({
+              type: 'drive_upload',
+              ok: true,
+              projectId,
+              category,
+              name,
+              bytes: contentBytes,
+              convertTo,
+              folderId,
+              fileId: uploaded?.id || null,
+              url: urlOut,
+              at: new Date().toISOString(),
+            }));
+          } catch {
+            // ignore
+          }
 
-        return sendJson(res, 200, { ok: true, fileId: uploaded?.id || null, url, folderId });
+          return sendJson(res, 200, { ok: true, fileId: uploaded?.id || null, url: urlOut, folderId });
+        } finally {
+          try { unlinkSync(tmpPath); } catch { /* ignore */ }
+        }
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
       }
@@ -2590,13 +2705,13 @@ const server = http.createServer(async (req, res) => {
 
       // Step B: Remove OpenClaw agent
       try {
-        await execExecutor(`agents remove ${JSON.stringify(agentIdShort)}`, { timeout: 15000 });
+        await execExecutor(`agents delete ${JSON.stringify(agentIdShort)} --force`, { timeout: 60000 });
         report.agentRemoved = true;
       } catch (e) {
         const msg = String(e?.message || e);
         report.agentRemoved = msg.includes('not found') || msg.includes('does not exist') ? 'already_gone' : false;
         if (report.agentRemoved !== 'already_gone') {
-          console.warn('[delete-agent] agents remove failed:', msg);
+          console.warn('[delete-agent] agents delete failed:', msg);
         }
       }
 

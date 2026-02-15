@@ -21,6 +21,14 @@ Docs:
 - `src/` frontend (Vite + React + TypeScript + shadcn/ui)
 - `server/` minimal local Control API that connects the UI to the OpenClaw workspace
 
+## Guardrails (commit messages)
+This repo rejects vague commit subjects like "Changes" and "Updated plan file" (they make audits/rollbacks painful).
+
+To enable the local hook:
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Run locally
 
 Install:
