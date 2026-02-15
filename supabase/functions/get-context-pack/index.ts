@@ -206,7 +206,7 @@ async function generateRecentChanges(supabase: any, projectId: string): Promise<
     return `- [${time}] ${item.message} _(${actor})_`;
   });
 
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 
 async function fetchTaskContext(
@@ -235,18 +235,18 @@ async function fetchTaskContext(
   const task = taskRes.data;
   const comments = commentsRes.data || [];
 
-  let context = `## Current Task: ${task.title}\\n`;
-  context += `Status: ${task.status}\\n`;
+  let context = `## Current Task: ${task.title}\n`;
+  context += `Status: ${task.status}\n`;
 
   if (task.description) {
-    context += `\\n${task.description}\\n`;
+    context += `\n${task.description}\n`;
   }
 
   if (comments.length > 0) {
-    context += "\\n### Recent Discussion\\n";
+    context += "\n### Recent Discussion\n";
     for (const c of comments) {
       const author = c.author_agent_key || "user";
-      context += `- **${author}**: ${c.content}\\n`;
+      context += `- **${author}**: ${c.content}\n`;
     }
   }
 
@@ -395,5 +395,5 @@ function renderContextPackAsMarkdown(pack: ContextPack): string {
     }
   }
 
-  return lines.join("\\n");
+  return lines.join("\n");
 }
