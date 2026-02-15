@@ -703,6 +703,55 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/documents/note — create a text note in project_documents (service role)
+    if (req.method === 'POST' && url.pathname === '/api/documents/note') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const title = String(body.title || '').trim();
+        const contentText = String(body.content_text || body.contentText || '').trim();
+        const docType = body.doc_type ? String(body.doc_type).trim() : null;
+        const pinned = body.pinned === undefined ? null : !!body.pinned;
+        const author = String(body.author || body.agent_key || 'dashboard').trim();
+
+        if (!title) return sendJson(res, 400, { ok: false, error: 'missing_title' });
+        if (!contentText) return sendJson(res, 400, { ok: false, error: 'missing_content' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const insertRow = {
+          project_id: projectId,
+          source_type: 'note',
+          title,
+          content_text: contentText,
+          agent_key: author,
+        };
+        if (docType) insertRow.doc_type = docType;
+        if (pinned !== null) insertRow.pinned = pinned;
+
+        const { data, error } = await sb.from('project_documents').insert(insertRow).select('id').single();
+        if (error) throw error;
+
+        // Best-effort: also index into knowledge search
+        try {
+          // Reuse our own knowledge ingest endpoint via local call (does not block)
+          const base = `http://127.0.0.1:${PORT}`;
+          void fetch(`${base}/api/knowledge/ingest`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-clawdos-project': projectId },
+            body: JSON.stringify({ title, source_type: 'note', text: contentText }),
+          });
+        } catch {
+          // ignore
+        }
+
+        return sendJson(res, 200, { ok: true, id: data?.id || null });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/agents') {
       // Minimal v1: only the primary agent profile.
       let skillCount = null;
