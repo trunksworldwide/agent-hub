@@ -316,15 +316,23 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
         )}
       </div>
 
-      {/* Delete agent (not for primary) */}
+      {/* Danger zone — delete agent (not for primary) */}
       {!isPrimaryAgent && (
-        <div className="pt-4 border-t border-border">
+        <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-destructive" />
+            <span className="text-sm font-medium text-destructive">Danger Zone</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Permanently remove <strong>{agent.name}</strong> and its workspace. Scheduled jobs will be disabled.
+            Historical messages and task outputs are preserved.
+          </p>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                variant="ghost"
+                variant="destructive"
                 size="sm"
-                className="gap-2 text-muted-foreground hover:text-destructive"
+                className="gap-2"
                 disabled={deleting}
               >
                 <Trash2 className="w-4 h-4" />
