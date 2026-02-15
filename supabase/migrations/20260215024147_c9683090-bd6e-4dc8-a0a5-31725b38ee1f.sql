@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS brain_docs_project_type_uidx;
