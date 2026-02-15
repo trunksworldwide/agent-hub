@@ -4413,3 +4413,58 @@ export async function softDeleteTask(taskId: string, author?: string): Promise<{
 
   return { ok: false };
 }
+
+// ============= Knowledge Search & Ingestion =============
+
+export interface KnowledgeSearchResult {
+  sourceId: string;
+  title: string;
+  sourceUrl: string | null;
+  sourceType: string;
+  chunkText: string;
+}
+
+export async function searchKnowledge(
+  query: string,
+  limit = 5
+): Promise<KnowledgeSearchResult[]> {
+  // Try Control API first
+  if (isControlApiHealthy()) {
+    try {
+      const res = await requestJson<{ ok: boolean; results: KnowledgeSearchResult[] }>(
+        '/api/knowledge/search',
+        {
+          method: 'POST',
+          body: JSON.stringify({ query, limit }),
+        }
+      );
+      return res.results || [];
+    } catch (e) {
+      console.warn('searchKnowledge: Control API failed', e);
+    }
+  }
+
+  // If Control API offline, return empty (knowledge tables deny direct browser access)
+  return [];
+}
+
+export async function ingestKnowledge(opts: {
+  title?: string;
+  source_url?: string;
+  source_type?: string;
+  text?: string;
+}): Promise<{ ok: boolean; sourceId?: string; status?: string; wasDuplicate?: boolean; error?: string }> {
+  if (!isControlApiHealthy()) {
+    return { ok: false, error: 'control_api_offline' };
+  }
+
+  try {
+    return await requestJson('/api/knowledge/ingest', {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    });
+  } catch (e) {
+    console.warn('ingestKnowledge failed:', e);
+    return { ok: false, error: String(e) };
+  }
+}

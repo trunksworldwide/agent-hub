@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.generate-agent-docs]
 verify_jwt = false
+
+[functions.knowledge-worker]
+verify_jwt = true

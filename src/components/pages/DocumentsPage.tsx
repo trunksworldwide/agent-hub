@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, FileStack, ChevronDown, ChevronUp, RotateCw } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Plus, RefreshCw, FileStack, ChevronDown, ChevronUp, RotateCw, Search, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useClawdOffice } from '@/lib/store';
 import {
@@ -11,9 +13,12 @@ import {
   deleteDocument,
   getDocumentStorageUrl,
   getAgents,
+  searchKnowledge,
+  ingestKnowledge,
   type ProjectDocument,
   type Agent,
   type CreateDocumentOptions,
+  type KnowledgeSearchResult,
 } from '@/lib/api';
 import { generateRecentChangesSummary } from '@/lib/recent-changes';
 import { DocumentList } from '@/components/documents/DocumentList';
@@ -46,6 +51,12 @@ export function DocumentsPage() {
   // Drive spine link (optional)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string>('');
   const [copyingDriveUrl, setCopyingDriveUrl] = useState(false);
+
+  // Knowledge search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadDocuments = async () => {
     setLoading(true);
@@ -114,6 +125,13 @@ export function DocumentsPage() {
     }
     toast({ title: 'Note created', description: title });
     await loadDocuments();
+
+    // Best-effort auto-ingest for knowledge search
+    ingestKnowledge({ title, text: content, source_type: 'note' }).then(r => {
+      if (r.ok && !r.wasDuplicate) {
+        toast({ title: 'Indexing for search...', description: title });
+      }
+    }).catch(() => { /* silent */ });
   };
 
   const handleUploadFile = async (file: File, title: string, options?: CreateDocumentOptions) => {
@@ -128,6 +146,18 @@ export function DocumentsPage() {
     }
     toast({ title: 'File uploaded', description: title });
     await loadDocuments();
+
+    // Best-effort auto-ingest
+    const textTypes = ['text/plain', 'text/markdown', 'text/csv', 'application/json'];
+    if (textTypes.some(t => file.type.startsWith(t) || file.name.endsWith('.md') || file.name.endsWith('.txt') || file.name.endsWith('.csv'))) {
+      try {
+        const text = await file.text();
+        ingestKnowledge({ title, text, source_type: 'file' }).catch(() => {});
+      } catch { /* silent */ }
+    } else {
+      // Create placeholder for unsupported types
+      ingestKnowledge({ title, source_type: 'file' }).catch(() => {});
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -207,6 +237,53 @@ export function DocumentsPage() {
               Add Document
             </Button>
           </div>
+        </div>
+
+        {/* Knowledge Search */}
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search across project knowledge..."
+              value={searchQuery}
+              onChange={(e) => {
+                const q = e.target.value;
+                setSearchQuery(q);
+                if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+                if (!q.trim()) { setSearchResults([]); setSearching(false); return; }
+                setSearching(true);
+                searchTimerRef.current = setTimeout(async () => {
+                  try {
+                    const results = await searchKnowledge(q, 5);
+                    setSearchResults(results);
+                  } catch { setSearchResults([]); }
+                  finally { setSearching(false); }
+                }, 500);
+              }}
+              className="pl-9 pr-9"
+            />
+            {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />}
+          </div>
+          {searchQuery.trim() && !searching && searchResults.length === 0 && (
+            <p className="text-xs text-muted-foreground mt-2">No results found. Knowledge is indexed when documents are added.</p>
+          )}
+          {searchResults.length > 0 && (
+            <div className="mt-2 space-y-2">
+              {searchResults.map((r, i) => (
+                <Card key={`${r.sourceId}-${i}`} className="p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{r.title}</span>
+                        <Badge variant="outline" className="text-[10px] shrink-0">{r.sourceType}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{r.chunkText}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Project Overview */}

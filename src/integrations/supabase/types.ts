@@ -578,6 +578,95 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedding: string | null
+          id: string
+          project_id: string
+          source_id: string
+        }
+        Insert: {
+          chunk_index: number
+          chunk_text: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          project_id: string
+          source_id: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          project_id?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_chunks_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_sources: {
+        Row: {
+          char_count: number
+          chunk_count: number
+          content_hash: string
+          created_at: string
+          id: string
+          index_error: string | null
+          indexed: boolean
+          normalized_url: string | null
+          project_id: string
+          raw_text: string
+          source_type: string
+          source_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          char_count?: number
+          chunk_count?: number
+          content_hash: string
+          created_at?: string
+          id?: string
+          index_error?: string | null
+          indexed?: boolean
+          normalized_url?: string | null
+          project_id: string
+          raw_text?: string
+          source_type?: string
+          source_url?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          char_count?: number
+          chunk_count?: number
+          content_hash?: string
+          created_at?: string
+          id?: string
+          index_error?: string | null
+          indexed?: boolean
+          normalized_url?: string | null
+          project_id?: string
+          raw_text?: string
+          source_type?: string
+          source_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       mentions: {
         Row: {
           agent_key: string
@@ -1065,7 +1154,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_knowledge_chunks: {
+        Args: { p_embedding: string; p_limit?: number; p_project_id: string }
+        Returns: {
+          chunk_index: number
+          chunk_text: string
+          id: string
+          similarity: number
+          source_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
