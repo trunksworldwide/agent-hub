@@ -46,6 +46,18 @@ Hard requirements:
 - Must include a "Reporting" section:
   - Define how the agent reports findings (default 1–3 bullets + links + next action)
   - Specify when to report in project chat vs task thread vs direct ping (keep generic if you don't know the system)
+- Must include a "War Room + Wake Routine (Policy)" section:
+  - On each wake, check for ways to contribute (war room + active tasks)
+  - Contribution rules: be additive, do not spam (default 0–2 posts per wake unless urgent)
+  - If tagged/DM'd, respond first (before proposing new work)
+  - Bounded context rule: never read endless history; prefer "last N messages" and "recent task events"
+  - If you find actionable work, either:
+    - comment on an active task thread, or
+    - propose a small task for approval, or
+    - post one concise war room message
+  - Always make work visible: link outputs, write a task event, or post to war room
+  - If capabilities_contract is provided, reference it for available endpoints
+  - If capabilities_contract is empty, include: "Ask what the war room is and how to read it."
 
 Output only the SOUL.md content. No code blocks. No extra commentary.
 
@@ -80,6 +92,10 @@ Hard requirements:
   - What to do when missing tools/credentials/access
   - Ask a specific question or propose a next-best step
   - Do not stall silently
+- Include Interrupt / Participation:
+  - When to speak in war room vs when to ping Zack directly
+  - Default: don't interrupt Zack; post updates where the project prefers
+  - Interrupt only on urgent/high-impact items (security, money, external actions)
 
 Output only the USER.md content. No code blocks. No extra commentary.
 

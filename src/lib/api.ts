@@ -622,6 +622,40 @@ export async function createAgent(input: {
       await queueProvisionRequest(projectId, agentKey, agentIdShort, name, emoji, role);
     }
 
+    // Queue a default heartbeat cron job for the new agent (Supabase-only path).
+    // The server provisioning path already creates one, but if the executor is
+    // offline this ensures the agent still gets a heartbeat queued.
+    if (role) {
+      const heartbeatInstructions = [
+        `@agent:${agentKey}`,
+        `@intent:heartbeat`,
+        '',
+        `Hourly heartbeat for ${name}.`,
+        '',
+        'STEP 0: Check for new @mentions or DMs addressed to you. Respond to each before doing anything else.',
+        'STEP 1: Read the war room / project chat (last 50-100 messages). Note anything relevant to your role.',
+        'STEP 2: Read active tasks (non-inbox) and their recent timeline (last 20 events each). Identify where you can help.',
+        'STEP 3: Contribute exactly ONE useful action:',
+        '  - Post 1 concise war room message summarizing findings, OR',
+        '  - Post 1 task-thread comment with progress/help, OR',
+        '  - Propose 1-3 small tasks for approval in the inbox.',
+        'STEP 4: If blocked on anything, propose an "UNBLOCK:" task describing what access or info you need.',
+        '',
+        'Anti-spam: if you already contributed in the last hour with nothing new to add, do nothing.',
+      ].join('\n');
+
+      queueCronCreateRequest({
+        name: `${name} Heartbeat`,
+        scheduleKind: 'interval',
+        scheduleExpr: '60m',
+        tz: 'America/New_York',
+        instructions: heartbeatInstructions,
+        targetAgentKey: agentKey,
+        jobIntent: 'heartbeat',
+        contextPolicy: 'default',
+      }).catch((e) => console.warn('[createAgent] Failed to queue heartbeat cron:', e));
+    }
+
     return { ok: true };
   } catch (e: any) {
     console.error('createAgent failed:', e);
