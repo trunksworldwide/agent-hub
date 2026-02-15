@@ -1680,9 +1680,41 @@ export async function getTools(): Promise<Tool[]> {
  * This is the primary data source for the Schedule page.
  */
 export async function getCronMirrorJobs(): Promise<CronMirrorJob[]> {
+  const projectId = getProjectId();
+
+  // Prefer Control API when configured so edits show up instantly even if Supabase mirror is lagging.
+  const base = getApiBaseUrl();
+  if (base) {
+    try {
+      const jobs = await requestJson<any[]>('/api/cron');
+      const nowIso = new Date().toISOString();
+      return (jobs || []).map((j: any) => ({
+        id: String(j.id || j.jobId || j.name),
+        projectId,
+        jobId: String(j.id || j.jobId || j.name),
+        name: String(j.name || j.id || ''),
+        scheduleKind: j.scheduleKind ?? null,
+        scheduleExpr: j.scheduleExpr ?? null,
+        tz: j.tz ?? null,
+        enabled: j.enabled !== false,
+        nextRunAt: j.nextRun || null,
+        lastRunAt: j.lastRunAt || null,
+        lastStatus: j.lastRunStatus || null,
+        lastDurationMs: j.lastDurationMs ?? null,
+        instructions: j.instructions || '',
+        updatedAt: nowIso,
+        targetAgentKey: j.targetAgentKey ?? null,
+        jobIntent: j.jobIntent ?? null,
+        contextPolicy: j.contextPolicy ?? null,
+        uiLabel: j.uiLabel ?? null,
+      }));
+    } catch {
+      // fall back to Supabase mirror
+    }
+  }
+
   if (!(hasSupabase() && supabase)) return [];
 
-  const projectId = getProjectId();
   const { data, error } = await supabase
     .from('cron_mirror')
     .select('*')
