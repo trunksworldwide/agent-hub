@@ -1363,7 +1363,6 @@ export async function createDocOverride(agentKey: string, docType: AgentFile['ty
     const docsToWrite: { type: AgentFile['type']; content: string }[] = [
       { type: 'soul', content: genResult.soul || '' },
       { type: 'user', content: genResult.user || '' },
-      { type: 'memory_long', content: genResult.memory || '' },
     ];
 
     // Write each doc: best-effort disk sync, then always upsert to Supabase

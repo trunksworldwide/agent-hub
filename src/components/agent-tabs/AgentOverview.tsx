@@ -35,7 +35,7 @@ interface Props {
 }
 
 export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
-  const { selectedProjectId, setActiveAgentTab } = useClawdOffice();
+  const { selectedProjectId, setActiveAgentTab, clearFileCache } = useClawdOffice();
   const { toast } = useToast();
   const [purpose, setPurpose] = useState('');
   const [originalPurpose, setOriginalPurpose] = useState('');
@@ -146,7 +146,6 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
   const docEntries = [
     { key: 'soul', label: 'Soul', icon: '✨', tab: 'soul' as const },
     { key: 'user', label: 'User', icon: '👤', tab: 'user' as const },
-    { key: 'memory_long', label: 'Memory', icon: '🧠', tab: 'memory' as const },
   ];
 
   return (
@@ -285,9 +284,12 @@ export function AgentOverview({ agent, onRefresh, onDeleted }: Props) {
                 // Refresh all doc statuses
                 const newStatus = await getDocOverrideStatus(agent.id);
                 setDocStatus(newStatus);
+                // Clear cached file content so editors re-fetch from Supabase
+                clearFileCache(`${agent.id}-soul`);
+                clearFileCache(`${agent.id}-user`);
                 toast({
                   title: 'Docs regenerated',
-                  description: `AI-generated SOUL, USER, and MEMORY docs created for ${agent.name}.`,
+                  description: `AI-generated SOUL and USER docs created for ${agent.name}.`,
                 });
                 onRefresh?.();
               } catch (e: any) {
