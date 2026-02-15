@@ -12,6 +12,7 @@ const corsHeaders = {
 const MAX_PINNED_DOCS = 10;
 const MAX_RECENT_ACTIVITIES = 20;
 const MAX_SUMMARY_BULLETS = 10;
+const MAX_KNOWLEDGE_RESULTS = 3;
 
 interface DocReference {
   id: string;
@@ -22,15 +23,23 @@ interface DocReference {
   isCredential: boolean;
 }
 
+interface KnowledgeExcerpt {
+  title: string;
+  sourceUrl: string | null;
+  chunkText: string;
+}
+
 interface ContextPack {
   builtAt: string;
   projectId: string;
   agentKey: string;
+  capabilitiesVersion: string | null;
   projectOverview: string;
   globalDocs: DocReference[];
   agentDocs: DocReference[];
   recentChanges: string;
   taskContext?: string;
+  relevantKnowledge?: KnowledgeExcerpt[];
 }
 
 serve(async (req) => {
@@ -62,23 +71,32 @@ serve(async (req) => {
     }
 
     // Fetch all data in parallel
-    const [projectOverview, globalDocs, agentDocs, recentChanges, taskContext] = await Promise.all([
+    const [projectOverview, globalDocs, agentDocs, recentChanges, taskContext, capabilitiesVersion] = await Promise.all([
       fetchProjectOverview(supabase, projectId),
       fetchPinnedDocs(supabase, projectId, null),
       fetchPinnedDocs(supabase, projectId, agentKey),
       generateRecentChanges(supabase, projectId),
       taskId ? fetchTaskContext(supabase, projectId, taskId) : Promise.resolve(undefined),
+      fetchCapabilitiesVersion(supabase, projectId),
     ]);
+
+    // If task context exists, search for relevant knowledge
+    let relevantKnowledge: KnowledgeExcerpt[] | undefined;
+    if (taskContext && taskId) {
+      relevantKnowledge = await fetchRelevantKnowledge(projectId, taskContext);
+    }
 
     const contextPack: ContextPack = {
       builtAt: new Date().toISOString(),
       projectId,
       agentKey,
+      capabilitiesVersion,
       projectOverview,
       globalDocs,
       agentDocs,
       recentChanges,
       taskContext,
+      relevantKnowledge,
     };
 
     // Also return as markdown for direct use
@@ -235,12 +253,66 @@ async function fetchTaskContext(
   return context;
 }
 
+async function fetchCapabilitiesVersion(supabase: any, projectId: string): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from("project_settings")
+      .select("value")
+      .eq("project_id", projectId)
+      .eq("key", "capabilities_version")
+      .maybeSingle();
+    return data?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRelevantKnowledge(projectId: string, taskContext: string): Promise<KnowledgeExcerpt[]> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceKey) return [];
+
+    // Extract a search query from the task context (title + first 200 chars of description)
+    const query = taskContext.slice(0, 300).replace(/[#*_\n]+/g, " ").trim();
+    if (!query) return [];
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/knowledge-worker`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "search",
+        projectId,
+        query,
+        limit: MAX_KNOWLEDGE_RESULTS,
+      }),
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results || []).map((r: any) => ({
+      title: r.title,
+      sourceUrl: r.sourceUrl,
+      chunkText: r.chunkText,
+    }));
+  } catch (err) {
+    console.error("fetchRelevantKnowledge error:", err);
+    return [];
+  }
+}
+
 function renderContextPackAsMarkdown(pack: ContextPack): string {
   const lines: string[] = [];
 
   lines.push(`# Context Pack`);
   lines.push(`Built: ${pack.builtAt}`);
   lines.push(`Agent: ${pack.agentKey}`);
+  if (pack.capabilitiesVersion) {
+    lines.push(`Capabilities Contract Version: ${pack.capabilitiesVersion}`);
+  }
   lines.push("");
 
   lines.push("## Project Overview");
@@ -306,6 +378,21 @@ function renderContextPackAsMarkdown(pack: ContextPack): string {
   if (pack.taskContext) {
     lines.push(pack.taskContext);
     lines.push("");
+  }
+
+  if (pack.relevantKnowledge && pack.relevantKnowledge.length > 0) {
+    lines.push("## Relevant Knowledge");
+    lines.push("_Auto-retrieved from project knowledge base. Use this context and cite sources._");
+    lines.push("_If missing info, ingest new sources via POST /api/knowledge/ingest._");
+    lines.push("");
+    for (const k of pack.relevantKnowledge) {
+      lines.push(`### ${k.title}`);
+      if (k.sourceUrl) {
+        lines.push(`Source: ${k.sourceUrl}`);
+      }
+      lines.push(k.chunkText);
+      lines.push("");
+    }
   }
 
   return lines.join("\\n");

@@ -1,3 +1,13 @@
+### Vector Search, Auto-Ingestion, and Agent Knowledge Awareness (Phases 1-2, 4-8)
+- **Database (pgvector)**: Enabled `vector` extension. Created `knowledge_sources` (dedupe via `content_hash`, `normalized_url`, indexing status) and `knowledge_chunks` (1536-dim embeddings) tables with zero RLS policies (deny all direct browser access). Added `match_knowledge_chunks` RPC with `SECURITY DEFINER` for similarity search.
+- **Edge Function `knowledge-worker`** (`verify_jwt=true`): Single source of truth for embed + search actions. Chunking (800-1200 chars, paragraph-aware, max 200 chunks/500K chars). Embeds via OpenAI `text-embedding-3-small`. Only callable with service-role credentials.
+- **Context Pack** (`get-context-pack`): Now injects top 3 relevant knowledge excerpts into task contexts via knowledge-worker search. Includes `capabilities_version` from project_settings.
+- **SOUL Prompt** (`generate-agent-docs`): Added "How to Operate Mission Control" subsection listing knowledge search/ingest, task, and artifact endpoints.
+- **Dashboard API** (`src/lib/api.ts`): Added `searchKnowledge()` and `ingestKnowledge()` helpers via Control API. Auto-ingestion hooks in `createNoteDocument()` and `uploadDocument()` (best-effort, non-blocking).
+- **Knowledge Page** (`DocumentsPage.tsx`): Added search bar with debounced query, compact results list (title, excerpt, source type badge). No similarity scores shown.
+- **Schedule Page** (`CronPage.tsx`): Added mirror staleness banner (amber warning when >10 min stale) and per-job "Mirror" badge when executor is offline.
+- **Remaining**: Phase 3 (Control API `/api/knowledge/ingest`, `/api/knowledge/search`, `/api/health/report` routes in `server/index.mjs`) must be implemented on the Mac mini executor side.
+
 ### Autonomous Agent Wake Routine — War Room + Heartbeat
 - **Edge Function** (`generate-agent-docs`):
   - SOUL.md prompt now requires a "War Room + Wake Routine (Policy)" section: contribution rules, anti-spam (0–2 posts/wake), bounded context reads, and capabilities_contract awareness

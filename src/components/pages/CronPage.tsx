@@ -238,6 +238,9 @@ function CronJobRow({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-medium truncate">{job.name}</h3>
+                  {!controlApiConnected && (
+                    <Badge variant="outline" className="text-[10px]">Mirror</Badge>
+                  )}
                   {pendingDelete && (
                     <Badge variant="secondary" className="text-[10px] bg-destructive/10 text-destructive">
                       Deletion pending
@@ -1188,6 +1191,29 @@ export function CronPage() {
             </div>
           </div>
         </div>
+
+        {/* Mirror staleness banner */}
+        {!controlApiConnected && mirrorJobs.length > 0 && (() => {
+          const maxUpdated = Math.max(...mirrorJobs.map(j => new Date(j.updatedAt).getTime()));
+          const staleMinutes = Math.round((Date.now() - maxUpdated) / 60_000);
+          return (
+            <div className={cn(
+              "mb-4 p-3 rounded-lg border flex items-start gap-2",
+              staleMinutes > 10
+                ? "bg-warning/10 border-warning/30"
+                : "bg-muted/50 border-border"
+            )}>
+              <AlertCircle className={cn("w-4 h-4 mt-0.5 shrink-0", staleMinutes > 10 ? "text-warning" : "text-muted-foreground")} />
+              <div className="text-sm">
+                <span className="font-medium">Executor offline</span>
+                <span className="text-muted-foreground">
+                  {` — showing last known state from mirror (synced ${staleMinutes} min ago).`}
+                  {staleMinutes > 10 && ' Data may be stale.'}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Error banner (prominent when there's an error) */}
         {lastError && (

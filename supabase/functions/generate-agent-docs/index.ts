@@ -43,6 +43,15 @@ Hard requirements:
 - Must include a "Capabilities I Can Use" section:
   - If a capabilities contract is provided: summarize it into an actionable list AND include "when to use each capability" (not just listing).
   - If empty: include a short "If capabilities are unclear" note telling the agent to ask for the project/system's capabilities contract and not to invent tools.
+  - Must include a "How to Operate Mission Control" subsection inside "Capabilities I Can Use":
+    - Search knowledge: POST /api/knowledge/search { query, limit }
+    - Ingest knowledge: POST /api/knowledge/ingest { title?, source_url?, source_type?, text? }
+    - Propose tasks: POST /api/tasks/propose
+    - Post task events: POST /api/tasks/:taskId/events
+    - Upload artifacts: POST /api/drive/upload
+    - All endpoints require x-clawdos-project header
+    - Never use Supabase keys directly
+    - If capabilities_contract provided, use it as the authoritative list instead
 - Must include a "Reporting" section:
   - Define how the agent reports findings (default 1–3 bullets + links + next action)
   - Specify when to report in project chat vs task thread vs direct ping (keep generic if you don't know the system)
