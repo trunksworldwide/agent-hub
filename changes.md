@@ -1,3 +1,8 @@
+### Context Pack Preview Dialog
+- **New component** (`ContextPackPreviewDialog.tsx`): Operator can select an agent + optional task, generate a full Context Pack preview showing section-by-section character counts with budget bars, included/excluded pinned docs, retrieved knowledge chunks, and full markdown output.
+- **context-pack.ts**: Added `ExcludedDoc` interface and `excludedDocs` field to `ContextPack`. `fetchPinnedDocs` now returns `{ docs, excluded }` with titles of dropped documents and reasons. Updated callers accordingly.
+- **DocumentsPage**: Added "Preview" button in header to open the dialog.
+
 ### Lean & Smart Context Packs: Pinning UI + Per-Task Retrieval + Hard Caps
 - **DocumentList** (`DocumentList.tsx`): Added clickable pin/unpin toggle button per document (Pin/PinOff icons) with toast feedback. "Pinned" badge shown on pinned docs. Removed old static pin indicator.
 - **Edge function** (`get-context-pack`): Reduced `MAX_PINNED_DOCS` from 10→5, added `MAX_PINNED_CHARS=8000` with accumulation-based enforcement (drops docs exceeding cap). Increased `MAX_KNOWLEDGE_RESULTS` from 3→5, added `MAX_KNOWLEDGE_CHARS=6000` with per-chunk truncation. Renamed markdown sections to "Pinned Knowledge (Global)".

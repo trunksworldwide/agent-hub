@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, RefreshCw, FileStack, ChevronDown, ChevronUp, RotateCw, Search, Loader2 } from 'lucide-react';
+import { Plus, RefreshCw, FileStack, ChevronDown, ChevronUp, RotateCw, Search, Loader2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +26,7 @@ import { DocumentList } from '@/components/documents/DocumentList';
 import { AddDocumentDialog } from '@/components/documents/AddDocumentDialog';
 import { DocumentViewer } from '@/components/documents/DocumentViewer';
 import { ProjectOverviewCard } from '@/components/documents/ProjectOverviewCard';
+import { ContextPackPreviewDialog } from '@/components/documents/ContextPackPreviewDialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -38,6 +39,7 @@ export function DocumentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Viewer state
@@ -242,6 +244,15 @@ export function DocumentsPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setPreviewOpen(true)}
+              title="Preview Context Pack"
+            >
+              <Eye className="w-4 h-4 mr-1" />
+              Preview
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={loadDocuments}
               disabled={loading}
             >
@@ -378,6 +389,13 @@ export function DocumentsPage() {
         open={viewerOpen}
         onOpenChange={setViewerOpen}
         storageUrl={getDocumentStorageUrl(viewingDoc?.storagePath)}
+      />
+
+      {/* Context Pack Preview */}
+      <ContextPackPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        agents={agents}
       />
     </div>
   );
