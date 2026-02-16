@@ -153,7 +153,13 @@ export function ProjectOverviewCard() {
               </p>
             </button>
           ) : (
-            <div className="text-sm font-medium">{mission}</div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{mission}</div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                Included in every agent's Context Pack
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
