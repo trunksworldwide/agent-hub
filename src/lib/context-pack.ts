@@ -23,6 +23,7 @@ export interface ContextPack {
   builtAt: string;
   projectId: string;
   agentKey: string;
+  mission: string;
   projectOverview: string;
   globalDocs: DocReference[];
   agentDocs: DocReference[];
@@ -50,6 +51,7 @@ export async function buildContextPack(
       builtAt: new Date().toISOString(),
       projectId,
       agentKey,
+      mission: '',
       projectOverview: '_Supabase not configured._',
       globalDocs: [],
       agentDocs: [],
@@ -59,7 +61,8 @@ export async function buildContextPack(
 
   try {
     // Fetch all data in parallel
-    const [projectOverview, globalDocs, agentDocs, recentChanges, taskContext] = await Promise.all([
+    const [mission, projectOverview, globalDocs, agentDocs, recentChanges, taskContext] = await Promise.all([
+      fetchMission(projectId),
       fetchProjectOverview(projectId),
       fetchPinnedDocs(projectId, null), // global docs
       fetchPinnedDocs(projectId, agentKey), // agent-specific docs
@@ -71,6 +74,7 @@ export async function buildContextPack(
       builtAt: new Date().toISOString(),
       projectId,
       agentKey,
+      mission,
       projectOverview,
       globalDocs,
       agentDocs,
@@ -83,6 +87,7 @@ export async function buildContextPack(
       builtAt: new Date().toISOString(),
       projectId,
       agentKey,
+      mission: '',
       projectOverview: '_Failed to load project overview._',
       globalDocs: [],
       agentDocs: [],
@@ -92,6 +97,28 @@ export async function buildContextPack(
 }
 
 // ============= Data Fetchers =============
+
+/**
+ * Fetch mission statement from brain_docs (doc_type = 'mission').
+ */
+async function fetchMission(projectId: string): Promise<string> {
+  if (!supabase) return '';
+
+  const { data, error } = await supabase
+    .from('brain_docs')
+    .select('content')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'mission')
+    .is('agent_key', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('fetchMission error:', error);
+    return '';
+  }
+
+  return data?.content?.trim() || '';
+}
 
 /**
  * Fetch project overview from brain_docs (doc_type = 'project_overview').
@@ -260,6 +287,13 @@ export function renderContextPackAsMarkdown(pack: ContextPack): string {
   lines.push(`Built: ${pack.builtAt}`);
   lines.push(`Agent: ${pack.agentKey}`);
   lines.push('');
+
+  // Mission
+  if (pack.mission && !pack.mission.startsWith('_')) {
+    lines.push('## Mission');
+    lines.push(pack.mission);
+    lines.push('');
+  }
 
   // Project Overview
   lines.push('## Project Overview');

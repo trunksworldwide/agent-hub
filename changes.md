@@ -1,3 +1,6 @@
+### Mission in Context Pack
+- **Context Pack** (`src/lib/context-pack.ts`, `supabase/functions/get-context-pack/index.ts`): Added `mission` field to `ContextPack` interface and `fetchMission()` to both builders. Mission is now fetched in parallel and rendered as `## Mission` before `## Project Overview` in the markdown output. No schema changes.
+
 ### Image-to-Text Knowledge Caption + Editable Metadata
 - **Control API** (`server/index.mjs`): Added `POST /api/documents/:id/caption/generate` (calls GPT-4o vision with tool calling for structured output, creates companion `project_documents` note with analysis, fires knowledge ingest) and `POST /api/documents/:id/caption/update` (updates caption text/tags on companion doc, re-ingests).
 - **Frontend API** (`src/lib/api.ts`): Added `generateImageCaption()` and `updateImageCaption()` helpers via Control API.
