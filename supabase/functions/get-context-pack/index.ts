@@ -9,10 +9,12 @@ const corsHeaders = {
 };
 
 // Hard limits to keep context windows small
-const MAX_PINNED_DOCS = 10;
+const MAX_PINNED_DOCS = 5;
+const MAX_PINNED_CHARS = 8000;
 const MAX_RECENT_ACTIVITIES = 20;
 const MAX_SUMMARY_BULLETS = 10;
-const MAX_KNOWLEDGE_RESULTS = 3;
+const MAX_KNOWLEDGE_RESULTS = 5;
+const MAX_KNOWLEDGE_CHARS = 6000;
 
 interface DocReference {
   id: string;
@@ -178,7 +180,11 @@ async function fetchPinnedDocs(
     return [];
   }
 
-  return (data || []).map((d: any) => {
+  const results: DocReference[] = [];
+  let totalChars = 0;
+  let dropped = 0;
+
+  for (const d of (data || [])) {
     const notes = d.doc_notes as any;
     const isCredential = d.sensitivity === "contains_secrets";
 
@@ -192,15 +198,28 @@ async function fetchPinnedDocs(
       rulesList = Array.isArray(notes.rules) ? notes.rules : [];
     }
 
-    return {
+    const docChars = summaryBullets.join("").length + rulesList.join("").length;
+    if (totalChars + docChars > MAX_PINNED_CHARS && results.length > 0) {
+      dropped++;
+      continue;
+    }
+    totalChars += docChars;
+
+    results.push({
       id: d.id,
       title: d.title,
       docType: d.doc_type || "general",
       notes: summaryBullets,
       rules: rulesList,
       isCredential,
-    };
-  });
+    });
+  }
+
+  if (dropped > 0) {
+    console.log(`fetchPinnedDocs: dropped ${dropped} docs exceeding ${MAX_PINNED_CHARS} char cap`);
+  }
+
+  return results;
 }
 
 async function generateRecentChanges(supabase: any, projectId: string): Promise<string> {
@@ -313,11 +332,26 @@ async function fetchRelevantKnowledge(projectId: string, taskContext: string): P
 
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.results || []).map((r: any) => ({
+    const raw = (data.results || []).map((r: any) => ({
       title: r.title,
       sourceUrl: r.sourceUrl,
-      chunkText: r.chunkText,
+      chunkText: r.chunkText as string,
     }));
+
+    // Enforce char cap on knowledge chunks
+    const capped: KnowledgeExcerpt[] = [];
+    let totalChars = 0;
+    for (const item of raw) {
+      let text = item.chunkText;
+      const remaining = MAX_KNOWLEDGE_CHARS - totalChars;
+      if (remaining <= 0) break;
+      if (text.length > remaining) {
+        text = text.slice(0, remaining) + "\n_(truncated)_";
+      }
+      totalChars += text.length;
+      capped.push({ ...item, chunkText: text });
+    }
+    return capped;
   } catch (err) {
     console.error("fetchRelevantKnowledge error:", err);
     return [];
@@ -350,7 +384,7 @@ function renderContextPackAsMarkdown(pack: ContextPack): string {
   lines.push("");
 
   if (pack.globalDocs.length > 0) {
-    lines.push("## Global Knowledge");
+    lines.push("## Pinned Knowledge (Global)");
     for (const doc of pack.globalDocs) {
       lines.push(`### ${doc.title} (${doc.docType})`);
       if (doc.isCredential) {

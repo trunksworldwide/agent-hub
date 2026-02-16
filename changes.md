@@ -1,3 +1,8 @@
+### Lean & Smart Context Packs: Pinning UI + Per-Task Retrieval + Hard Caps
+- **DocumentList** (`DocumentList.tsx`): Added clickable pin/unpin toggle button per document (Pin/PinOff icons) with toast feedback. "Pinned" badge shown on pinned docs. Removed old static pin indicator.
+- **Edge function** (`get-context-pack`): Reduced `MAX_PINNED_DOCS` from 10→5, added `MAX_PINNED_CHARS=8000` with accumulation-based enforcement (drops docs exceeding cap). Increased `MAX_KNOWLEDGE_RESULTS` from 3→5, added `MAX_KNOWLEDGE_CHARS=6000` with per-chunk truncation. Renamed markdown sections to "Pinned Knowledge (Global)".
+- **Client-side builder** (`context-pack.ts`): Added `KnowledgeExcerpt` interface and `relevantKnowledge` field to `ContextPack`. Added `fetchRelevantKnowledge()` for per-task knowledge retrieval via knowledge-worker edge function. Mirrored same hard caps (5 pinned docs/8k chars, 5 chunks/6k chars). Updated markdown renderer with consistent section ordering: Mission → Overview → Pinned Knowledge → Your Knowledge → Task Context → Relevant Knowledge → Recent Changes.
+
 ### Mission in Context Pack
 - **Context Pack** (`src/lib/context-pack.ts`, `supabase/functions/get-context-pack/index.ts`): Added `mission` field to `ContextPack` interface and `fetchMission()` to both builders. Mission is now fetched in parallel and rendered as `## Mission` before `## Project Overview` in the markdown output. No schema changes.
 
