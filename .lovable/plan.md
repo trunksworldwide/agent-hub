@@ -1,46 +1,96 @@
 
 
-# Add Mission to Context Pack
+# Lean & Smart Context Packs: Pinning UI + Per-Task Retrieval + Hard Caps
 
-## Problem
+## What already exists (no changes needed)
 
-The Context Pack builders (both the client-side `src/lib/context-pack.ts` and the edge function `supabase/functions/get-context-pack/index.ts`) only fetch `project_overview` from `brain_docs`. The `mission` doc_type was added later and never wired into the pack. The UI helper text on the Mission card already says it's included, which is currently a lie.
+- `project_documents.pinned` column exists
+- `updateDocument()` in `api.ts` already supports `{ pinned: true/false }`
+- `getDocuments()` already sorts pinned docs first
+- Edge function (`get-context-pack`) already fetches pinned docs and does per-task knowledge retrieval via `knowledge-worker`
+- DocumentList already shows a Pin icon indicator on pinned docs
 
-## Fix (4 files, minimal diffs)
+## What to build
 
-### 1. Edge function: `supabase/functions/get-context-pack/index.ts`
+### 1. Pin/Unpin toggle in DocumentList
 
-- Add `mission` field to the `ContextPack` interface (type `string`)
-- Add a `fetchMission()` function (same pattern as `fetchProjectOverview`, querying `doc_type = 'mission'`, `agent_key IS NULL`)
-- Call it in the parallel `Promise.all` block
-- Include it in the returned `contextPack` object
-- In `renderContextPackAsMarkdown`: add a `## Mission` section right before `## Project Overview` (only if mission is not empty/placeholder)
+**File: `src/components/documents/DocumentList.tsx`**
 
-### 2. Client-side builder: `src/lib/context-pack.ts`
+- Replace the static Pin icon indicator with a clickable pin/unpin button per document
+- On click: call `updateDocument(doc.id, { pinned: !doc.pinned })` and trigger `onReload()`
+- Show a filled pin icon when pinned, outline when not
+- Show toast on toggle ("Pinned" / "Unpinned")
+- Add `onTogglePin` callback prop, or handle inline using the existing `updateDocument` import
 
-- Add `mission` field to the `ContextPack` interface
-- Add a `fetchMission()` function (same query pattern)
-- Call it in the `Promise.all` block inside `buildContextPack`
-- Include in the returned object and error fallback
-- In `renderContextPackAsMarkdown`: add `## Mission` section before `## Project Overview`
+### 2. "Pinned" badge and sort order
 
-### 3. UI helper text: `src/components/documents/ProjectOverviewCard.tsx`
+**File: `src/components/documents/DocumentList.tsx`**
 
-- Mission card empty-state text already says "This is included in every agent's Context Pack" -- this will now be true, no change needed there.
-- Mission card display state: no change needed.
-- Both cards are already consistent. No UI text changes required.
+- Show a "Pinned" badge on pinned docs (already partially there with the Pin icon; upgrade to a visible Badge)
+- Documents are already sorted pinned-first from the API query -- no change needed
 
-### 4. Documentation: `changes.md`
+### 3. Hard character caps on Context Pack sections
 
-- Log the change.
+**File: `supabase/functions/get-context-pack/index.ts`**
 
-## Technical details
+Add constants and enforcement:
+
+```
+MAX_PINNED_CHARS = 8000    (total chars across all pinned doc notes)
+MAX_KNOWLEDGE_CHARS = 6000 (total chars across retrieved chunks)
+MAX_PINNED_DOCS = 5        (reduce from current 10)
+MAX_KNOWLEDGE_RESULTS = 5  (increase from current 3)
+```
+
+In `fetchPinnedDocs`: accumulate character count across docs, stop adding when limit reached. Append "(truncated -- N more pinned docs not shown)" if any were dropped.
+
+In `fetchRelevantKnowledge`: truncate individual chunks if needed and enforce total char cap.
+
+**File: `src/lib/context-pack.ts`**
+
+Mirror the same caps and truncation logic for the client-side builder.
+
+### 4. Per-task knowledge retrieval in client-side builder
+
+**File: `src/lib/context-pack.ts`**
+
+The edge function already does per-task retrieval, but the client-side `buildContextPack()` does not. Add:
+
+- A `relevantKnowledge` field to the client-side `ContextPack` interface (already exists in the edge function version)
+- When `taskId` is provided, fetch task context, build a search query from it, and call the knowledge-worker edge function (same pattern as edge function)
+- Include results in `renderContextPackAsMarkdown` under "## Relevant Knowledge"
+
+### 5. Markdown renderer section ordering
+
+**Files: both `src/lib/context-pack.ts` and `supabase/functions/get-context-pack/index.ts`**
+
+Ensure consistent section order:
+1. Mission
+2. Project Overview
+3. Pinned Knowledge (global + agent, with char caps)
+4. Task Context (if present)
+5. Relevant Knowledge (per-task retrieved snippets, if present)
+6. Recent Changes
+
+### 6. Documentation
+
+**File: `changes.md`**
+
+Log: pin toggle UI, hard caps on context pack, per-task retrieval in client builder.
+
+## Files changed summary
 
 | File | Change |
 |------|--------|
-| `supabase/functions/get-context-pack/index.ts` | Add `fetchMission`, wire into pack + markdown renderer |
-| `src/lib/context-pack.ts` | Add `fetchMission`, wire into pack + markdown renderer |
-| `changes.md` | Log the change |
+| `src/components/documents/DocumentList.tsx` | Add pin/unpin toggle button, "Pinned" badge |
+| `supabase/functions/get-context-pack/index.ts` | Hard char caps, reduce MAX_PINNED_DOCS to 5, increase MAX_KNOWLEDGE_RESULTS to 5 |
+| `src/lib/context-pack.ts` | Add per-task knowledge retrieval, hard char caps, `relevantKnowledge` field |
+| `changes.md` | Document changes |
 
-No schema changes. No new dependencies. No UI changes (the UI text is already correct -- it just needed the backend to match).
+## What this does NOT do
+
+- No new tables or columns
+- No new API endpoints (pin uses existing `updateDocument`)
+- No Knowledge page redesign
+- No new dependencies
 
