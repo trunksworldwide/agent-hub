@@ -26,6 +26,11 @@ export interface KnowledgeExcerpt {
   chunkText: string;
 }
 
+export interface ExcludedDoc {
+  title: string;
+  reason: string;
+}
+
 export interface ContextPack {
   builtAt: string;
   projectId: string;
@@ -37,6 +42,7 @@ export interface ContextPack {
   recentChanges: string;
   taskContext?: string;
   relevantKnowledge?: KnowledgeExcerpt[];
+  excludedDocs?: ExcludedDoc[];
 }
 
 // Hard limits to keep context windows small
@@ -72,7 +78,7 @@ export async function buildContextPack(
 
   try {
     // Fetch all data in parallel
-    const [mission, projectOverview, globalDocs, agentDocs, recentChanges, taskContext] = await Promise.all([
+    const [mission, projectOverview, globalResult, agentResult, recentChanges, taskContext] = await Promise.all([
       fetchMission(projectId),
       fetchProjectOverview(projectId),
       fetchPinnedDocs(projectId, null), // global docs
@@ -87,17 +93,21 @@ export async function buildContextPack(
       relevantKnowledge = await fetchRelevantKnowledge(projectId, taskContext);
     }
 
+    // Collect excluded docs from both global and agent pinned
+    const excludedDocs: ExcludedDoc[] = [...globalResult.excluded, ...agentResult.excluded];
+
     return {
       builtAt: new Date().toISOString(),
       projectId,
       agentKey,
       mission,
       projectOverview,
-      globalDocs,
-      agentDocs,
+      globalDocs: globalResult.docs,
+      agentDocs: agentResult.docs,
       recentChanges,
       taskContext,
       relevantKnowledge,
+      excludedDocs: excludedDocs.length > 0 ? excludedDocs : undefined,
     };
   } catch (err) {
     console.error('buildContextPack failed:', err);
@@ -168,8 +178,8 @@ async function fetchProjectOverview(projectId: string): Promise<string> {
 async function fetchPinnedDocs(
   projectId: string,
   agentKey: string | null
-): Promise<DocReference[]> {
-  if (!supabase) return [];
+): Promise<{ docs: DocReference[]; excluded: ExcludedDoc[] }> {
+  if (!supabase) return { docs: [], excluded: [] };
 
   let query = supabase
     .from('project_documents')
@@ -189,12 +199,12 @@ async function fetchPinnedDocs(
 
   if (error) {
     console.error('fetchPinnedDocs error:', error);
-    return [];
+    return { docs: [], excluded: [] };
   }
 
   const results: DocReference[] = [];
+  const excluded: ExcludedDoc[] = [];
   let totalChars = 0;
-  let dropped = 0;
 
   for (const d of (data || [])) {
     const notes = d.doc_notes as any;
@@ -212,7 +222,7 @@ async function fetchPinnedDocs(
 
     const docChars = summaryBullets.join('').length + rulesList.join('').length;
     if (totalChars + docChars > MAX_PINNED_CHARS && results.length > 0) {
-      dropped++;
+      excluded.push({ title: d.title, reason: 'Over character budget' });
       continue;
     }
     totalChars += docChars;
@@ -227,11 +237,11 @@ async function fetchPinnedDocs(
     });
   }
 
-  if (dropped > 0) {
-    console.warn(`fetchPinnedDocs: dropped ${dropped} docs exceeding ${MAX_PINNED_CHARS} char cap`);
+  if (excluded.length > 0) {
+    console.warn(`fetchPinnedDocs: dropped ${excluded.length} docs exceeding ${MAX_PINNED_CHARS} char cap`);
   }
 
-  return results;
+  return { docs: results, excluded };
 }
 
 /**
