@@ -234,7 +234,7 @@ export type Database = {
       }
       brain_docs: {
         Row: {
-          agent_key: string | null
+          agent_key: string
           content: string
           doc_type: string
           id: string
@@ -243,7 +243,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
-          agent_key?: string | null
+          agent_key: string
           content?: string
           doc_type: string
           id?: string
@@ -252,7 +252,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
-          agent_key?: string | null
+          agent_key?: string
           content?: string
           doc_type?: string
           id?: string
