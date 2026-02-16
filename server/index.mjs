@@ -714,7 +714,7 @@ const server = http.createServer(async (req, res) => {
           .from('brain_docs')
           .select('doc_type, content, updated_at, updated_by')
           .eq('project_id', projectId)
-          .is('agent_key', null)
+          .eq('agent_key', 'project')
           .in('doc_type', ['mission', 'project_overview'])
           .order('updated_at', { ascending: false });
         if (error) throw error;
@@ -746,8 +746,8 @@ const server = http.createServer(async (req, res) => {
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
 
         const rows = [];
-        if (mission !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'mission', content: mission, updated_by: updatedBy });
-        if (overview !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'project_overview', content: overview, updated_by: updatedBy });
+        if (mission !== null) rows.push({ project_id: projectId, agent_key: 'project', doc_type: 'mission', content: mission, updated_by: updatedBy });
+        if (overview !== null) rows.push({ project_id: projectId, agent_key: 'project', doc_type: 'project_overview', content: overview, updated_by: updatedBy });
         if (!rows.length) return sendJson(res, 400, { ok: false, error: 'missing_mission_or_overview' });
 
         const { error } = await sb.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
