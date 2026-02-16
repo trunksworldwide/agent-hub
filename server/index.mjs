@@ -703,6 +703,36 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // GET/POST /api/project/overview — read/upsert project-level brain_docs for mission/overview
+    if (req.method === 'GET' && url.pathname === '/api/project/overview') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data, error } = await sb
+          .from('brain_docs')
+          .select('doc_type, content, updated_at, updated_by')
+          .eq('project_id', projectId)
+          .is('agent_key', null)
+          .in('doc_type', ['mission', 'project_overview'])
+          .order('updated_at', { ascending: false });
+        if (error) throw error;
+
+        const missionRow = (data || []).find(r => r.doc_type === 'mission') || null;
+        const overviewRow = (data || []).find(r => r.doc_type === 'project_overview') || null;
+        return sendJson(res, 200, {
+          ok: true,
+          mission: missionRow?.content || '',
+          overview: overviewRow?.content || '',
+          missionMeta: missionRow ? { updated_at: missionRow.updated_at, updated_by: missionRow.updated_by } : null,
+          overviewMeta: overviewRow ? { updated_at: overviewRow.updated_at, updated_by: overviewRow.updated_by } : null,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/project/overview — upsert project-level brain_docs for mission/overview
     if (req.method === 'POST' && url.pathname === '/api/project/overview') {
       try {
