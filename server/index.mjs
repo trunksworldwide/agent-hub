@@ -770,6 +770,18 @@ const server = http.createServer(async (req, res) => {
                 const ins = await sb.from('brain_docs').insert(r);
                 if (ins?.error) throw ins.error;
               }
+
+              // Back-compat: also update any legacy NULL agent_key rows so older UIs still see it.
+              // (Do not insert new NULL rows; just overwrite existing ones.)
+              try {
+                await sb.from('brain_docs')
+                  .update({ content: r.content, updated_by: r.updated_by })
+                  .eq('project_id', r.project_id)
+                  .is('agent_key', null)
+                  .eq('doc_type', r.doc_type);
+              } catch {
+                // ignore
+              }
             }
           } else {
             throw upsertRes.error;
