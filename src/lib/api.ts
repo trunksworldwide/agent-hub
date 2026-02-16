@@ -2233,7 +2233,7 @@ export async function createProject(input: { id: string; name: string; mission?:
       // We DO NOT overwrite if already set.
       try {
         const [existingMission, existingOverview] = await Promise.all([
-          supabase.from('brain_docs').select('content').eq('project_id', id).eq('doc_type', 'project_mission').is('agent_key', null).maybeSingle(),
+          supabase.from('brain_docs').select('content').eq('project_id', id).eq('doc_type', 'mission').is('agent_key', null).maybeSingle(),
           supabase.from('brain_docs').select('content').eq('project_id', id).eq('doc_type', 'project_overview').is('agent_key', null).maybeSingle(),
         ]);
 
@@ -2244,7 +2244,7 @@ export async function createProject(input: { id: string; name: string; mission?:
         const overviewToSet = overviewExisting.trim() ? '' : (overviewIn || `What this project is about:\n- (fill this in)\n\nSuccess criteria:\n- (fill this in)\n\nHow we’ll work:\n- Use tasks + timeline updates\n- Upload artifacts to Drive and link them\n- Ask for approval before external side effects`);
 
         const rows: any[] = [];
-        if (missionToSet) rows.push({ project_id: id, agent_key: null, doc_type: 'project_mission', content: missionToSet, updated_by: 'dashboard' });
+        if (missionToSet) rows.push({ project_id: id, agent_key: null, doc_type: 'mission', content: missionToSet, updated_by: 'dashboard' });
         if (overviewToSet) rows.push({ project_id: id, agent_key: null, doc_type: 'project_overview', content: overviewToSet, updated_by: 'dashboard' });
         if (rows.length) await supabase.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
       } catch {

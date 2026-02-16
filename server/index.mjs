@@ -716,7 +716,7 @@ const server = http.createServer(async (req, res) => {
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
 
         const rows = [];
-        if (mission !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'project_mission', content: mission, updated_by: updatedBy });
+        if (mission !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'mission', content: mission, updated_by: updatedBy });
         if (overview !== null) rows.push({ project_id: projectId, agent_key: null, doc_type: 'project_overview', content: overview, updated_by: updatedBy });
         if (!rows.length) return sendJson(res, 400, { ok: false, error: 'missing_mission_or_overview' });
 
