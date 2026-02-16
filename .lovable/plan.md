@@ -1,80 +1,137 @@
 
 
-# Fix: Mission + Project Overview Not Persisting
+# Image-to-Text Knowledge Caption + Editable Metadata
 
-## Root Cause
+## Overview
 
-PostgreSQL UNIQUE constraints treat NULL values as **always distinct**. The current constraint `UNIQUE(project_id, agent_key, doc_type)` does not prevent duplicates when `agent_key IS NULL`.
+When an image is uploaded on the Knowledge page, automatically generate a detailed text description using OpenAI's vision model (GPT-4o), store it as a companion document, and index it for vector search. Add a lightweight "Edit caption" button and modal for user revision.
 
-This means:
-- Every `upsert` with `agent_key: null` creates a **new row** instead of updating
-- `.maybeSingle()` then finds multiple rows and returns an error
-- The data appears to vanish on refresh
+## Architecture
 
-Current state: 3 duplicate `mission` rows and 3 duplicate `project_overview` rows exist for `front-office`.
+All vision calls go through the Control API (server/index.mjs) using the existing OPENAI_API_KEY. No Supabase keys are exposed to the browser.
 
-## Fix (3 parts, minimal diffs)
-
-### 1. Migration: NULL-safe unique index + cleanup duplicates
-
-```sql
--- Delete duplicates, keeping only the most recent row per (project_id, doc_type) where agent_key IS NULL
-DELETE FROM brain_docs a
-USING brain_docs b
-WHERE a.project_id = b.project_id
-  AND a.doc_type = b.doc_type
-  AND a.agent_key IS NULL
-  AND b.agent_key IS NULL
-  AND a.updated_at < b.updated_at;
-
--- Drop the existing unique constraint (it doesn't work with NULLs)
-ALTER TABLE brain_docs DROP CONSTRAINT IF EXISTS brain_docs_project_id_agent_key_doc_type_key;
-
--- Create a NULL-safe unique index using COALESCE
-CREATE UNIQUE INDEX brain_docs_project_agent_doctype_uniq
-  ON brain_docs (project_id, COALESCE(agent_key, ''), doc_type);
+```text
+Browser uploads image
+  -> project_documents row created (existing flow)
+  -> UI calls POST /api/documents/:id/caption/generate (new)
+     -> Control API reads image from Supabase Storage (public URL)
+     -> Calls OpenAI GPT-4o vision with the captioning prompt
+     -> Creates companion project_documents row (source_type='note', doc_type='image_analysis')
+     -> Calls POST /api/knowledge/ingest with caption text (self-call, fire-and-forget)
+     -> Returns caption data to UI
 ```
 
-This unique index treats `NULL` agent_key as `''` for uniqueness purposes, preventing duplicates while still storing the actual NULL value.
+## Changes
 
-### 2. Frontend: Fix upsert to work with the new index
+### 1. Control API: Two new endpoints (server/index.mjs)
 
-In `src/lib/api.ts`, change `saveProjectOverview` and `saveProjectMission` from using Supabase's `.upsert()` (which cannot match on a COALESCE index) to a manual select-then-insert/update pattern:
+**POST /api/documents/:id/caption/generate**
 
-```typescript
-// Instead of:
-await supabase.from('brain_docs').upsert({ ... }, { onConflict: '...' });
+- Requires `x-clawdos-project` header
+- Reads the document row from `project_documents` to get `storage_path` and `title`
+- Constructs the public URL from Supabase Storage (`clawdos-documents` bucket is public)
+- Calls OpenAI Chat Completions (GPT-4o) with the image URL and the structured captioning prompt (using tool calling for strict JSON output)
+- Creates a companion `project_documents` row:
+  - `title`: "Image: {original title} (analysis)"
+  - `source_type`: "note"
+  - `doc_type`: "general" (no schema change needed; existing doc_type values work)
+  - `content_text`: formatted caption text (caption + extracted_text + tags + entities + key_numbers + dates + why_it_matters)
+  - `doc_notes`: `{ image_document_id: "<original id>", caption: "...", tags: [...], entities: [...], ... }`
+- Fires POST /api/knowledge/ingest (self-call) with the caption text for vector indexing
+- Returns: `{ ok: true, captionDocId, caption, tags, entities, ... }`
 
-// Use:
-const { data: existing } = await supabase
-  .from('brain_docs')
-  .select('id')
-  .eq('project_id', projectId)
-  .eq('doc_type', 'mission')
-  .is('agent_key', null)
-  .maybeSingle();
+**POST /api/documents/:id/caption/update**
 
-if (existing) {
-  await supabase.from('brain_docs').update({ content, updated_by: 'ui' }).eq('id', existing.id);
-} else {
-  await supabase.from('brain_docs').insert({ project_id: projectId, agent_key: null, doc_type: 'mission', content, updated_by: 'ui' });
+- Requires `x-clawdos-project` header
+- Body: `{ caption, tags?, entities? }`
+- Finds the companion note via `doc_notes->image_document_id = :id`
+- Updates `content_text` and `doc_notes` on the companion row
+- Re-ingests into knowledge (calls /api/knowledge/ingest with updated text; content_hash will differ so a new source is created, or if same hash, deduped)
+- Returns: `{ ok: true }`
+
+### 2. Frontend API helpers (src/lib/api.ts)
+
+Add two new functions:
+
+- `generateImageCaption(documentId: string)`: calls `POST /api/documents/:id/caption/generate` via Control API. Returns caption data.
+- `updateImageCaption(documentId: string, caption: string, tags?: string[])`: calls `POST /api/documents/:id/caption/update` via Control API.
+
+### 3. Auto-trigger on image upload (src/components/pages/DocumentsPage.tsx)
+
+In `handleUploadFile`, after a successful upload of an image file (mime starts with `image/` or extension is jpg/png/webp/gif):
+- Show toast "Generating image caption..."
+- Call `generateImageCaption(docId)` (non-blocking, best-effort)
+- On success, show toast "Caption generated" and reload documents
+- On failure, show warning toast (non-blocking)
+
+### 4. New component: ImageCaptionModal (src/components/documents/ImageCaptionModal.tsx)
+
+A lightweight Dialog with:
+- Textarea for caption text (pre-filled from companion doc's `content_text`)
+- Optional tags input (comma-separated, pre-filled from `doc_notes.tags`)
+- Save button that calls `updateImageCaption()`, then reloads
+- Cancel button
+
+### 5. DocumentList UI addition (src/components/documents/DocumentList.tsx)
+
+For documents where `mimeType` starts with `image/`:
+- Show a small "Caption" button (or icon button with a sparkle/wand icon) next to the View/Delete buttons
+- If a companion analysis note exists (can be detected by checking if any doc in the list has `doc_notes.image_document_id === doc.id`), the button opens the edit modal pre-filled
+- If no companion exists yet, the button triggers caption generation first, then opens the edit modal
+
+### 6. Prompt for vision model
+
+System prompt (used in server/index.mjs):
+
+```
+Describe the image for future retrieval in a knowledge base. Be precise and information-dense. Extract all visible text. Include key entities, numbers, dates, and a short 'why this matters' summary.
+```
+
+Using OpenAI tool calling to enforce structured output:
+
+```json
+{
+  "name": "describe_image",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title_suggestion": { "type": "string" },
+      "caption": { "type": "string" },
+      "extracted_text": { "type": "string" },
+      "tags": { "type": "array", "items": { "type": "string" } },
+      "entities": { "type": "array", "items": { "type": "string" } },
+      "key_numbers": { "type": "array", "items": { "type": "string" } },
+      "dates": { "type": "array", "items": { "type": "string" } },
+      "why_it_matters": { "type": "string" }
+    },
+    "required": ["title_suggestion", "caption", "extracted_text", "tags", "entities", "key_numbers", "dates", "why_it_matters"]
+  }
 }
 ```
-
-Apply this pattern to both `saveProjectOverview` and `saveProjectMission`.
-
-### 3. Frontend: Better error surfacing in ProjectOverviewCard
-
-- In `loadOverview`: if `getProjectOverview()` or `getProjectMission()` returns an error (not just null), show a toast so the user knows the read failed rather than thinking there's nothing saved.
-- The save functions already show toast errors -- no change needed there.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| New migration | Deduplicate rows, drop old constraint, create NULL-safe unique index |
-| `src/lib/api.ts` | Replace `.upsert()` with select-then-insert/update for mission and overview saves |
-| `src/components/documents/ProjectOverviewCard.tsx` | Surface load errors via toast |
+| `server/index.mjs` | Add POST /api/documents/:id/caption/generate and /update endpoints |
+| `src/lib/api.ts` | Add `generateImageCaption()` and `updateImageCaption()` helpers |
+| `src/components/pages/DocumentsPage.tsx` | Auto-trigger caption on image upload |
+| `src/components/documents/DocumentList.tsx` | Add "Caption" button for image docs |
+| `src/components/documents/ImageCaptionModal.tsx` | New lightweight edit modal |
+| `changes.md` | Document the feature |
 
-## No UI redesign. No new dependencies. No RLS changes needed (existing policies already allow anon read/write on brain_docs).
+## No new secrets, no new DB tables, no schema changes
+
+- Uses existing `OPENAI_API_KEY` (already configured)
+- Companion notes stored in existing `project_documents` table
+- Knowledge indexing uses existing `/api/knowledge/ingest` pipeline
+- `doc_notes` JSON field already exists and is flexible
+
+## Edge cases handled
+
+- If Control API is offline: caption generation silently fails, image is still uploaded normally
+- If OpenAI vision call fails: toast error shown, no companion doc created, user can retry via the Caption button
+- If image is too large for vision API: OpenAI handles this with its own limits; error surfaced via toast
+- Re-generating caption: deletes old companion doc first, creates new one
+- Editing caption: updates in-place and re-ingests for search
 
