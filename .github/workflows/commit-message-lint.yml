@@ -18,21 +18,19 @@ jobs:
           set -euo pipefail
           FORBIDDEN_REGEX='^(Changes|Updated plan file)$'
 
-          # On PRs, check commits in the PR range. On push, just check the last commit.
+          # On PRs, check commits in the PR range. On push, check the full push range (before..after).
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             BASE="${{ github.event.pull_request.base.sha }}"
             HEAD="${{ github.event.pull_request.head.sha }}"
             RANGE="$BASE..$HEAD"
           else
-            RANGE="-1"
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            RANGE="$BASE..$HEAD"
           fi
 
           echo "Checking commit subjects in range: $RANGE"
-          if [[ "$RANGE" == "-1" ]]; then
-            SUBJECTS=$(git log -1 --pretty=%s)
-          else
-            SUBJECTS=$(git log --pretty=%s "$RANGE")
-          fi
+          SUBJECTS=$(git log --pretty=%s "$RANGE")
 
           echo "$SUBJECTS" | while IFS= read -r s; do
             if [[ "$s" =~ $FORBIDDEN_REGEX ]]; then
