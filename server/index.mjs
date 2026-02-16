@@ -750,8 +750,31 @@ const server = http.createServer(async (req, res) => {
         if (overview !== null) rows.push({ project_id: projectId, agent_key: 'project', doc_type: 'project_overview', content: overview, updated_by: updatedBy });
         if (!rows.length) return sendJson(res, 400, { ok: false, error: 'missing_mission_or_overview' });
 
-        const { error } = await sb.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
-        if (error) throw error;
+        // Prefer upsert, but fall back to manual update/insert if the DB lacks a matching unique constraint.
+        const upsertRes = await sb.from('brain_docs').upsert(rows, { onConflict: 'project_id,agent_key,doc_type' });
+        if (upsertRes?.error) {
+          const msg = String(upsertRes.error?.message || upsertRes.error);
+          if (msg.includes('no unique') || msg.includes('ON CONFLICT')) {
+            for (const r of rows) {
+              const existing = await sb
+                .from('brain_docs')
+                .select('id')
+                .eq('project_id', r.project_id)
+                .eq('agent_key', r.agent_key)
+                .eq('doc_type', r.doc_type)
+                .maybeSingle();
+              if (existing?.data?.id) {
+                const upd = await sb.from('brain_docs').update({ content: r.content, updated_by: r.updated_by }).eq('id', existing.data.id);
+                if (upd?.error) throw upd.error;
+              } else {
+                const ins = await sb.from('brain_docs').insert(r);
+                if (ins?.error) throw ins.error;
+              }
+            }
+          } else {
+            throw upsertRes.error;
+          }
+        }
 
         return sendJson(res, 200, { ok: true });
       } catch (err) {
