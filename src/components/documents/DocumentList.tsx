@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, Image, File, Trash2, Eye, Pin, Lock, Users, Sparkles, Loader2 } from 'lucide-react';
+import { FileText, Image, File, Trash2, Eye, Pin, PinOff, Lock, Users, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { generateImageCaption, updateImageCaption } from '@/lib/api';
+import { generateImageCaption, updateImageCaption, updateDocument } from '@/lib/api';
 import type { ProjectDocument, Agent } from '@/lib/api';
 import { ImageCaptionModal } from './ImageCaptionModal';
 
@@ -67,6 +67,21 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 export function DocumentList({ documents, onView, onDelete, isDeleting, agents = [], onReload }: DocumentListProps) {
   const { toast } = useToast();
   const [generatingCaptionFor, setGeneratingCaptionFor] = useState<string | null>(null);
+  const [togglingPinFor, setTogglingPinFor] = useState<string | null>(null);
+
+  const handleTogglePin = async (doc: ProjectDocument) => {
+    const newPinned = !doc.pinned;
+    setTogglingPinFor(doc.id);
+    try {
+      await updateDocument(doc.id, { pinned: newPinned });
+      toast({ title: newPinned ? 'Pinned' : 'Unpinned', description: doc.title });
+      onReload?.();
+    } catch (err: any) {
+      toast({ title: 'Failed to update pin', description: err.message, variant: 'destructive' });
+    } finally {
+      setTogglingPinFor(null);
+    }
+  };
   const [captionModalOpen, setCaptionModalOpen] = useState(false);
   const [captionModalDocId, setCaptionModalDocId] = useState<string | null>(null);
   const [captionModalCaption, setCaptionModalCaption] = useState('');
@@ -160,17 +175,22 @@ export function DocumentList({ documents, onView, onDelete, isDeleting, agents =
             <Card key={doc.id} className={cn('overflow-hidden', isPinned && 'border-primary/30')}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-muted relative">
+                  <div className="p-2 rounded-lg bg-muted">
                     <Icon className="w-5 h-5 text-muted-foreground" />
-                    {isPinned && (
-                      <Pin className="w-3 h-3 text-primary absolute -top-1 -right-1" />
-                    )}
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-medium truncate">{doc.title}</h4>
                       
+                      {/* Pinned badge */}
+                      {isPinned && (
+                        <Badge variant="default" className="text-xs shrink-0 gap-1">
+                          <Pin className="w-3 h-3" />
+                          Pinned
+                        </Badge>
+                      )}
+
                       {/* Doc type badge */}
                       <Badge variant="secondary" className="text-xs shrink-0">
                         {DOC_TYPE_LABELS[doc.docType || 'general'] || doc.docType}
@@ -234,6 +254,27 @@ export function DocumentList({ documents, onView, onDelete, isDeleting, agents =
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {/* Pin toggle */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleTogglePin(doc)}
+                          disabled={togglingPinFor === doc.id}
+                        >
+                          {isPinned ? (
+                            <PinOff className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Pin className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isPinned ? 'Unpin from Context Pack' : 'Pin to Context Pack'}
+                      </TooltipContent>
+                    </Tooltip>
+
                     {/* Caption button for images */}
                     {isImage && (
                       <Tooltip>

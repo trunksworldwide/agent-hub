@@ -7,6 +7,7 @@
 
 import { supabase, hasSupabase } from './supabase';
 import { format } from 'date-fns';
+import { getSelectedProjectId } from './project';
 
 // ============= Types =============
 
@@ -19,6 +20,12 @@ export interface DocReference {
   isCredential: boolean;
 }
 
+export interface KnowledgeExcerpt {
+  title: string;
+  sourceUrl: string | null;
+  chunkText: string;
+}
+
 export interface ContextPack {
   builtAt: string;
   projectId: string;
@@ -29,12 +36,16 @@ export interface ContextPack {
   agentDocs: DocReference[];
   recentChanges: string;
   taskContext?: string;
+  relevantKnowledge?: KnowledgeExcerpt[];
 }
 
 // Hard limits to keep context windows small
-const MAX_PINNED_DOCS = 10;
+const MAX_PINNED_DOCS = 5;
+const MAX_PINNED_CHARS = 8000;
 const MAX_RECENT_ACTIVITIES = 20;
 const MAX_SUMMARY_BULLETS = 10;
+const MAX_KNOWLEDGE_RESULTS = 5;
+const MAX_KNOWLEDGE_CHARS = 6000;
 
 // ============= Core Builder =============
 
@@ -70,6 +81,12 @@ export async function buildContextPack(
       taskId ? fetchTaskContext(projectId, taskId) : Promise.resolve(undefined),
     ]);
 
+    // Per-task knowledge retrieval
+    let relevantKnowledge: KnowledgeExcerpt[] | undefined;
+    if (taskContext && taskId) {
+      relevantKnowledge = await fetchRelevantKnowledge(projectId, taskContext);
+    }
+
     return {
       builtAt: new Date().toISOString(),
       projectId,
@@ -80,6 +97,7 @@ export async function buildContextPack(
       agentDocs,
       recentChanges,
       taskContext,
+      relevantKnowledge,
     };
   } catch (err) {
     console.error('buildContextPack failed:', err);
@@ -92,6 +110,7 @@ export async function buildContextPack(
       globalDocs: [],
       agentDocs: [],
       recentChanges: '_Failed to load recent changes._',
+      relevantKnowledge: undefined,
     };
   }
 }
@@ -173,11 +192,14 @@ async function fetchPinnedDocs(
     return [];
   }
 
-  return (data || []).map((d: any) => {
+  const results: DocReference[] = [];
+  let totalChars = 0;
+  let dropped = 0;
+
+  for (const d of (data || [])) {
     const notes = d.doc_notes as any;
     const isCredential = d.sensitivity === 'contains_secrets';
 
-    // Extract summary and rules from doc_notes (if available)
     let summaryBullets: string[] = [];
     let rulesList: string[] = [];
 
@@ -188,15 +210,28 @@ async function fetchPinnedDocs(
       rulesList = Array.isArray(notes.rules) ? notes.rules : [];
     }
 
-    return {
+    const docChars = summaryBullets.join('').length + rulesList.join('').length;
+    if (totalChars + docChars > MAX_PINNED_CHARS && results.length > 0) {
+      dropped++;
+      continue;
+    }
+    totalChars += docChars;
+
+    results.push({
       id: d.id,
       title: d.title,
       docType: d.doc_type || 'general',
       notes: summaryBullets,
       rules: rulesList,
       isCredential,
-    };
-  });
+    });
+  }
+
+  if (dropped > 0) {
+    console.warn(`fetchPinnedDocs: dropped ${dropped} docs exceeding ${MAX_PINNED_CHARS} char cap`);
+  }
+
+  return results;
 }
 
 /**
@@ -275,7 +310,65 @@ async function fetchTaskContext(projectId: string, taskId: string): Promise<stri
   return context;
 }
 
-// ============= Markdown Renderer =============
+/**
+ * Fetch relevant knowledge excerpts for a task via the knowledge-worker edge function.
+ */
+async function fetchRelevantKnowledge(projectId: string, taskContext: string): Promise<KnowledgeExcerpt[]> {
+  try {
+    if (!supabase) return [];
+
+    const query = taskContext.slice(0, 300).replace(/[#*_\n]+/g, ' ').trim();
+    if (!query) return [];
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return [];
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return [];
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/knowledge-worker`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'search',
+        projectId,
+        query,
+        limit: MAX_KNOWLEDGE_RESULTS,
+      }),
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    const raw = (data.results || []).map((r: any) => ({
+      title: r.title as string,
+      sourceUrl: r.sourceUrl as string | null,
+      chunkText: r.chunkText as string,
+    }));
+
+    // Enforce char cap
+    const capped: KnowledgeExcerpt[] = [];
+    let totalChars = 0;
+    for (const item of raw) {
+      let text = item.chunkText;
+      const remaining = MAX_KNOWLEDGE_CHARS - totalChars;
+      if (remaining <= 0) break;
+      if (text.length > remaining) {
+        text = text.slice(0, remaining) + '\n_(truncated)_';
+      }
+      totalChars += text.length;
+      capped.push({ ...item, chunkText: text });
+    }
+    return capped;
+  } catch (err) {
+    console.error('fetchRelevantKnowledge error:', err);
+    return [];
+  }
+}
+
 
 /**
  * Render a ContextPack as markdown text for LLM consumption.
@@ -305,9 +398,9 @@ export function renderContextPackAsMarkdown(pack: ContextPack): string {
   lines.push(pack.recentChanges);
   lines.push('');
 
-  // Global Documents
+  // Global Documents (Pinned Knowledge)
   if (pack.globalDocs.length > 0) {
-    lines.push('## Global Knowledge');
+    lines.push('## Pinned Knowledge (Global)');
     for (const doc of pack.globalDocs) {
       lines.push(`### ${doc.title} (${doc.docType})`);
       if (doc.isCredential) {
@@ -363,6 +456,21 @@ export function renderContextPackAsMarkdown(pack: ContextPack): string {
   if (pack.taskContext) {
     lines.push(pack.taskContext);
     lines.push('');
+  }
+
+  // Relevant Knowledge (per-task retrieved)
+  if (pack.relevantKnowledge && pack.relevantKnowledge.length > 0) {
+    lines.push('## Relevant Knowledge');
+    lines.push('_Auto-retrieved from project knowledge base. Use this context and cite sources._');
+    lines.push('');
+    for (const k of pack.relevantKnowledge) {
+      lines.push(`### ${k.title}`);
+      if (k.sourceUrl) {
+        lines.push(`Source: ${k.sourceUrl}`);
+      }
+      lines.push(k.chunkText);
+      lines.push('');
+    }
   }
 
   return lines.join('\n');
