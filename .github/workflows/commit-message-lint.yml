@@ -3,7 +3,8 @@ name: Commit message lint
 on:
   pull_request:
   push:
-    branches: [ main ]
+    # Run on all branches so bad auto-generated commits get caught before merge.
+    branches: [ "**" ]
 
 jobs:
   lint:
