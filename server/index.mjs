@@ -291,6 +291,24 @@ function getSupabaseServerClient() {
   return createClient(url, key);
 }
 
+// Optional control-plane auth.
+// If CONTROL_API_KEY is set, require it (via x-clawdos-key or Authorization: Bearer) for sensitive endpoints.
+// If not set, we remain backwards compatible (but you should set it in any non-local deployment).
+function requireControlAuth(req, res) {
+  const required = (process.env.CONTROL_API_KEY || '').toString();
+  if (!required) return true;
+
+  const headerKey = (req.headers['x-clawdos-key'] || '').toString().trim();
+  const auth = (req.headers['authorization'] || '').toString();
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+
+  const got = headerKey || bearer;
+  if (got && got === required) return true;
+
+  sendJson(res, 401, { ok: false, error: 'unauthorized' });
+  return false;
+}
+
 function getProjectIdFromReq(req) {
   return (req.headers['x-clawdos-project'] || '').toString() || 'front-office';
 }
@@ -656,6 +674,7 @@ const server = http.createServer(async (req, res) => {
     const projectDeleteMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (projectDeleteMatch && req.method === 'DELETE') {
       try {
+        if (!requireControlAuth(req, res)) return;
         const projectIdToDelete = decodeURIComponent(projectDeleteMatch[1]);
         if (!projectIdToDelete) return sendJson(res, 400, { ok: false, error: 'missing_project_id' });
 
@@ -706,6 +725,7 @@ const server = http.createServer(async (req, res) => {
     // GET/POST /api/project/overview — read/upsert project-level brain_docs for mission/overview
     if (req.method === 'GET' && url.pathname === '/api/project/overview') {
       try {
+        if (!requireControlAuth(req, res)) return;
         const projectId = getProjectIdFromReq(req);
         const sb = getSupabaseServerClient();
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
@@ -736,6 +756,7 @@ const server = http.createServer(async (req, res) => {
     // POST /api/project/overview — upsert project-level brain_docs for mission/overview
     if (req.method === 'POST' && url.pathname === '/api/project/overview') {
       try {
+        if (!requireControlAuth(req, res)) return;
         const projectId = getProjectIdFromReq(req);
         const body = await readBodyJson(req);
         const mission = body.mission === undefined ? null : String(body.mission || '').trim();
@@ -797,6 +818,7 @@ const server = http.createServer(async (req, res) => {
     // POST /api/documents/note — create a text note in project_documents (service role)
     if (req.method === 'POST' && url.pathname === '/api/documents/note') {
       try {
+        if (!requireControlAuth(req, res)) return;
         const projectId = getProjectIdFromReq(req);
         const body = await readBodyJson(req);
         const title = String(body.title || '').trim();
