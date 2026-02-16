@@ -34,6 +34,7 @@ interface ContextPack {
   projectId: string;
   agentKey: string;
   capabilitiesVersion: string | null;
+  mission: string;
   projectOverview: string;
   globalDocs: DocReference[];
   agentDocs: DocReference[];
@@ -71,7 +72,8 @@ serve(async (req) => {
     }
 
     // Fetch all data in parallel
-    const [projectOverview, globalDocs, agentDocs, recentChanges, taskContext, capabilitiesVersion] = await Promise.all([
+    const [mission, projectOverview, globalDocs, agentDocs, recentChanges, taskContext, capabilitiesVersion] = await Promise.all([
+      fetchMission(supabase, projectId),
       fetchProjectOverview(supabase, projectId),
       fetchPinnedDocs(supabase, projectId, null),
       fetchPinnedDocs(supabase, projectId, agentKey),
@@ -91,6 +93,7 @@ serve(async (req) => {
       projectId,
       agentKey,
       capabilitiesVersion,
+      mission,
       projectOverview,
       globalDocs,
       agentDocs,
@@ -114,6 +117,23 @@ serve(async (req) => {
     );
   }
 });
+
+async function fetchMission(supabase: any, projectId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("brain_docs")
+    .select("content")
+    .eq("project_id", projectId)
+    .eq("doc_type", "mission")
+    .is("agent_key", null)
+    .maybeSingle();
+
+  if (error) {
+    console.error("fetchMission error:", error);
+    return "";
+  }
+
+  return data?.content?.trim() || "";
+}
 
 async function fetchProjectOverview(supabase: any, projectId: string): Promise<string> {
   const { data, error } = await supabase
@@ -314,6 +334,12 @@ function renderContextPackAsMarkdown(pack: ContextPack): string {
     lines.push(`Capabilities Contract Version: ${pack.capabilitiesVersion}`);
   }
   lines.push("");
+
+  if (pack.mission && !pack.mission.startsWith("_")) {
+    lines.push("## Mission");
+    lines.push(pack.mission);
+    lines.push("");
+  }
 
   lines.push("## Project Overview");
   lines.push(pack.projectOverview);
