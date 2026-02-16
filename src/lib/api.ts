@@ -3099,18 +3099,28 @@ export async function saveProjectOverview(content: string): Promise<{ ok: boolea
   const projectId = getProjectId();
 
   try {
-    const { error } = await supabase.from('brain_docs').upsert(
-      {
+    // Select-then-insert/update pattern: Supabase upsert can't match on COALESCE index
+    const { data: existing } = await supabase
+      .from('brain_docs')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('doc_type', 'project_overview')
+      .is('agent_key', null)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase.from('brain_docs').update({ content, updated_by: 'ui' }).eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from('brain_docs').insert({
         project_id: projectId,
         agent_key: null,
         doc_type: 'project_overview',
         content,
         updated_by: 'ui',
-      },
-      { onConflict: 'project_id,agent_key,doc_type' }
-    );
-
-    if (error) throw error;
+      });
+      if (error) throw error;
+    }
     return { ok: true };
   } catch (e: any) {
     console.error('saveProjectOverview failed:', e);
@@ -3161,18 +3171,28 @@ export async function saveProjectMission(content: string): Promise<{ ok: boolean
   const projectId = getProjectId();
 
   try {
-    const { error } = await supabase.from('brain_docs').upsert(
-      {
+    // Select-then-insert/update pattern: Supabase upsert can't match on COALESCE index
+    const { data: existing } = await supabase
+      .from('brain_docs')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('doc_type', 'mission')
+      .is('agent_key', null)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase.from('brain_docs').update({ content, updated_by: 'ui' }).eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from('brain_docs').insert({
         project_id: projectId,
         agent_key: null,
         doc_type: 'mission',
         content,
         updated_by: 'ui',
-      },
-      { onConflict: 'project_id,agent_key,doc_type' }
-    );
-
-    if (error) throw error;
+      });
+      if (error) throw error;
+    }
     return { ok: true };
   } catch (e: any) {
     console.error('saveProjectMission failed:', e);

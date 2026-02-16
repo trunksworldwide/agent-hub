@@ -29,10 +29,14 @@ export function ProjectOverviewCard() {
         getProjectOverview(),
         getProjectMission(),
       ]);
+      if (overview === null && missionDoc === null) {
+        // Both returned null — could be empty or a read error; errors are logged in the API layer
+      }
       setContent(overview?.content || '');
       setMission(missionDoc?.content || '');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load project overview:', err);
+      toast({ title: 'Failed to load overview', description: String(err?.message || err), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
