@@ -4512,3 +4512,34 @@ export async function ingestKnowledge(opts: {
     return { ok: false, error: String(e) };
   }
 }
+
+// ============= Image Caption =============
+
+export async function generateImageCaption(documentId: string): Promise<{ ok: boolean; captionDocId?: string; caption?: string; tags?: string[]; entities?: string[]; error?: string }> {
+  if (!isControlApiHealthy()) {
+    return { ok: false, error: 'control_api_offline' };
+  }
+  try {
+    return await requestJson(`/api/documents/${encodeURIComponent(documentId)}/caption/generate`, {
+      method: 'POST',
+    });
+  } catch (e) {
+    console.warn('generateImageCaption failed:', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function updateImageCaption(documentId: string, caption: string, tags?: string[]): Promise<{ ok: boolean; error?: string }> {
+  if (!isControlApiHealthy()) {
+    return { ok: false, error: 'control_api_offline' };
+  }
+  try {
+    return await requestJson(`/api/documents/${encodeURIComponent(documentId)}/caption/update`, {
+      method: 'POST',
+      body: JSON.stringify({ caption, tags }),
+    });
+  } catch (e) {
+    console.warn('updateImageCaption failed:', e);
+    return { ok: false, error: String(e) };
+  }
+}

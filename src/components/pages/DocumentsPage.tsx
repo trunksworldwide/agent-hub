@@ -15,6 +15,7 @@ import {
   getAgents,
   searchKnowledge,
   ingestKnowledge,
+  generateImageCaption,
   type ProjectDocument,
   type Agent,
   type CreateDocumentOptions,
@@ -147,14 +148,28 @@ export function DocumentsPage() {
     toast({ title: 'File uploaded', description: title });
     await loadDocuments();
 
-    // Best-effort auto-ingest
+    // Auto-generate caption for image uploads
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(file.name);
+    if (isImage && res.id) {
+      toast({ title: 'Generating image caption...', description: title });
+      generateImageCaption(res.id).then(captionRes => {
+        if (captionRes.ok) {
+          toast({ title: 'Caption generated', description: title });
+          loadDocuments();
+        } else {
+          toast({ title: 'Caption generation failed', description: captionRes.error || 'Try again via the ✨ button', variant: 'destructive' });
+        }
+      }).catch(() => { /* silent */ });
+    }
+
+    // Best-effort auto-ingest for non-image files
     const textTypes = ['text/plain', 'text/markdown', 'text/csv', 'application/json'];
     if (textTypes.some(t => file.type.startsWith(t) || file.name.endsWith('.md') || file.name.endsWith('.txt') || file.name.endsWith('.csv'))) {
       try {
         const text = await file.text();
         ingestKnowledge({ title, text, source_type: 'file' }).catch(() => {});
       } catch { /* silent */ }
-    } else {
+    } else if (!isImage) {
       // Create placeholder for unsupported types
       ingestKnowledge({ title, source_type: 'file' }).catch(() => {});
     }
@@ -344,6 +359,7 @@ export function DocumentsPage() {
           onDelete={handleDelete}
           isDeleting={deletingId}
           agents={agents}
+          onReload={loadDocuments}
         />
       </div>
 

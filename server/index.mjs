@@ -3337,6 +3337,231 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, report });
     }
 
+    // ── Image Caption: Generate ─────────────────────────────────────────
+    const captionGenMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/caption\/generate$/);
+    if (captionGenMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const docId = decodeURIComponent(captionGenMatch[1]);
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) return sendJson(res, 500, { ok: false, error: 'openai_key_not_configured' });
+
+        // Fetch the document row
+        const { data: doc, error: docErr } = await sb
+          .from('project_documents')
+          .select('id, title, storage_path, mime_type')
+          .eq('id', docId)
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        if (docErr) throw docErr;
+        if (!doc) return sendJson(res, 404, { ok: false, error: 'document_not_found' });
+
+        // Build public image URL from Supabase Storage
+        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+        const imageUrl = `${supabaseUrl}/storage/v1/object/public/${doc.storage_path}`;
+
+        // Delete any existing companion caption doc first (re-generate case)
+        await sb
+          .from('project_documents')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('source_type', 'note')
+          .contains('doc_notes', { image_document_id: docId });
+
+        // Call OpenAI GPT-4o vision with tool calling
+        const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'system',
+                content: 'Describe the image for future retrieval in a knowledge base. Be precise and information-dense. Extract all visible text. Include key entities, numbers, dates, and a short \'why this matters\' summary.',
+              },
+              {
+                role: 'user',
+                content: [
+                  { type: 'image_url', image_url: { url: imageUrl } },
+                  { type: 'text', text: 'Analyze this image thoroughly.' },
+                ],
+              },
+            ],
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'describe_image',
+                  description: 'Return structured image analysis',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      title_suggestion: { type: 'string' },
+                      caption: { type: 'string' },
+                      extracted_text: { type: 'string' },
+                      tags: { type: 'array', items: { type: 'string' } },
+                      entities: { type: 'array', items: { type: 'string' } },
+                      key_numbers: { type: 'array', items: { type: 'string' } },
+                      dates: { type: 'array', items: { type: 'string' } },
+                      why_it_matters: { type: 'string' },
+                    },
+                    required: ['title_suggestion', 'caption', 'extracted_text', 'tags', 'entities', 'key_numbers', 'dates', 'why_it_matters'],
+                  },
+                },
+              },
+            ],
+            tool_choice: { type: 'function', function: { name: 'describe_image' } },
+            max_tokens: 2000,
+          }),
+        });
+
+        if (!openaiRes.ok) {
+          const errText = await openaiRes.text();
+          console.error('[caption/generate] OpenAI error:', openaiRes.status, errText);
+          return sendJson(res, 502, { ok: false, error: `openai_error_${openaiRes.status}` });
+        }
+
+        const openaiData = await openaiRes.json();
+        const toolCall = openaiData.choices?.[0]?.message?.tool_calls?.[0];
+        if (!toolCall) return sendJson(res, 502, { ok: false, error: 'no_tool_call_in_response' });
+
+        const analysis = JSON.parse(toolCall.function.arguments);
+
+        // Format caption text for indexing
+        const captionParts = [
+          analysis.caption,
+          analysis.extracted_text ? `\n\nExtracted text: ${analysis.extracted_text}` : '',
+          analysis.tags?.length ? `\n\nTags: ${analysis.tags.join(', ')}` : '',
+          analysis.entities?.length ? `\nEntities: ${analysis.entities.join(', ')}` : '',
+          analysis.key_numbers?.length ? `\nKey numbers: ${analysis.key_numbers.join(', ')}` : '',
+          analysis.dates?.length ? `\nDates: ${analysis.dates.join(', ')}` : '',
+          analysis.why_it_matters ? `\n\nWhy it matters: ${analysis.why_it_matters}` : '',
+        ];
+        const contentText = captionParts.filter(Boolean).join('');
+
+        // Create companion document
+        const { data: captionDoc, error: insertErr } = await sb
+          .from('project_documents')
+          .insert({
+            project_id: projectId,
+            source_type: 'note',
+            title: `Image: ${doc.title} (analysis)`,
+            content_text: contentText,
+            doc_type: 'general',
+            doc_notes: {
+              image_document_id: docId,
+              caption: analysis.caption,
+              tags: analysis.tags || [],
+              entities: analysis.entities || [],
+              key_numbers: analysis.key_numbers || [],
+              dates: analysis.dates || [],
+              extracted_text: analysis.extracted_text || '',
+              why_it_matters: analysis.why_it_matters || '',
+              title_suggestion: analysis.title_suggestion || '',
+            },
+          })
+          .select('id')
+          .single();
+
+        if (insertErr) throw insertErr;
+
+        // Fire-and-forget knowledge ingest
+        try {
+          const base = `http://127.0.0.1:${PORT}`;
+          void fetch(`${base}/api/knowledge/ingest`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-clawdos-project': projectId },
+            body: JSON.stringify({
+              title: `Image: ${doc.title}`,
+              source_type: 'image',
+              text: contentText,
+            }),
+          });
+        } catch { /* silent */ }
+
+        return sendJson(res, 200, {
+          ok: true,
+          captionDocId: captionDoc.id,
+          caption: analysis.caption,
+          tags: analysis.tags,
+          entities: analysis.entities,
+        });
+      } catch (err) {
+        console.error('[caption/generate] Error:', err);
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
+    // ── Image Caption: Update ─────────────────────────────────────────────
+    const captionUpdateMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/caption\/update$/);
+    if (captionUpdateMatch && req.method === 'POST') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const docId = decodeURIComponent(captionUpdateMatch[1]);
+        const body = await readBodyJson(req);
+        const { caption, tags } = body;
+
+        if (!caption) return sendJson(res, 400, { ok: false, error: 'missing_caption' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // Find the companion note
+        const { data: companions } = await sb
+          .from('project_documents')
+          .select('id, doc_notes')
+          .eq('project_id', projectId)
+          .eq('source_type', 'note')
+          .contains('doc_notes', { image_document_id: docId });
+
+        const companion = companions?.[0];
+        if (!companion) return sendJson(res, 404, { ok: false, error: 'caption_not_found' });
+
+        const existingNotes = (companion.doc_notes && typeof companion.doc_notes === 'object') ? companion.doc_notes : {};
+        const updatedNotes = { ...existingNotes, caption, tags: tags || existingNotes.tags || [] };
+
+        const contentText = [
+          caption,
+          tags?.length ? `\n\nTags: ${tags.join(', ')}` : '',
+        ].filter(Boolean).join('');
+
+        await sb
+          .from('project_documents')
+          .update({
+            content_text: contentText,
+            doc_notes: updatedNotes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', companion.id);
+
+        // Re-ingest
+        try {
+          const base = `http://127.0.0.1:${PORT}`;
+          void fetch(`${base}/api/knowledge/ingest`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-clawdos-project': projectId },
+            body: JSON.stringify({
+              title: `Image caption (updated)`,
+              source_type: 'image',
+              text: contentText,
+            }),
+          });
+        } catch { /* silent */ }
+
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     return notFound(res);
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: String(err?.message || err) });

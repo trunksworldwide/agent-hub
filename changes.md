@@ -1,3 +1,10 @@
+### Image-to-Text Knowledge Caption + Editable Metadata
+- **Control API** (`server/index.mjs`): Added `POST /api/documents/:id/caption/generate` (calls GPT-4o vision with tool calling for structured output, creates companion `project_documents` note with analysis, fires knowledge ingest) and `POST /api/documents/:id/caption/update` (updates caption text/tags on companion doc, re-ingests).
+- **Frontend API** (`src/lib/api.ts`): Added `generateImageCaption()` and `updateImageCaption()` helpers via Control API.
+- **DocumentsPage** (`DocumentsPage.tsx`): Auto-triggers caption generation on image upload (non-blocking, best-effort).
+- **DocumentList** (`DocumentList.tsx`): Added ✨ caption button for image documents. Shows "Captioned" badge when companion analysis exists. Button generates caption if none exists, or opens edit modal if one does.
+- **ImageCaptionModal** (`ImageCaptionModal.tsx`): New lightweight dialog for editing caption text and tags, with save triggering update + re-index.
+
 ### Vector Search, Auto-Ingestion, and Agent Knowledge Awareness (Phases 1-2, 4-8)
 - **Database (pgvector)**: Enabled `vector` extension. Created `knowledge_sources` (dedupe via `content_hash`, `normalized_url`, indexing status) and `knowledge_chunks` (1536-dim embeddings) tables with zero RLS policies (deny all direct browser access). Added `match_knowledge_chunks` RPC with `SECURITY DEFINER` for similarity search.
 - **Edge Function `knowledge-worker`** (`verify_jwt=true`): Single source of truth for embed + search actions. Chunking (800-1200 chars, paragraph-aware, max 200 chunks/500K chars). Embeds via OpenAI `text-embedding-3-small`. Only callable with service-role credentials.
