@@ -1,96 +1,97 @@
 
 
-# Lean & Smart Context Packs: Pinning UI + Per-Task Retrieval + Hard Caps
+# Preview Context Pack + Size Budgeting + Exclusion Transparency
 
-## What already exists (no changes needed)
+## Overview
 
-- `project_documents.pinned` column exists
-- `updateDocument()` in `api.ts` already supports `{ pinned: true/false }`
-- `getDocuments()` already sorts pinned docs first
-- Edge function (`get-context-pack`) already fetches pinned docs and does per-task knowledge retrieval via `knowledge-worker`
-- DocumentList already shows a Pin icon indicator on pinned docs
+Add a "Preview Context Pack" button to the Knowledge page that lets operators see exactly what an agent will receive, including which documents were included, which were excluded (and why), and character counts per section.
 
 ## What to build
 
-### 1. Pin/Unpin toggle in DocumentList
+### 1. New component: ContextPackPreviewDialog
 
-**File: `src/components/documents/DocumentList.tsx`**
+**File: `src/components/documents/ContextPackPreviewDialog.tsx`**
 
-- Replace the static Pin icon indicator with a clickable pin/unpin button per document
-- On click: call `updateDocument(doc.id, { pinned: !doc.pinned })` and trigger `onReload()`
-- Show a filled pin icon when pinned, outline when not
-- Show toast on toggle ("Pinned" / "Unpinned")
-- Add `onTogglePin` callback prop, or handle inline using the existing `updateDocument` import
+A Dialog with:
+- **Agent selector**: dropdown populated from the agents list (required)
+- **Task selector**: dropdown populated from tasks list, plus a "No task" option (optional)
+- **"Generate Preview" button**: calls `buildContextPack()` with selected agent + task
+- **Results display** (after generation):
+  - Section-by-section breakdown showing:
+    - Section name (Mission, Overview, Pinned Knowledge, Your Knowledge, Task Context, Relevant Knowledge, Recent Changes)
+    - Character count per section with a colored bar (green/yellow/red based on budget usage)
+    - Hard cap shown next to count (e.g., "2,341 / 8,000 chars")
+  - **Included items**: list of pinned doc titles that made it in
+  - **Excluded items**: if any docs were dropped due to caps, list them under "Excluded (over budget)" with just titles
+  - **Full markdown preview**: collapsible, showing the exact rendered markdown (scrollable, mono font)
+- Loading state while generating
 
-### 2. "Pinned" badge and sort order
-
-**File: `src/components/documents/DocumentList.tsx`**
-
-- Show a "Pinned" badge on pinned docs (already partially there with the Pin icon; upgrade to a visible Badge)
-- Documents are already sorted pinned-first from the API query -- no change needed
-
-### 3. Hard character caps on Context Pack sections
-
-**File: `supabase/functions/get-context-pack/index.ts`**
-
-Add constants and enforcement:
-
-```
-MAX_PINNED_CHARS = 8000    (total chars across all pinned doc notes)
-MAX_KNOWLEDGE_CHARS = 6000 (total chars across retrieved chunks)
-MAX_PINNED_DOCS = 5        (reduce from current 10)
-MAX_KNOWLEDGE_RESULTS = 5  (increase from current 3)
-```
-
-In `fetchPinnedDocs`: accumulate character count across docs, stop adding when limit reached. Append "(truncated -- N more pinned docs not shown)" if any were dropped.
-
-In `fetchRelevantKnowledge`: truncate individual chunks if needed and enforce total char cap.
+### 2. Enhanced buildContextPack to return metadata
 
 **File: `src/lib/context-pack.ts`**
 
-Mirror the same caps and truncation logic for the client-side builder.
+Extend `ContextPack` interface with optional metadata:
+```
+excludedDocs?: { title: string; reason: string }[];
+sectionSizes?: Record<string, number>;
+```
 
-### 4. Per-task knowledge retrieval in client-side builder
+Update `fetchPinnedDocs` to track and return excluded doc titles (currently it just increments a `dropped` counter and logs a warning -- upgrade to return the titles).
 
-**File: `src/lib/context-pack.ts`**
+Add a helper `computeSectionSizes(pack)` that calculates character counts for each section of the rendered markdown.
 
-The edge function already does per-task retrieval, but the client-side `buildContextPack()` does not. Add:
+### 3. Wire into DocumentsPage
 
-- A `relevantKnowledge` field to the client-side `ContextPack` interface (already exists in the edge function version)
-- When `taskId` is provided, fetch task context, build a search query from it, and call the knowledge-worker edge function (same pattern as edge function)
-- Include results in `renderContextPackAsMarkdown` under "## Relevant Knowledge"
+**File: `src/components/pages/DocumentsPage.tsx`**
 
-### 5. Markdown renderer section ordering
+- Add a "Preview Context Pack" button next to the existing header buttons (between Refresh and Add Document)
+- Opens the ContextPackPreviewDialog
+- Pass `agents` and a lazy-loaded tasks list
 
-**Files: both `src/lib/context-pack.ts` and `supabase/functions/get-context-pack/index.ts`**
-
-Ensure consistent section order:
-1. Mission
-2. Project Overview
-3. Pinned Knowledge (global + agent, with char caps)
-4. Task Context (if present)
-5. Relevant Knowledge (per-task retrieved snippets, if present)
-6. Recent Changes
-
-### 6. Documentation
+### 4. Documentation
 
 **File: `changes.md`**
 
-Log: pin toggle UI, hard caps on context pack, per-task retrieval in client builder.
+Log the new preview feature.
 
-## Files changed summary
+## Technical details
+
+### Section size budgets (display only, enforcement already exists)
+
+| Section | Hard Cap | Source |
+|---------|----------|--------|
+| Mission | No cap (typically short) | brain_docs |
+| Project Overview | No cap (typically short) | brain_docs |
+| Pinned Knowledge (Global) | 8,000 chars / 5 docs | project_documents |
+| Your Knowledge (Agent) | 8,000 chars / 5 docs | project_documents |
+| Task Context | No cap (bounded by task data) | tasks + task_comments |
+| Relevant Knowledge | 6,000 chars / 5 chunks | knowledge-worker |
+| Recent Changes | 20 activities max | activities |
+
+### Excluded docs tracking
+
+`fetchPinnedDocs` currently does:
+```typescript
+if (totalChars + docChars > MAX_PINNED_CHARS && results.length > 0) {
+  dropped++;
+  continue;
+}
+```
+
+Change to also collect `{ title: d.title, reason: 'Over character budget' }` into an array returned alongside the docs. This requires changing the return type to `{ docs: DocReference[], excluded: ExcludedDoc[] }` and updating callers.
+
+### Files changed
 
 | File | Change |
 |------|--------|
-| `src/components/documents/DocumentList.tsx` | Add pin/unpin toggle button, "Pinned" badge |
-| `supabase/functions/get-context-pack/index.ts` | Hard char caps, reduce MAX_PINNED_DOCS to 5, increase MAX_KNOWLEDGE_RESULTS to 5 |
-| `src/lib/context-pack.ts` | Add per-task knowledge retrieval, hard char caps, `relevantKnowledge` field |
-| `changes.md` | Document changes |
+| `src/components/documents/ContextPackPreviewDialog.tsx` | New component: agent/task selectors, preview display, section sizes, exclusions |
+| `src/lib/context-pack.ts` | Add `excludedDocs` + `sectionSizes` to ContextPack, return excluded doc titles from fetchPinnedDocs, add `computeSectionSizes()` |
+| `src/components/pages/DocumentsPage.tsx` | Add "Preview Context Pack" button, wire dialog |
+| `changes.md` | Document the feature |
 
-## What this does NOT do
+### What this does NOT include (deferred)
 
-- No new tables or columns
-- No new API endpoints (pin uses existing `updateDocument`)
-- No Knowledge page redesign
-- No new dependencies
+- Pin priority / ordering (item 3 from the request) -- can be added later as a separate feature with a `pin_priority` column
+- No new DB columns or tables
+- No edge function changes (preview uses the client-side builder only)
 
