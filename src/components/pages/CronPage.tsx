@@ -723,12 +723,28 @@ export function CronPage() {
           description: `${job.name} has been ${job.enabled ? 'disabled' : 'enabled'}.`,
         });
       } catch (directErr: any) {
-        // Fail loudly — do NOT fall back to queue when Control API is connected
-        toast({
-          title: 'Toggle failed',
-          description: String(directErr?.message || directErr),
-          variant: 'destructive',
-        });
+        const msg = String(directErr?.message || directErr);
+        const isNetworkError = /failed to fetch|networkerror|load failed|fetch failed/i.test(msg);
+
+        if (isNetworkError) {
+          // Server unreachable — fall back to queue
+          try {
+            await doQueueFallback();
+          } catch (queueErr: any) {
+            toast({
+              title: 'Toggle failed',
+              description: 'Control API unreachable and queue fallback also failed.',
+              variant: 'destructive',
+            });
+          }
+        } else {
+          // Real API error — fail loudly
+          toast({
+            title: 'Toggle failed',
+            description: msg,
+            variant: 'destructive',
+          });
+        }
       }
     } else {
       try {

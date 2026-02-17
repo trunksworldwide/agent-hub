@@ -1,3 +1,6 @@
+### Heartbeat toggle: network-error fallback to queue
+- **CronPage.tsx**: Toggle catch block now detects network-level errors (`Failed to fetch`, etc.) and automatically falls back to `queueCronPatchRequest` instead of showing a hard failure. Real API errors (4xx/5xx) still fail loudly. This fixes toggling heartbeats from the Lovable cloud preview when the Mac mini is unreachable.
+
 ### Context Pack Preview Dialog
 - **New component** (`ContextPackPreviewDialog.tsx`): Operator can select an agent + optional task, generate a full Context Pack preview showing section-by-section character counts with budget bars, included/excluded pinned docs, retrieved knowledge chunks, and full markdown output.
 - **context-pack.ts**: Added `ExcludedDoc` interface and `excludedDocs` field to `ContextPack`. `fetchPinnedDocs` now returns `{ docs, excluded }` with titles of dropped documents and reasons. Updated callers accordingly.
