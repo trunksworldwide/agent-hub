@@ -13,15 +13,17 @@ import { MemoryEditor } from './agent-tabs/MemoryEditor';
 import { ToolsView } from './agent-tabs/ToolsView';
 import { SkillsView } from './agent-tabs/SkillsView';
 import { SessionsView } from './agent-tabs/SessionsView';
+import { AgentsDocEditor } from './agent-tabs/AgentsDocEditor';
 import { NewTaskDialog } from './dialogs/NewTaskDialog';
 
 const agentTabs: { id: AgentTab; label: string; icon: string; tooltip: string }[] = [
-  { id: 'overview', label: 'Overview', icon: '📋', tooltip: 'Agent profile, purpose, doc status, and actions.' },
-  { id: 'soul', label: 'Soul', icon: '✨', tooltip: "Defines the agent's personality, behavior rules, and core truths." },
-  { id: 'user', label: 'User', icon: '👤', tooltip: 'Who the user is: preferences, permissions, and profile.' },
-  { id: 'memory', label: 'Memory', icon: '🧠', tooltip: 'Long-term notes and daily logs for continuity. Keep curated.' },
-  { id: 'tools', label: 'Tools', icon: '🔧', tooltip: 'Environment-specific settings: devices, SSH, preferences.' },
-  { id: 'skills', label: 'Skills', icon: '🎯', tooltip: 'Installed capabilities that affect what the agent can do.' },
+  { id: 'overview', label: 'Overview', icon: '📋', tooltip: 'Agent profile, purpose, doc status, and quick actions.' },
+  { id: 'soul', label: 'Soul', icon: '✨', tooltip: "Defines the agent's personality, behavior rules, and boundaries (SOUL.md)." },
+  { id: 'user', label: 'User', icon: '👤', tooltip: 'Who the operator is: preferences, timezone, formatting rules (USER.md).' },
+  { id: 'memory', label: 'Memory', icon: '🧠', tooltip: 'Durable long-term memory: decisions, lessons learned, runbooks (MEMORY.md).' },
+  { id: 'tools', label: 'Tools', icon: '🔧', tooltip: 'Environment-specific notes: apps, APIs, device names (TOOLS.md).' },
+  { id: 'skills', label: 'Skills', icon: '🎯', tooltip: 'Installed capabilities and how-to playbooks (SKILLS.md).' },
+  { id: 'agents_doc', label: 'Handbook', icon: '📖', tooltip: 'Operating rules and universal instructions (AGENTS.md).' },
   { id: 'sessions', label: 'Sessions', icon: '💬', tooltip: 'Active and previous sessions for status and messaging.' },
 ];
 
@@ -115,6 +117,8 @@ export function AgentDetail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
         return <ToolsView />;
       case 'skills':
         return <SkillsView />;
+      case 'agents_doc':
+        return <AgentsDocEditor />;
       case 'sessions':
         return <SessionsView />;
       default:

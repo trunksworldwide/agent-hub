@@ -121,6 +121,31 @@ Hard requirements:
 Output example:
 "Tracks OpenClaw releases/PRs and proposes 1–3 concrete dashboard tasks per day with links and effort estimates."`;
 
+const AGENTS_DOC_SYSTEM_PROMPT = `You are an expert OpenClaw agent configurator. Generate an AGENTS.md (operating rules handbook) for a specific agent.
+
+Inputs you will be given:
+- Agent name, role, and responsibilities
+- Project name, mission (optional), overview (optional)
+- House rules (optional)
+
+Hard requirements:
+- Output MUST be valid Markdown.
+- Title must be exactly: "AGENTS.md — <AgentName>"
+- This is the "company handbook" for the agent — universal operating instructions.
+- Include:
+  - What "done" looks like for this agent's work
+  - Where to store outcomes (task events, war room, documents)
+  - How to check tools before saying "I can't"
+  - Default escalation path (when to ask vs when to proceed)
+  - Communication rules (where to post updates, when to stay quiet)
+  - Quality bar (what counts as a useful contribution)
+- Keep it concise and actionable. Bullet rules, not paragraphs.
+- DO NOT duplicate SOUL.md content (personality/vibe). This is purely operational.
+
+Output only the AGENTS.md content. No code blocks. No extra commentary.
+
+You MUST call the \`generate_agents_doc\` function with the generated document.`;
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface GenerateInput {
@@ -135,6 +160,7 @@ interface GenerateInput {
   projectMission?: string;
   houseRules?: string;
   capabilitiesContract?: string;
+  docTypes?: string[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -304,16 +330,47 @@ serve(async (req) => {
     }
 
     const userMessage = buildUserMessage(input);
+    const requestedDocs = input.docTypes || ['soul', 'user'];
 
-    // Three parallel calls: soul, user, description (memory excluded)
-    const [soul, user, description] = await Promise.all([
-      callWithTool(OPENAI_API_KEY, SOUL_SYSTEM_PROMPT, userMessage, "generate_soul", "soul", "Complete SOUL.md content"),
-      callWithTool(OPENAI_API_KEY, USER_SYSTEM_PROMPT, userMessage, "generate_user", "user", "Complete USER.md content"),
-      callSimple(OPENAI_API_KEY, DESCRIPTION_SYSTEM_PROMPT, userMessage),
-    ]);
+    // Build parallel calls based on requested doc types
+    const calls: Promise<[string, string]>[] = [];
+
+    if (requestedDocs.includes('soul')) {
+      calls.push(
+        callWithTool(OPENAI_API_KEY, SOUL_SYSTEM_PROMPT, userMessage, "generate_soul", "soul", "Complete SOUL.md content")
+          .then(r => ['soul', r] as [string, string])
+      );
+    }
+    if (requestedDocs.includes('user')) {
+      calls.push(
+        callWithTool(OPENAI_API_KEY, USER_SYSTEM_PROMPT, userMessage, "generate_user", "user", "Complete USER.md content")
+          .then(r => ['user', r] as [string, string])
+      );
+    }
+    if (requestedDocs.includes('agents')) {
+      calls.push(
+        callWithTool(OPENAI_API_KEY, AGENTS_DOC_SYSTEM_PROMPT, userMessage, "generate_agents_doc", "agents_doc", "Complete AGENTS.md content")
+          .then(r => ['agents', r] as [string, string])
+      );
+    }
+
+    // Always generate description if soul or user is requested
+    const needsDescription = requestedDocs.includes('soul') || requestedDocs.includes('user');
+    if (needsDescription) {
+      calls.push(
+        callSimple(OPENAI_API_KEY, DESCRIPTION_SYSTEM_PROMPT, userMessage)
+          .then(r => ['description', r] as [string, string])
+      );
+    }
+
+    const results = await Promise.all(calls);
+    const output: Record<string, string> = { success: 'true' };
+    for (const [key, value] of results) {
+      output[key] = value;
+    }
 
     return new Response(
-      JSON.stringify({ success: true, soul, user, description }),
+      JSON.stringify({ success: true, ...output }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

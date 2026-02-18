@@ -1,3 +1,13 @@
+### OpenClaw Anatomy Integration
+- **AnatomyCheatSheet** (`src/components/documents/AnatomyCheatSheet.tsx`): New collapsible card on Knowledge page listing all OpenClaw doc types (SOUL, IDENTITY, USER, AGENTS, TOOLS, MEMORY, SKILLS, HEARTBEAT, Cron) with info tooltips and "maps to" labels.
+- **Agent Handbook tab** (`src/components/agent-tabs/AgentsDocEditor.tsx`): New "Handbook" tab (📖) on agent detail for viewing/editing AGENTS.md — universal operating rules. Includes "Generate with AI" button for empty docs.
+- **Agent tab tooltips** (`AgentDetail.tsx`): Updated all agent tab tooltips to use canonical OpenClaw Anatomy descriptions with file references.
+- **AgentTab type** (`store.ts`): Extended to include `'agents_doc'`.
+- **Project Rulebook** (`ProjectOverviewCard.tsx`): Added third card below Mission and Overview for project-level operating rules (stored as `brain_docs` doc_type `'project_rules'`).
+- **API** (`api.ts`): Added `getProjectRulebook()` and `saveProjectRulebook()` following existing Mission/Overview pattern.
+- **Edge function** (`generate-agent-docs`): Added `AGENTS_DOC_SYSTEM_PROMPT` and `docTypes` parameter support. Callers can now request specific doc types (`['agents']`) instead of always generating soul+user. Backward compatible.
+- **Database**: Expanded `brain_docs_doc_type_check` constraint to include `'project_rules'`.
+
 ### Heartbeat toggle: network-error fallback to queue
 - **CronPage.tsx**: Toggle catch block now detects network-level errors (`Failed to fetch`, etc.) and automatically falls back to `queueCronPatchRequest` instead of showing a hard failure. Real API errors (4xx/5xx) still fail loudly. This fixes toggling heartbeats from the Lovable cloud preview when the Mac mini is unreachable.
 
