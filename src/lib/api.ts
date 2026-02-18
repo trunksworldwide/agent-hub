@@ -3200,6 +3200,77 @@ export async function saveProjectMission(content: string): Promise<{ ok: boolean
   }
 }
 
+// ============= Project Rulebook (brain_docs, doc_type='project_rules') =============
+
+export interface ProjectRulebook {
+  content: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export async function getProjectRulebook(): Promise<ProjectRulebook | null> {
+  if (!hasSupabase() || !supabase) return null;
+
+  const projectId = getProjectId();
+
+  const { data, error } = await supabase
+    .from('brain_docs')
+    .select('content, updated_at, updated_by')
+    .eq('project_id', projectId)
+    .eq('doc_type', 'project_rules')
+    .eq('agent_key', 'project')
+    .maybeSingle();
+
+  if (error) {
+    console.error('getProjectRulebook error:', error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  return {
+    content: data.content || '',
+    updatedAt: data.updated_at,
+    updatedBy: data.updated_by,
+  };
+}
+
+export async function saveProjectRulebook(content: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasSupabase() || !supabase) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+
+  const projectId = getProjectId();
+
+  try {
+    const { data: existing } = await supabase
+      .from('brain_docs')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('doc_type', 'project_rules')
+      .eq('agent_key', 'project')
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase.from('brain_docs').update({ content, updated_by: 'ui' }).eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from('brain_docs').insert({
+        project_id: projectId,
+        agent_key: 'project',
+        doc_type: 'project_rules',
+        content,
+        updated_by: 'ui',
+      });
+      if (error) throw error;
+    }
+    return { ok: true };
+  } catch (e: any) {
+    console.error('saveProjectRulebook failed:', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 // ============= Skill Check =============
 
 export async function checkSkillEligibility(skillId: string): Promise<{ ok: boolean; error?: string }> {

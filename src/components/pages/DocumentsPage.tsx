@@ -26,6 +26,7 @@ import { DocumentList } from '@/components/documents/DocumentList';
 import { AddDocumentDialog } from '@/components/documents/AddDocumentDialog';
 import { DocumentViewer } from '@/components/documents/DocumentViewer';
 import { ProjectOverviewCard } from '@/components/documents/ProjectOverviewCard';
+import { AnatomyCheatSheet } from '@/components/documents/AnatomyCheatSheet';
 import { ContextPackPreviewDialog } from '@/components/documents/ContextPackPreviewDialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -316,6 +317,9 @@ export function DocumentsPage() {
         <div className="mb-6">
           <ProjectOverviewCard />
         </div>
+
+        {/* Anatomy Cheat Sheet */}
+        <AnatomyCheatSheet />
 
         {/* Recent Changes - Collapsible */}
         <Card className="mb-6">

@@ -10,7 +10,7 @@ import {
 
 export type ViewMode = 'dashboard' | 'manage';
 export type MainTab = 'agents' | 'activity' | 'skills' | 'channels' | 'cron' | 'config';
-export type AgentTab = 'overview' | 'soul' | 'user' | 'memory' | 'tools' | 'skills' | 'sessions';
+export type AgentTab = 'overview' | 'soul' | 'user' | 'memory' | 'tools' | 'skills' | 'sessions' | 'agents_doc';
 
 interface FileState {
   content: string;
