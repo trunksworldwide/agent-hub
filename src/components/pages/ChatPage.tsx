@@ -275,6 +275,11 @@ export function ChatPage() {
     setTaskDialogOpen(true);
   };
 
+  const getTaskTitleFromMessage = (msg: ChatMessage) => {
+    const firstLine = msg.message.split('\n')[0].trim();
+    return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
+  };
+
   // Group messages by date
   const groupedMessages = useMemo(() => {
     const groups: { date: string; messages: ChatMessage[] }[] = [];
@@ -431,21 +436,19 @@ export function ChatPage() {
                           )}
                         </span>
 
-                        {!isOutgoing && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5 opacity-60 hover:opacity-100"
-                                onClick={() => handleCreateTask(msg)}
-                              >
-                                <CheckSquare className="w-3 h-3" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Create task from message</TooltipContent>
-                          </Tooltip>
-                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 opacity-60 hover:opacity-100"
+                              onClick={() => handleCreateTask(msg)}
+                            >
+                              <CheckSquare className="w-3 h-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Suggest Task</TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
                   </div>
@@ -522,9 +525,13 @@ export function ChatPage() {
         onOpenChange={setTaskDialogOpen}
         agents={agents}
         defaultAssignee={taskFromMessage?.targetAgentKey || undefined}
+        defaultTitle={taskFromMessage ? getTaskTitleFromMessage(taskFromMessage) : undefined}
+        defaultDescription={taskFromMessage?.message || undefined}
+        isProposed={!!taskFromMessage}
+        sourceMetadata={taskFromMessage ? { chat_message_id: taskFromMessage.id } : undefined}
         onCreated={() => {
           setTaskFromMessage(null);
-          toast({ title: 'Task created from message' });
+          toast({ title: 'Suggested task created', description: 'Check the Inbox on the Tasks board.' });
         }}
       />
     </div>

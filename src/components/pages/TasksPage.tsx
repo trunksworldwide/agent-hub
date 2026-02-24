@@ -3,7 +3,7 @@ import { Plus, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 // ToggleGroup removed: Tasks page is board-only (Suggested → In Progress → Completed)
-import { getAgents, getTasks, updateTask, createActivity, type Agent, type Task, type TaskStatus } from '@/lib/api';
+import { getAgents, getTasks, updateTask, createActivity, createTaskEvent, sendChatMessage, type Agent, type Task, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils'; // kept for refresh icon animation
 import { useClawdOffice } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +12,7 @@ import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { BlockedReasonModal } from '@/components/tasks/BlockedReasonModal';
+import { useStaleTaskWatchdog } from '@/hooks/useStaleTaskWatchdog';
 
 // Zack preference: keep the workflow dead simple.
 // 3 columns only: Approve (Inbox) → In Progress → Completed.
@@ -64,7 +65,9 @@ export function TasksPage() {
     return tasks.filter((t) => !t.rejectedAt);
   }, [tasks]);
 
-  
+  // Stale task watchdog (30-min no-activity detection)
+  useStaleTaskWatchdog(tasks);
+
 
   const tasksByBoardColumn = useMemo(() => {
     const map: Record<'inbox'|'in_progress'|'done', Task[]> = {
@@ -127,6 +130,27 @@ export function TasksPage() {
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t))
       );
+
+      // Feature 3a: "Started" event + kickoff message when entering in_progress
+      if (newStatus === 'in_progress' && task.status !== 'in_progress') {
+        // Fire "Started" timeline event (best-effort)
+        createTaskEvent({
+          taskId,
+          eventType: 'status_change',
+          content: 'Started',
+          metadata: { old_status: task.status, new_status: 'in_progress' },
+          author: 'system',
+        }).catch(console.error);
+
+        // Kickoff message to assigned agent (best-effort)
+        if (task.assigneeAgentKey) {
+          const kickoff = `🚀 Task started: **${task.title}**\n\nDescription: ${task.description || '(none)'}\n\nPlease begin work and post updates to the task timeline.`;
+          sendChatMessage({
+            message: kickoff,
+            targetAgentKey: task.assigneeAgentKey,
+          }).catch(console.error);
+        }
+      }
     } catch (e) {
       console.error('Failed to move task:', e);
       toast({
@@ -226,14 +250,7 @@ export function TasksPage() {
       </div>
 
       {/* Content */}
-      {viewMode === 'list' ? (
-        <TaskListView
-          tasks={tasks}
-          agents={agents}
-          onTaskClick={handleTaskClick}
-          onStatusChange={handleMoveTask}
-        />
-      ) : (
+      {/* Kanban board - horizontal scroll on mobile */}
         /* Kanban board - horizontal scroll on mobile */
         <div className="flex-1 overflow-x-auto">
           <div className="flex gap-4 p-4 min-w-max md:min-w-0">
@@ -277,7 +294,6 @@ export function TasksPage() {
             ))}
           </div>
         </div>
-      )}
 
       {/* New Task Dialog */}
       <NewTaskDialog

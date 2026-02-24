@@ -13,6 +13,10 @@ interface NewTaskDialogProps {
   onOpenChange: (open: boolean) => void;
   agents: Agent[];
   defaultAssignee?: string;
+  defaultTitle?: string;
+  defaultDescription?: string;
+  isProposed?: boolean;
+  sourceMetadata?: Record<string, any>;
   onCreated?: () => void;
 }
 
@@ -21,6 +25,10 @@ export function NewTaskDialog({
   onOpenChange, 
   agents, 
   defaultAssignee,
+  defaultTitle,
+  defaultDescription,
+  isProposed,
+  sourceMetadata,
   onCreated 
 }: NewTaskDialogProps) {
   const { toast } = useToast();
@@ -29,12 +37,14 @@ export function NewTaskDialog({
   const [assignee, setAssignee] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // Set default assignee when dialog opens
+  // Set defaults when dialog opens
   useEffect(() => {
-    if (open && defaultAssignee) {
-      setAssignee(defaultAssignee);
+    if (open) {
+      if (defaultAssignee) setAssignee(defaultAssignee);
+      if (defaultTitle) setTitle(defaultTitle);
+      if (defaultDescription) setDescription(defaultDescription);
     }
-  }, [open, defaultAssignee]);
+  }, [open, defaultAssignee, defaultTitle, defaultDescription]);
 
   // Reset form when dialog closes
   useEffect(() => {
@@ -54,6 +64,8 @@ export function NewTaskDialog({
         title: title.trim(), 
         description: description.trim() || undefined,
         assigneeAgentKey: assignee || undefined,
+        isProposed: isProposed || undefined,
+        contextSnapshot: sourceMetadata || undefined,
       });
       
       toast({
@@ -79,7 +91,7 @@ export function NewTaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
+          <DialogTitle>{isProposed ? 'Suggest Task from Message' : 'Create New Task'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -139,7 +151,7 @@ export function NewTaskDialog({
             Cancel
           </Button>
           <Button onClick={handleCreate} disabled={!title.trim() || isCreating}>
-            {isCreating ? 'Creating...' : 'Create'}
+            {isCreating ? 'Creating...' : isProposed ? 'Suggest Task' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>

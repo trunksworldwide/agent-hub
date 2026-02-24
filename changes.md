@@ -1,3 +1,13 @@
+### War Room → Task Promotion (Feature 1)
+- **NewTaskDialog.tsx**: Added `defaultTitle`, `defaultDescription`, `isProposed`, `sourceMetadata` props. Dialog title and button label adapt when proposing.
+- **api.ts** `createTask`: Accepts `isProposed` and `contextSnapshot` params, passes them to Supabase insert.
+- **ChatPage.tsx**: "Suggest Task" button on all War Room messages (not just incoming). Prefills dialog with first-line title, full message description, `isProposed=true`, and `sourceMetadata` linking to the chat message ID. Toast says "Suggested task created".
+
+### No-Loitering Rule for In Progress (Feature 3)
+- **TasksPage.tsx** `handleMoveTask`: When a task enters `in_progress`, fires a "Started" `task_event` and sends a kickoff message to the assigned agent via `sendChatMessage` (best-effort, gracefully degrades).
+- **useStaleTaskWatchdog.ts**: New hook polling every 5 minutes. If an `in_progress` task has no agent activity in 30 minutes, posts a system comment on the task timeline and notifies War Room. Tracks flagged tasks to avoid re-flagging.
+- **TasksPage.tsx**: Integrates watchdog hook.
+
 ### Fix: Clear `is_proposed` on status change
 - **TasksPage.tsx** `handleMoveTask`: auto-clears `isProposed` when moving a task out of inbox.
 - **TaskDetailSheet.tsx** `performStatusChange`: same fix for the detail sheet status dropdown.
