@@ -1,3 +1,7 @@
+### Tweaks: Smart Default Assignee + Watchdog Language
+- **ChatPage.tsx**: "Suggest Task" now defaults assignee to the message author (if agent) or PM/first agent (if human). Prevents unowned suggested tasks.
+- **useStaleTaskWatchdog.ts**: Updated stale comment to "STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify." War Room notification now targets general channel (PM-visible) instead of the assigned agent.
+
 ### War Room → Task Promotion (Feature 1)
 - **NewTaskDialog.tsx**: Added `defaultTitle`, `defaultDescription`, `isProposed`, `sourceMetadata` props. Dialog title and button label adapt when proposing.
 - **api.ts** `createTask`: Accepts `isProposed` and `contextSnapshot` params, passes them to Supabase insert.

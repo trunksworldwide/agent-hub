@@ -524,7 +524,13 @@ export function ChatPage() {
         open={taskDialogOpen}
         onOpenChange={setTaskDialogOpen}
         agents={agents}
-        defaultAssignee={taskFromMessage?.targetAgentKey || undefined}
+        defaultAssignee={
+          taskFromMessage
+            ? agents.find(a => a.id === taskFromMessage.author)
+              ? taskFromMessage.author
+              : (agents.find(a => a.role?.toLowerCase().includes('pm'))?.id || agents[0]?.id || undefined)
+            : undefined
+        }
         defaultTitle={taskFromMessage ? getTaskTitleFromMessage(taskFromMessage) : undefined}
         defaultDescription={taskFromMessage?.message || undefined}
         isProposed={!!taskFromMessage}
