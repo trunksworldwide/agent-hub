@@ -5,6 +5,12 @@
       "name": "Front Office",
       "workspace": "/Users/trunks/clawd",
       "tag": "system"
+    },
+    {
+      "id": "claw-solutions",
+      "name": "Claw Solutions",
+      "workspace": "/Users/trunks/clawd-projects/claw-solutions",
+      "tag": "system"
     }
   ]
 }
