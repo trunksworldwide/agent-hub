@@ -23,7 +23,6 @@ import { setSelectedProjectId as persistSelectedProjectId, DEFAULT_PROJECT_ID } 
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { useLabsFeature } from '@/hooks/useLabsFeature';
 const navItemsBefore = [
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/activity', label: 'Activity', icon: Activity },
@@ -43,8 +42,6 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
-  const teamRoomEnabled = useLabsFeature('team_room');
-  const dmEnabled = useLabsFeature('multi_dm');
   const navigate = useNavigate();
   const { toast } = useToast();
   const { 
@@ -228,31 +225,25 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           </NavLink>
         ))}
 
-        {/* Team Room (Labs flag) */}
-        {teamRoomEnabled && (
-          <NavLink
-            to="/chat"
-            onClick={onNavigate}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            activeClassName="bg-accent text-accent-foreground"
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>War Room</span>
-          </NavLink>
-        )}
+        <NavLink
+          to="/chat"
+          onClick={onNavigate}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          activeClassName="bg-accent text-accent-foreground"
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>War Room</span>
+        </NavLink>
 
-        {/* DMs (Labs flag) */}
-        {dmEnabled && (
-          <NavLink
-            to="/dms"
-            onClick={onNavigate}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            activeClassName="bg-accent text-accent-foreground"
-          >
-            <MessagesSquare className="w-4 h-4" />
-            <span>DMs</span>
-          </NavLink>
-        )}
+        <NavLink
+          to="/dms"
+          onClick={onNavigate}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          activeClassName="bg-accent text-accent-foreground"
+        >
+          <MessagesSquare className="w-4 h-4" />
+          <span>DMs</span>
+        </NavLink>
 
         {navItemsAfter.map((item) => (
           <NavLink

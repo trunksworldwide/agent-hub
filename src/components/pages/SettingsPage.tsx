@@ -13,9 +13,6 @@ import { FlaskConical } from 'lucide-react';
 
 const LABS_FEATURES: { key: LabsFeatureKey; label: string; description: string }[] = [
   { key: 'task_threads', label: 'Task Threads', description: 'Unified timeline for task events, comments, and approvals.' },
-  { key: 'team_room', label: 'Team Room', description: 'Shared chat room with all agents and action proposals.' },
-  { key: 'operator_chat', label: 'Operator Chat', description: 'Direct + queued message delivery to agents.' },
-  { key: 'multi_dm', label: 'Multi-Agent DMs', description: 'Private split-pane conversations with individual agents.' },
   { key: 'heartbeat_ui', label: 'Heartbeat UI', description: 'Visual separation of heartbeats from scheduled jobs.' },
   { key: 'mission_banner', label: 'Mission Banner', description: 'Pinned mission statement on the Activity page.' },
 ];
