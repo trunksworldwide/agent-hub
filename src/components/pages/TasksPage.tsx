@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { getAgents, getTasks, updateTask, createActivity, type Agent, type Task, type TaskStatus } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils'; // kept for refresh icon animation
 import { useClawdOffice } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { NewTaskDialog } from '@/components/dialogs/NewTaskDialog';
@@ -13,13 +13,13 @@ import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { BlockedReasonModal } from '@/components/tasks/BlockedReasonModal';
 
-const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
-  { id: 'inbox', label: 'Inbox', color: 'bg-muted' },
-  { id: 'assigned', label: 'Assigned', color: 'bg-blue-500/20' },
-  { id: 'in_progress', label: 'In Progress', color: 'bg-yellow-500/20' },
-  { id: 'review', label: 'Review', color: 'bg-purple-500/20' },
-  { id: 'done', label: 'Done', color: 'bg-green-500/20' },
-  { id: 'blocked', label: 'Blocked', color: 'bg-red-500/20' },
+const COLUMNS: { id: TaskStatus; label: string }[] = [
+  { id: 'inbox', label: 'Inbox' },
+  { id: 'assigned', label: 'Assigned' },
+  { id: 'in_progress', label: 'In Progress' },
+  { id: 'review', label: 'Review' },
+  { id: 'done', label: 'Done' },
+  { id: 'blocked', label: 'Blocked' },
 ];
 
 type ViewMode = 'board' | 'list';
@@ -262,95 +262,50 @@ export function TasksPage() {
           onStatusChange={handleMoveTask}
         />
       ) : (
-        /* Kanban board - horizontal scroll on mobile */
-        <div className="flex-1 overflow-x-auto">
-          <div className="flex gap-4 p-4 min-w-max md:min-w-0">
-            {COLUMNS.map((col) => (
-              <div
-                key={col.id}
-                className="w-72 md:flex-1 flex flex-col bg-muted/30 rounded-lg"
-              >
-                {/* Column header */}
-                <div className={cn('px-3 py-2 rounded-t-lg', col.color)}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{col.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {col.id === 'inbox'
-                        ? inboxProposed.length + inboxRegular.length
-                        : tasksByColumn[col.id].length}
+        /* Kanban board */
+        <div className="flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="flex gap-3 p-4 h-full min-w-max lg:min-w-0">
+            {COLUMNS.map((col) => {
+              const colTasks = col.id === 'inbox'
+                ? [...inboxProposed, ...inboxRegular]
+                : tasksByColumn[col.id];
+              return (
+                <div
+                  key={col.id}
+                  className="w-80 lg:flex-1 flex flex-col rounded-xl bg-muted/20 min-w-0"
+                >
+                  {/* Column header */}
+                  <div className="px-4 py-3 flex items-center justify-between">
+                    <span className="text-sm font-semibold tracking-tight">{col.label}</span>
+                    <span className="text-xs font-medium text-muted-foreground tabular-nums bg-muted/60 rounded-full px-2 py-0.5">
+                      {colTasks.length}
                     </span>
                   </div>
-                </div>
 
-                {/* Tasks */}
-                <ScrollArea className="flex-1 p-2">
-                  <div className="space-y-2">
-                    {col.id === 'inbox' ? (
-                      <>
-                        {/* Proposed tasks section */}
-                        {inboxProposed.length > 0 && (
-                          <div className="mb-4">
-                            <div className="text-xs font-medium text-amber-600 mb-2 px-1">
-                              NEEDS REVIEW ({inboxProposed.length})
-                            </div>
-                            <div className="space-y-2">
-                              {inboxProposed.map((task) => (
-                                <TaskCard
-                                  key={task.id}
-                                  task={task}
-                                  agents={agents}
-                                  onStatusChange={handleMoveTask}
-                                  onAssigneeChange={handleReassignTask}
-                                  onClick={() => handleTaskClick(task)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {/* Regular tasks section */}
-                        {inboxRegular.length > 0 && (
-                          <div>
-                            {inboxProposed.length > 0 && (
-                              <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                                MANUAL TASKS ({inboxRegular.length})
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              {inboxRegular.map((task) => (
-                                <TaskCard
-                                  key={task.id}
-                                  task={task}
-                                  agents={agents}
-                                  onStatusChange={handleMoveTask}
-                                  onAssigneeChange={handleReassignTask}
-                                  onClick={() => handleTaskClick(task)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {inboxProposed.length === 0 && inboxRegular.length === 0 && (
-                          <div className="text-center py-4 text-xs text-muted-foreground">
-                            No tasks in inbox
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      tasksByColumn[col.id].map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          agents={agents}
-                          onStatusChange={handleMoveTask}
-                          onAssigneeChange={handleReassignTask}
-                          onClick={() => handleTaskClick(task)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            ))}
+                  {/* Tasks */}
+                  <ScrollArea className="flex-1">
+                    <div className="px-2 pb-3 space-y-2">
+                      {colTasks.length > 0 ? (
+                        colTasks.map((task) => (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            agents={agents}
+                            onStatusChange={handleMoveTask}
+                            onAssigneeChange={handleReassignTask}
+                            onClick={() => handleTaskClick(task)}
+                          />
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-xs text-muted-foreground/60">
+                          No tasks
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
