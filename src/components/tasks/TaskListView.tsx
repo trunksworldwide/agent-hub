@@ -10,24 +10,18 @@ import { type Task, type Agent, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 
-const STATUS_ORDER: TaskStatus[] = ['in_progress', 'blocked', 'assigned', 'review', 'stopped', 'done'];
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  inbox: 'Inbox',
-  assigned: 'Assigned',
+// Keep list view aligned with Zack's 3-column workflow.
+// Everything that's not inbox/done/stopped/rejected is treated as "In Progress".
+const STATUS_ORDER: Array<'in_progress' | 'done' | 'stopped'> = ['in_progress', 'done', 'stopped'];
+const STATUS_LABELS: Record<'in_progress' | 'done' | 'stopped', string> = {
   in_progress: 'In Progress',
-  review: 'Review',
-  done: 'Done',
-  blocked: 'Blocked',
+  done: 'Completed',
   stopped: 'Stopped',
 };
 
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  inbox: 'bg-muted',
-  assigned: 'bg-blue-500/20 text-blue-700',
+const STATUS_COLORS: Record<'in_progress' | 'done' | 'stopped', string> = {
   in_progress: 'bg-yellow-500/20 text-yellow-700',
-  review: 'bg-purple-500/20 text-purple-700',
   done: 'bg-green-500/20 text-green-700',
-  blocked: 'bg-red-500/20 text-red-700',
   stopped: 'bg-orange-500/20 text-orange-700',
 };
 
@@ -58,7 +52,7 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
       // Filter out stopped tasks unless showing them
       if (task.status === 'stopped' && !showStopped) return false;
       
-      // Filter out inbox tasks (those go to the board)
+      // Filter out inbox tasks (those live on the board as the approval queue)
       if (task.status === 'inbox') return false;
 
       // Search filter
@@ -97,9 +91,14 @@ export function TaskListView({ tasks, agents, onTaskClick, onStatusChange }: Tas
     }
 
     for (const status of STATUS_ORDER) {
-      const tasksInStatus = filteredTasks.filter((t) => t.status === status);
+      const tasksInStatus = filteredTasks.filter((t) => {
+        if (status === 'done') return t.status === 'done';
+        if (status === 'stopped') return t.status === 'stopped';
+        // in_progress bucket: assigned/review/blocked/in_progress all show here
+        return t.status !== 'done' && t.status !== 'stopped' && t.status !== 'inbox';
+      });
       if (tasksInStatus.length > 0) {
-        groups[status] = tasksInStatus.sort((a, b) => 
+        groups[status] = tasksInStatus.sort((a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
       }
