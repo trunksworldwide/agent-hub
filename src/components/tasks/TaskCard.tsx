@@ -5,11 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'inbox', label: 'Inbox' },
-  { id: 'assigned', label: 'Assigned' },
   { id: 'in_progress', label: 'In Progress' },
-  { id: 'review', label: 'Review' },
   { id: 'done', label: 'Done' },
-  { id: 'blocked', label: 'Blocked' },
 ];
 
 interface TaskCardProps {

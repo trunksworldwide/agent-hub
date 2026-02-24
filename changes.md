@@ -1,3 +1,8 @@
+### 3-Column Kanban Consolidation
+- **TasksPage.tsx**: `COLUMNS` reduced to 3 stages (Inbox / In Progress / Done). All intermediate statuses (assigned, review, blocked) fold into In Progress; stopped folds into Done. Removed `inboxProposed`/`inboxRegular` split — inbox is now flat.
+- **TaskCard.tsx**: `STATUS_COLUMNS` dropdown reduced to 3 options (Inbox / In Progress / Done). No more Assigned/Review/Blocked in card dropdown.
+- DB schema and `TaskStatus` type unchanged — mapping is UI-only.
+
 ### OpenClaw Anatomy Integration
 - **AnatomyCheatSheet** (`src/components/documents/AnatomyCheatSheet.tsx`): New collapsible card on Knowledge page listing all OpenClaw doc types (SOUL, IDENTITY, USER, AGENTS, TOOLS, MEMORY, SKILLS, HEARTBEAT, Cron) with info tooltips and "maps to" labels.
 - **Agent Handbook tab** (`src/components/agent-tabs/AgentsDocEditor.tsx`): New "Handbook" tab (📖) on agent detail for viewing/editing AGENTS.md — universal operating rules. Includes "Generate with AI" button for empty docs.

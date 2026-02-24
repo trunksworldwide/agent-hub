@@ -15,8 +15,8 @@ import { BlockedReasonModal } from '@/components/tasks/BlockedReasonModal';
 
 // Zack preference: keep the workflow dead simple.
 // 3 columns only: Approve (Inbox) → In Progress → Completed.
-const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
-  { id: 'inbox', label: 'Inbox (Approve/Reject)', color: 'bg-muted' },
+const COLUMNS: { id: 'inbox' | 'in_progress' | 'done'; label: string; color: string }[] = [
+  { id: 'inbox', label: 'Inbox', color: 'bg-muted' },
   { id: 'in_progress', label: 'In Progress', color: 'bg-yellow-500/20' },
   { id: 'done', label: 'Completed', color: 'bg-green-500/20' },
 ];
@@ -87,24 +87,7 @@ export function TasksPage() {
     return tasks.filter((t) => !t.rejectedAt);
   }, [tasks]);
 
-  const tasksByColumn = useMemo(() => {
-    // Keep original status values in the DB, but simplify the board display.
-    // - assigned/review/blocked all appear under In Progress.
-    const map: Record<TaskStatus, Task[]> = {
-      inbox: [],
-      assigned: [],
-      in_progress: [],
-      review: [],
-      done: [],
-      blocked: [],
-      stopped: [],
-    };
-    for (const task of visibleTasks) {
-      const col = map[task.status];
-      if (col) col.push(task);
-    }
-    return map;
-  }, [visibleTasks]);
+  
 
   const tasksByBoardColumn = useMemo(() => {
     const map: Record<'inbox'|'in_progress'|'done', Task[]> = {
@@ -127,14 +110,6 @@ export function TasksPage() {
     return map;
   }, [visibleTasks]);
 
-  // Separate proposed and regular tasks in inbox
-  const inboxProposed = useMemo(() => {
-    return tasksByBoardColumn.inbox.filter((t) => t.isProposed);
-  }, [tasksByBoardColumn.inbox]);
-
-  const inboxRegular = useMemo(() => {
-    return tasksByBoardColumn.inbox.filter((t) => !t.isProposed);
-  }, [tasksByBoardColumn.inbox]);
 
   const agentByKey = useMemo(() => {
     const m = new Map<string, Agent>();
@@ -297,9 +272,7 @@ export function TasksPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{col.label}</span>
                     <span className="text-xs text-muted-foreground">
-                      {col.id === 'inbox'
-                        ? inboxProposed.length + inboxRegular.length
-                        : tasksByBoardColumn[col.id as 'inbox' | 'in_progress' | 'done'].length}
+                      {tasksByBoardColumn[col.id].length}
                     </span>
                   </div>
                 </div>
@@ -307,58 +280,12 @@ export function TasksPage() {
                 {/* Tasks */}
                 <ScrollArea className="flex-1 p-2">
                   <div className="space-y-2">
-                    {col.id === 'inbox' ? (
-                      <>
-                        {inboxProposed.length > 0 && (
-                          <div className="mb-4">
-                            <div className="text-xs font-medium text-amber-600 mb-2 px-1">
-                              NEEDS REVIEW ({inboxProposed.length})
-                            </div>
-                            <div className="space-y-2">
-                              {inboxProposed.map((task) => (
-                                <TaskCard
-                                  key={task.id}
-                                  task={task}
-                                  agents={agents}
-                                  onStatusChange={handleMoveTask}
-                                  onAssigneeChange={handleReassignTask}
-                                  onClick={() => handleTaskClick(task)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {inboxRegular.length > 0 && (
-                          <div>
-                            {inboxProposed.length > 0 && (
-                              <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                                MANUAL TASKS ({inboxRegular.length})
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              {inboxRegular.map((task) => (
-                                <TaskCard
-                                  key={task.id}
-                                  task={task}
-                                  agents={agents}
-                                  onStatusChange={handleMoveTask}
-                                  onAssigneeChange={handleReassignTask}
-                                  onClick={() => handleTaskClick(task)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {inboxProposed.length === 0 && inboxRegular.length === 0 && (
-                          <div className="text-center py-4 text-xs text-muted-foreground">
-                            No tasks in inbox
-                          </div>
-                        )}
-                      </>
+                    {tasksByBoardColumn[col.id].length === 0 ? (
+                      <div className="text-center py-4 text-xs text-muted-foreground">
+                        No tasks
+                      </div>
                     ) : (
-                      tasksByBoardColumn[col.id as 'inbox' | 'in_progress' | 'done'].map((task) => (
+                      tasksByBoardColumn[col.id].map((task) => (
                         <TaskCard
                           key={task.id}
                           task={task}
