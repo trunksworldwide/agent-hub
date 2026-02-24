@@ -28,14 +28,11 @@ import { TaskTimeline } from './TaskTimeline';
 import { StopTaskDialog } from './StopTaskDialog';
 import { DeleteTaskConfirmDialog } from './DeleteTaskConfirmDialog';
 
+// Zack workflow: Suggested → In Progress → Completed
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
-  { id: 'inbox', label: 'Inbox' },
-  { id: 'assigned', label: 'Assigned' },
+  { id: 'inbox', label: 'Suggested (Approve/Reject)' },
   { id: 'in_progress', label: 'In Progress' },
-  { id: 'review', label: 'Review' },
-  { id: 'done', label: 'Done' },
-  { id: 'blocked', label: 'Blocked' },
-  { id: 'stopped', label: 'Stopped' },
+  { id: 'done', label: 'Completed' },
 ];
 
 interface TaskDetailSheetProps {
@@ -54,6 +51,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [showAddOutput, setShowAddOutput] = useState(false);
+  // blocked/stopped flows are hidden in the 3-column workflow
   const [pendingBlockedStatus, setPendingBlockedStatus] = useState<TaskStatus | null>(null);
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -183,29 +181,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
   };
 
   const handleAccept = async () => {
-    if (!task) return;
-    setIsUpdating(true);
-    try {
-      await updateTask(task.id, {
-        isProposed: false,
-        status: 'assigned',
-      });
-      await createActivity({
-        type: 'task_accepted',
-        message: `Accepted proposed task: "${task.title}"`,
-        taskId: task.id,
-      });
-      toast({ title: 'Task accepted', description: 'Moved to Assigned' });
-      onTaskUpdated();
-    } catch (e) {
-      console.error('Failed to accept task:', e);
-      toast({ title: 'Failed to accept task', description: String(e), variant: 'destructive' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleAcceptAndStart = async () => {
+    // Zack workflow: approving a suggestion moves it straight into In Progress.
     if (!task) return;
     setIsUpdating(true);
     try {
@@ -215,17 +191,22 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
       });
       await createActivity({
         type: 'task_accepted',
-        message: `Accepted & started: "${task.title}"`,
+        message: `Approved task: "${task.title}"`,
         taskId: task.id,
       });
-      toast({ title: 'Task accepted & started', description: 'Moved to In Progress' });
+      toast({ title: 'Task approved', description: 'Moved to In Progress' });
       onTaskUpdated();
     } catch (e) {
       console.error('Failed to accept task:', e);
-      toast({ title: 'Failed to accept task', description: String(e), variant: 'destructive' });
+      toast({ title: 'Failed to approve task', description: String(e), variant: 'destructive' });
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleAcceptAndStart = async () => {
+    // Kept for backwards-compat in the UI, but it’s identical to Approve.
+    return handleAccept();
   };
 
   const handleReject = async (reason: string) => {
@@ -356,9 +337,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">
-                <Button variant="outline" size="icon" className="h-8 w-8 text-orange-600 hover:text-orange-700" onClick={() => setShowStopDialog(true)} disabled={isUpdating || task.status === 'stopped'} title="Stop task">
-                  <Square className="w-4 h-4" />
-                </Button>
+                {/* Stop hidden in 3-column workflow */}
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setShowDeleteDialog(true)} disabled={isUpdating} title="Delete task">
                   <Trash2 className="w-4 h-4" />
                 </Button>
@@ -460,34 +439,8 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                 </div>
               )}
 
-              {/* Blocked Info */}
-              {task.status === 'blocked' && task.blockedReason && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2 text-red-600">
-                    <AlertTriangle className="w-4 h-4" />
-                    Blocked
-                  </h4>
-                  <p className="text-sm mb-3">{task.blockedReason}</p>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleResolveBlocked('assigned')}
-                      disabled={isUpdating}
-                    >
-                      Resolve → Assigned
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleResolveBlocked('in_progress')}
-                      disabled={isUpdating}
-                    >
-                      Resolve → In Progress
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {/* Blocked Info (hidden in 3-column workflow) */}
+              {false && task.status === 'blocked' && task.blockedReason && null}
 
               {/* Outputs */}
               <TaskOutputSection
@@ -533,12 +486,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
         onOutputAdded={loadOutputs}
       />
 
-      <StopTaskDialog
-        open={showStopDialog}
-        onOpenChange={setShowStopDialog}
-        onConfirm={handleStop}
-        taskTitle={task.title}
-      />
+      {/* Stop dialog hidden in 3-column workflow */}
 
       <DeleteTaskConfirmDialog
         open={showDeleteDialog}
