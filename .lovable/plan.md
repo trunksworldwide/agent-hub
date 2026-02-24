@@ -1,80 +1,113 @@
 
 
-# Fix: Clear `is_proposed` on status change + remove stale approval UI
+# Plan: War Room → Task Promotion + No-Loitering Rule
 
-## Problem
+## Overview
 
-When a proposed task is moved to "In Progress" via the board's status dropdown, only the `status` column updates. The `is_proposed` flag stays `true` in the database. So when you click into the task, the detail sheet still shows the amber "Review Required" block with Accept/Reject buttons -- even though the task is already in progress.
+Three features, all additive. No schema changes. Uses existing `task_events`, `activities`, `project_chat_messages`, and `chat_delivery_queue` tables.
 
-## Root causes
+---
 
-1. **`TasksPage.tsx` `handleMoveTask`** (line 108-128): patches only `status` -- never touches `isProposed`.
-2. **`TaskDetailSheet.tsx` `handleStatusChange` / `performStatusChange`** (lines 83-135): same issue -- status changes don't clear `isProposed`.
-3. **`TaskDetailSheet.tsx` line 405**: renders the approval block purely based on `task.isProposed`, ignoring the current status.
+## Feature 1: "Promote to Suggested Task" from War Room
 
-## Changes
+**Current state:** ChatPage already has a `handleCreateTask` that opens `NewTaskDialog`. But:
+- It doesn't prefill title/description from the message
+- It doesn't set `is_proposed = true`
+- It doesn't store source metadata linking back to the War Room message
 
-### 1. `src/components/pages/TasksPage.tsx` — `handleMoveTask`
+**Changes:**
 
-When moving any task out of `inbox` (to `in_progress` or `done`), automatically set `isProposed: false` in the patch. This ensures the flag is cleared at the database level the moment the operator moves a task forward on the board.
+### `src/components/dialogs/NewTaskDialog.tsx`
+- Add optional props: `defaultTitle`, `defaultDescription`, `isProposed` (boolean), `sourceMetadata` (object with `chat_message_id`)
+- When `isProposed` is true, pass `is_proposed: true` to `createTask`
+- Rename the Create button label to "Suggest Task" when `isProposed` is true
 
-```ts
-// Inside handleMoveTask, when building the patch:
-const patch: Partial<Task> = { status: newStatus };
+### `src/lib/api.ts` — `createTask`
+- Accept optional `isProposed?: boolean` and `contextSnapshot?: object` in the input
+- Pass `is_proposed` and `context_snapshot` to the Supabase insert row
 
-// Auto-clear proposed flag when moving out of inbox
-if (task.isProposed && newStatus !== 'inbox') {
-  patch.isProposed = false;
-}
-```
+### `src/components/pages/ChatPage.tsx`
+- Update `handleCreateTask` to prefill `NewTaskDialog` with:
+  - `defaultTitle` = first line of message (truncated to 80 chars)
+  - `defaultDescription` = full message text
+  - `isProposed = true`
+  - `sourceMetadata = { chat_message_id: msg.id }`
+- Update the button tooltip from "Create task from message" to "Suggest Task"
+- Show the button on ALL messages (not just incoming) — any message can become a task
+- After creation, show toast: "Suggested task created" with a link/mention of inbox
 
-### 2. `src/components/tasks/TaskDetailSheet.tsx` — `performStatusChange`
+### `src/components/dialogs/NewTaskDialog.tsx` — dialog title
+- When `isProposed`, dialog title = "Suggest Task from Message"
 
-Same fix: when the status dropdown in the detail sheet is changed away from `inbox`, clear `isProposed`.
+---
 
-```ts
-// Inside performStatusChange, when building the patch:
-if (task.isProposed && newStatus !== 'inbox') {
-  patch.isProposed = false;
-}
-```
+## Feature 2: Auto-clear `is_proposed` (already done)
 
-### 3. `src/components/tasks/TaskDetailSheet.tsx` — approval block guard
+Already implemented in the last diff. The plan confirms:
+- `handleMoveTask` in TasksPage clears `isProposed` when moving out of inbox ✓
+- `performStatusChange` in TaskDetailSheet does the same ✓
+- Approval UI guards with `task.status === 'inbox'` ✓
 
-Change the condition on line 405 from just `task.isProposed` to also require the task to still be in `inbox` status. This is a belt-and-suspenders fix so even if stale data comes through, the approval UI won't show for in-progress tasks:
+No further work needed.
 
-```tsx
-{task.isProposed && task.status === 'inbox' && (
-  <div className="bg-amber-500/10 ...">
-    ...
-  </div>
-)}
-```
+---
 
-### 4. `src/components/tasks/TaskDetailSheet.tsx` — remove "Needs review" badge or guard it
+## Feature 3: No-Loitering Rule for In Progress
 
-Line 311-315 shows a "Needs review" badge based solely on `task.isProposed`. Add the same `task.status === 'inbox'` guard:
+**Timeout: 30 minutes** (your vote).
 
-```tsx
-{task.isProposed && task.status === 'inbox' && (
-  <Badge variant="outline" className="border-amber-500/50 text-amber-600 bg-amber-500/10">
-    Needs review
-  </Badge>
-)}
-```
+### 3a. "Started" event on entering In Progress
 
-### 5. `changes.md`
+**`src/components/pages/TasksPage.tsx` — `handleMoveTask`**
+- After `updateTask`, if `newStatus === 'in_progress'` and `task.status !== 'in_progress'`:
+  - Fire `createTaskEvent({ taskId, eventType: 'status_change', content: 'Started', metadata: { old_status: task.status, new_status: 'in_progress' } })` (best-effort, already happens in TaskDetailSheet but NOT in TasksPage board moves)
 
-Log the fix.
+**`src/components/pages/TasksPage.tsx` — `handleMoveTask`** (kickoff message)
+- If the task has an `assigneeAgentKey` and `newStatus === 'in_progress'`:
+  - Call `sendChatMessage({ message: kickoff text, targetAgentKey: task.assigneeAgentKey })`
+  - Kickoff text: `"🚀 Task started: **{title}**\n\nDescription: {description}\n\nPlease begin work and post updates to the task timeline."`
+  - This uses existing delivery semantics (direct if Control API healthy, queued otherwise)
 
-## What this does NOT change
+### 3b. Stale task watchdog (client-side polling)
 
-- The Accept/Reject flow itself still works for tasks genuinely in inbox with `is_proposed = true`
+This will be a lightweight React hook + UI component, not a server-side cron (keeping it simple and avoiding schema changes).
+
+**New file: `src/hooks/useStaleTaskWatchdog.ts`**
+- Accepts: list of tasks, agents list
+- Every 5 minutes, checks all `in_progress` tasks:
+  - For each, fetch latest `task_events` for that task
+  - If no events from an agent author within the last 30 minutes:
+    - Auto-post a system comment: `createTaskEvent({ taskId, eventType: 'comment', content: '⚠️ NEEDS ATTENTION: No agent activity in 30 minutes', author: 'system' })`
+    - Post to War Room: `sendChatMessage({ message: '⚠️ Stale task: "{title}" — no agent activity in 30 minutes', targetAgentKey: task.assigneeAgentKey || undefined })`
+    - Track which tasks have already been flagged (in a `Set`) to avoid re-flagging every 5 minutes. Reset when the task gets new activity.
+- Returns: `staleTasks: Task[]` for optional UI display
+
+**`src/components/pages/TasksPage.tsx`**
+- Use the watchdog hook
+- Optionally show a small amber banner at the top of the board: "N tasks need attention" when `staleTasks.length > 0`
+
+### Graceful degradation
+- All War Room messages use `sendChatMessage` which already handles offline queueing
+- All task events use `createTaskEvent` which writes directly to Supabase
+- If Control API is down, kickoff messages queue; watchdog comments still post to Supabase
+
+---
+
+## Files touched
+
+| File | Change |
+|------|--------|
+| `src/components/dialogs/NewTaskDialog.tsx` | Add prefill props, `isProposed` flag, label changes |
+| `src/lib/api.ts` (`createTask`) | Accept `isProposed`, `contextSnapshot` params |
+| `src/components/pages/ChatPage.tsx` | Prefill dialog from message, update button label |
+| `src/components/pages/TasksPage.tsx` | Add "Started" event + kickoff message on in_progress, integrate watchdog hook, optional stale banner |
+| `src/hooks/useStaleTaskWatchdog.ts` | New hook for 30-min no-activity detection |
+| `changes.md` | Log all three features |
+
+## What stays the same
 - No database schema changes
-- No changes to the Control API or agent heartbeat flow
-- The 3-column board layout is untouched
-
-## About triggering agents
-
-The agents are already triggered by their hourly heartbeat cron jobs. The heartbeat prompt instructs agents to check for tasks assigned to them and work on `in_progress` tasks. Moving a task to `in_progress` and assigning it to an agent is all that's needed -- the agent will pick it up on its next heartbeat cycle. No additional trigger mechanism is required beyond what already exists.
+- No new tables or columns
+- Task detail sheet, list view, blocked modal untouched
+- All existing delivery semantics preserved
+- All existing status flows preserved
 
