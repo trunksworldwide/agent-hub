@@ -50,14 +50,13 @@ export function useStaleTaskWatchdog(tasks: Task[]) {
           createTaskEvent({
             taskId: task.id,
             eventType: 'comment',
-            content: '⚠️ NEEDS ATTENTION: No agent activity in 30 minutes',
+            content: '⚠️ STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify.',
             author: 'system',
           }).catch(console.error);
 
           // Notify War Room
           sendChatMessage({
-            message: `⚠️ Stale task: "${task.title}" — no agent activity in 30 minutes`,
-            targetAgentKey: task.assigneeAgentKey || undefined,
+            message: `⚠️ Stale task: "${task.title}" (assigned to ${task.assigneeAgentKey || 'unassigned'}) — no activity in 30m. Reassign or clarify.`,
           }).catch(console.error);
         }
       } catch (err) {
