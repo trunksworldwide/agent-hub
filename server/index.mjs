@@ -2656,6 +2656,61 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/agents/request — create agent row + enqueue provision request (Supabase service role)
+    if (req.method === 'POST' && url.pathname === '/api/agents/request') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const body = await readBodyJson(req);
+        const items = Array.isArray(body.items) ? body.items : [body];
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const created = [];
+        for (const it of items) {
+          const agentKey = String(it.agentKey || it.agent_key || '').trim();
+          const displayName = String(it.displayName || it.name || '').trim();
+          const emoji = it.emoji === undefined ? null : (String(it.emoji || '').trim() || null);
+          const roleShort = it.roleShort === undefined ? null : (String(it.roleShort || '').trim() || null);
+          const purposeText = it.purposeText === undefined ? null : (String(it.purposeText || '').trim() || null);
+          const agentIdShort = String(it.agentIdShort || '').trim() || (agentKey.split(':')[1] || '').trim();
+
+          if (!agentKey) continue;
+          if (!displayName) continue;
+          if (!agentIdShort) continue;
+
+          // 1) Ensure agents row exists
+          await sb.from('agents').upsert({
+            project_id: projectId,
+            agent_key: agentKey,
+            name: displayName,
+            emoji,
+            role: roleShort,
+            purpose_text: purposeText,
+            provisioned: false,
+            agent_id_short: agentIdShort,
+          }, { onConflict: 'project_id,agent_key' });
+
+          // 2) Enqueue provision request
+          await sb.from('agent_provision_requests').insert({
+            project_id: projectId,
+            agent_key: agentKey,
+            agent_id_short: agentIdShort,
+            display_name: displayName,
+            emoji,
+            role_short: roleShort,
+            status: 'queued',
+          });
+
+          created.push({ agentKey, agentIdShort, displayName });
+        }
+
+        return sendJson(res, 200, { ok: true, created });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/agents/provision — provision a new OpenClaw agent on the Mac mini
     if (req.method === 'POST' && url.pathname === '/api/agents/provision') {
       try {
