@@ -1,5 +1,4 @@
 import { User, AlertTriangle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { type Task, type Agent, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -48,92 +47,88 @@ export function TaskCard({
     <div
       onClick={handleCardClick}
       className={cn(
-        'p-3 bg-card rounded-lg border shadow-sm cursor-pointer transition-colors hover:bg-accent/50',
-        task.isProposed && 'border-amber-500/40 bg-amber-500/5',
-        task.status === 'blocked' && 'border-red-500/40 bg-red-500/5'
+        'group p-3.5 bg-card rounded-lg border border-border/60 cursor-pointer transition-all hover:border-border hover:shadow-md',
+        task.isProposed && 'border-amber-400/30',
+        task.status === 'blocked' && 'border-red-400/30'
       )}
     >
-      {/* Title and badges */}
-      <div className="flex items-start gap-2 mb-1">
+      {/* Title */}
+      <div className="flex items-start gap-2 mb-1.5">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium">{task.title}</div>
+          <div className="text-sm font-medium leading-snug line-clamp-3">{task.title}</div>
         </div>
-        {task.isProposed && (
-          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 border-amber-500/50 text-amber-600 bg-amber-500/10">
-            Needs review
-          </Badge>
-        )}
         {task.status === 'blocked' && (
-          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
         )}
       </div>
 
       {/* Description */}
       {task.description && (
-        <div className="text-xs text-muted-foreground line-clamp-2 mb-2">
+        <div className="text-xs text-muted-foreground line-clamp-2 mb-3">
           {task.description}
         </div>
       )}
 
       {/* Blocked reason */}
       {task.status === 'blocked' && task.blockedReason && (
-        <div className="text-xs text-red-600 bg-red-500/10 rounded px-2 py-1 mb-2">
+        <div className="text-xs text-red-600 bg-red-500/10 rounded px-2 py-1 mb-3">
           {task.blockedReason}
         </div>
       )}
 
-      {/* Assignee display and quick reassign */}
-      {showAssigneeSelect && (
-        <div className="mb-2">
-          <Select
-            value={task.assigneeAgentKey || '__unassigned__'}
-            onValueChange={(v) =>
-              onAssigneeChange(task.id, v === '__unassigned__' ? undefined : v)
-            }
-          >
-            <SelectTrigger className="h-7 w-full text-xs" data-radix-select-trigger>
-              <div className="flex items-center gap-1.5">
-                {agent ? (
-                  <>
-                    <span>{agent.avatar}</span>
-                    <span>{agent.name}</span>
-                  </>
-                ) : (
-                  <>
-                    <User className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">Unassigned</span>
-                  </>
-                )}
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__unassigned__">
-                <div className="flex items-center gap-1.5">
-                  <User className="w-3 h-3" />
-                  <span>Unassigned</span>
+      {/* Footer: assignee + status */}
+      <div className="flex items-center gap-2">
+        {/* Assignee */}
+        {showAssigneeSelect && (
+          <div className="flex-1 min-w-0">
+            <Select
+              value={task.assigneeAgentKey || '__unassigned__'}
+              onValueChange={(v) =>
+                onAssigneeChange(task.id, v === '__unassigned__' ? undefined : v)
+              }
+            >
+              <SelectTrigger className="h-7 w-full text-xs border-0 bg-muted/50 hover:bg-muted" data-radix-select-trigger>
+                <div className="flex items-center gap-1.5 truncate">
+                  {agent ? (
+                    <>
+                      <span className="shrink-0">{agent.avatar}</span>
+                      <span className="truncate">{agent.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground truncate">Unassigned</span>
+                    </>
+                  )}
                 </div>
-              </SelectItem>
-              {agents.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__unassigned__">
                   <div className="flex items-center gap-1.5">
-                    <span>{a.avatar}</span>
-                    <span>{a.name}</span>
+                    <User className="w-3 h-3" />
+                    <span>Unassigned</span>
                   </div>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    <div className="flex items-center gap-1.5">
+                      <span>{a.avatar}</span>
+                      <span>{a.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-      {/* Status selector */}
-      {showStatusSelect && (
-        <div className="flex items-center justify-end">
+        {/* Status */}
+        {showStatusSelect && (
           <Select
             value={task.status}
             onValueChange={(v) => onStatusChange(task.id, v as TaskStatus)}
           >
-            <SelectTrigger className="h-6 w-auto text-xs" data-radix-select-trigger>
+            <SelectTrigger className="h-7 w-auto text-xs border-0 bg-muted/50 hover:bg-muted shrink-0" data-radix-select-trigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -144,8 +139,8 @@ export function TaskCard({
               ))}
             </SelectContent>
           </Select>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
