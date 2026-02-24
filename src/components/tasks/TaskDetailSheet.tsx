@@ -98,6 +98,11 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
     setIsUpdating(true);
     try {
       const patch: Partial<Task> = { status: newStatus };
+
+      // Auto-clear proposed flag when moving out of inbox
+      if (task.isProposed && newStatus !== 'inbox') {
+        patch.isProposed = false;
+      }
       
       // If blocking, set blocked fields
       if (newStatus === 'blocked' && blockedReason) {
@@ -308,7 +313,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                   {task.title}
                 </SheetTitle>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  {task.isProposed && (
+                  {task.isProposed && task.status === 'inbox' && (
                     <Badge variant="outline" className="border-amber-500/50 text-amber-600 bg-amber-500/10">
                       Needs review
                     </Badge>
@@ -402,7 +407,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
               )}
 
               {/* Review Actions (for proposed tasks) */}
-              {task.isProposed && (
+              {task.isProposed && task.status === 'inbox' && (
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
                   <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600" />

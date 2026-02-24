@@ -1,3 +1,9 @@
+### Fix: Clear `is_proposed` on status change
+- **TasksPage.tsx** `handleMoveTask`: auto-clears `isProposed` when moving a task out of inbox.
+- **TaskDetailSheet.tsx** `performStatusChange`: same fix for the detail sheet status dropdown.
+- **TaskDetailSheet.tsx** approval UI: "Review Required" block and "Needs review" badge now only render when `task.isProposed && task.status === 'inbox'`.
+- Agents already pick up `in_progress` tasks on their next heartbeat cycle — no additional trigger needed.
+
 ### 3-Column Kanban Consolidation
 - **TasksPage.tsx**: `COLUMNS` reduced to 3 stages (Inbox / In Progress / Done). All intermediate statuses (assigned, review, blocked) fold into In Progress; stopped folds into Done. Removed `inboxProposed`/`inboxRegular` split — inbox is now flat.
 - **TaskCard.tsx**: `STATUS_COLUMNS` dropdown reduced to 3 options (Inbox / In Progress / Done). No more Assigned/Review/Blocked in card dropdown.
