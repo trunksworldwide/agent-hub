@@ -2461,7 +2461,7 @@ export async function updateTask(
   return { ok: true };
 }
 
-export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task, 'description' | 'assigneeAgentKey' | 'status'>>): Promise<{ ok: boolean; task?: Task }> {
+export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task, 'description' | 'assigneeAgentKey' | 'status'>> & { isProposed?: boolean; contextSnapshot?: Record<string, any> }): Promise<{ ok: boolean; task?: Task }> {
   if (hasSupabase() && supabase) {
     const projectId = getProjectId();
     const now = new Date().toISOString();
@@ -2473,6 +2473,8 @@ export async function createTask(input: Pick<Task, 'title'> & Partial<Pick<Task,
       assignee_agent_key: input.assigneeAgentKey || null,
       created_at: now,
       updated_at: now,
+      is_proposed: input.isProposed ?? false,
+      context_snapshot: input.contextSnapshot ?? null,
     };
 
     const { data, error } = await supabase
