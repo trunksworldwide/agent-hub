@@ -99,7 +99,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
     try {
       const patch: Partial<Task> = { status: newStatus };
 
-      // Auto-clear proposed flag when moving out of inbox
+      // Auto-clear proposed flag when moving out of Suggested (Inbox)
       if (task.isProposed && newStatus !== 'inbox') {
         patch.isProposed = false;
       }
@@ -406,7 +406,7 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                 </div>
               )}
 
-              {/* Review Actions (for proposed tasks) */}
+              {/* Review Actions (only for proposed tasks still in Suggested/Inbox) */}
               {task.isProposed && task.status === 'inbox' && (
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
                   <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -414,22 +414,9 @@ export function TaskDetailSheet({ task, agents, open, onOpenChange, onTaskUpdate
                     Review Required
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      onClick={handleAccept}
-                      disabled={isUpdating}
-                    >
-                      <Check className="w-4 h-4 mr-1" />
-                      Accept
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleAcceptAndStart}
-                      disabled={isUpdating}
-                    >
+                    <Button size="sm" onClick={handleAccept} disabled={isUpdating}>
                       <Play className="w-4 h-4 mr-1" />
-                      Accept & Start
+                      Approve
                     </Button>
                     <Button
                       size="sm"

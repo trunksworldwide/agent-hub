@@ -112,11 +112,11 @@ export function TasksPage() {
     try {
       const patch: Partial<Task> = { status: newStatus };
 
-      // Auto-clear proposed flag when moving out of inbox
+      // Auto-clear proposed flag when moving out of Suggested (Inbox)
       if (task.isProposed && newStatus !== 'inbox') {
         patch.isProposed = false;
       }
-      
+
       // If unblocking, clear blocked fields
       if (task.status === 'blocked' && newStatus !== 'blocked') {
         patch.blockedReason = null;
