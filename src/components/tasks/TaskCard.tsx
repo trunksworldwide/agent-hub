@@ -3,10 +3,12 @@ import { type Task, type Agent, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+// Zack workflow: Suggested → In Progress → Completed
+// Keep the dropdown aligned so agents can’t accidentally use extra statuses.
 const STATUS_COLUMNS: { id: TaskStatus; label: string }[] = [
-  { id: 'inbox', label: 'Inbox' },
+  { id: 'inbox', label: 'Suggested' },
   { id: 'in_progress', label: 'In Progress' },
-  { id: 'done', label: 'Done' },
+  { id: 'done', label: 'Completed' },
 ];
 
 interface TaskCardProps {

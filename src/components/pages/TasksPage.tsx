@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+// ToggleGroup removed: Tasks page is board-only (Suggested → In Progress → Completed)
 import { getAgents, getTasks, updateTask, createActivity, type Agent, type Task, type TaskStatus } from '@/lib/api';
 import { cn } from '@/lib/utils'; // kept for refresh icon animation
 import { useClawdOffice } from '@/lib/store';
@@ -21,24 +21,9 @@ const COLUMNS: { id: 'inbox' | 'in_progress' | 'done'; label: string; color: str
   { id: 'done', label: 'Completed', color: 'bg-green-500/20' },
 ];
 
-type ViewMode = 'board' | 'list';
+type ViewMode = 'board';
 
-function getViewPreference(projectId: string): ViewMode {
-  try {
-    const stored = localStorage.getItem(`clawdos.tasksView.${projectId}`);
-    return stored === 'list' ? 'list' : 'board';
-  } catch {
-    return 'board';
-  }
-}
-
-function setViewPreference(projectId: string, mode: ViewMode) {
-  try {
-    localStorage.setItem(`clawdos.tasksView.${projectId}`, mode);
-  } catch {
-    // ignore
-  }
-}
+// Board-only: view mode is fixed to 'board' so the UI always shows 3 columns.
 
 export function TasksPage() {
   const { selectedProjectId, selectedTaskId, setSelectedTaskId } = useClawdOffice();
@@ -47,21 +32,13 @@ export function TasksPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => getViewPreference(selectedProjectId));
+  const [viewMode] = useState<ViewMode>('board');
   
   // Blocked reason modal state
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [pendingBlockedTask, setPendingBlockedTask] = useState<{ taskId: string; title: string } | null>(null);
 
-  // Effect to persist view preference
-  useEffect(() => {
-    setViewPreference(selectedProjectId, viewMode);
-  }, [viewMode, selectedProjectId]);
-
-  // Reset view preference when project changes
-  useEffect(() => {
-    setViewMode(getViewPreference(selectedProjectId));
-  }, [selectedProjectId]);
+  // Board-only: no view preference persistence
 
   const refresh = async () => {
     setIsRefreshing(true);
@@ -227,14 +204,7 @@ export function TasksPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as ViewMode)}>
-            <ToggleGroupItem value="board" aria-label="Board view" size="sm">
-              <LayoutGrid className="w-4 h-4" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="list" aria-label="List view" size="sm">
-              <List className="w-4 h-4" />
-            </ToggleGroupItem>
-          </ToggleGroup>
+          {/* Board-only: view toggle removed */}
           <Button
             variant="ghost"
             size="sm"
