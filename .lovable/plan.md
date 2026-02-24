@@ -1,95 +1,45 @@
 
 
-# Plan: War Room → Task Promotion + No-Loitering Rule
+# Two Tweaks: Default Assignee + Watchdog Language
 
-## Overview
+## Tweak 1: Default assignee on "Suggest Task"
 
-Three features, all additive. No schema changes. Uses existing `task_events`, `activities`, `project_chat_messages`, and `chat_delivery_queue` tables.
+**Current behavior:** `defaultAssignee` is set to `msg.targetAgentKey` — the agent the message was *sent to*, which is often null.
 
----
+**New behavior:** Smart default based on message author:
+- If `msg.author` matches an agent key in the agents list → default assignee = that agent (the agent proposed the idea, so they own the work)
+- Otherwise (author is "user" or unknown) → default assignee = first agent with role containing "PM", or fallback to the first agent in the list
 
-## Feature 1: "Promote to Suggested Task" from War Room
+**File: `src/components/pages/ChatPage.tsx`** (line ~527)
 
-**Current state:** ChatPage already has a `handleCreateTask` that opens `NewTaskDialog`. But:
-- It doesn't prefill title/description from the message
-- It doesn't set `is_proposed = true`
-- It doesn't store source metadata linking back to the War Room message
+Change the `defaultAssignee` prop on `NewTaskDialog`:
+```tsx
+defaultAssignee={
+  taskFromMessage
+    ? agents.find(a => a.id === taskFromMessage.author)
+      ? taskFromMessage.author                          // author is an agent
+      : (agents.find(a => a.role?.toLowerCase().includes('pm'))?.id || agents[0]?.id || undefined)  // fallback to PM or first agent
+    : undefined
+}
+```
 
-**Changes:**
-
-### `src/components/dialogs/NewTaskDialog.tsx`
-- Add optional props: `defaultTitle`, `defaultDescription`, `isProposed` (boolean), `sourceMetadata` (object with `chat_message_id`)
-- When `isProposed` is true, pass `is_proposed: true` to `createTask`
-- Rename the Create button label to "Suggest Task" when `isProposed` is true
-
-### `src/lib/api.ts` — `createTask`
-- Accept optional `isProposed?: boolean` and `contextSnapshot?: object` in the input
-- Pass `is_proposed` and `context_snapshot` to the Supabase insert row
-
-### `src/components/pages/ChatPage.tsx`
-- Update `handleCreateTask` to prefill `NewTaskDialog` with:
-  - `defaultTitle` = first line of message (truncated to 80 chars)
-  - `defaultDescription` = full message text
-  - `isProposed = true`
-  - `sourceMetadata = { chat_message_id: msg.id }`
-- Update the button tooltip from "Create task from message" to "Suggest Task"
-- Show the button on ALL messages (not just incoming) — any message can become a task
-- After creation, show toast: "Suggested task created" with a link/mention of inbox
-
-### `src/components/dialogs/NewTaskDialog.tsx` — dialog title
-- When `isProposed`, dialog title = "Suggest Task from Message"
+This is a single-line logic change. No new props or state needed.
 
 ---
 
-## Feature 2: Auto-clear `is_proposed` (already done)
+## Tweak 2: Watchdog language — "NEEDS ATTENTION" + escalation to PM
 
-Already implemented in the last diff. The plan confirms:
-- `handleMoveTask` in TasksPage clears `isProposed` when moving out of inbox ✓
-- `performStatusChange` in TaskDetailSheet does the same ✓
-- Approval UI guards with `task.status === 'inbox'` ✓
+**Current behavior:** The watchdog already uses "NEEDS ATTENTION" language (confirmed in the code). Two small refinements:
 
-No further work needed.
+**File: `src/hooks/useStaleTaskWatchdog.ts`**
 
----
+1. **Task thread comment** (line 53): Update message to match exact requested wording:
+   - From: `⚠️ NEEDS ATTENTION: No agent activity in 30 minutes`
+   - To: `⚠️ STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify.`
 
-## Feature 3: No-Loitering Rule for In Progress
-
-**Timeout: 30 minutes** (your vote).
-
-### 3a. "Started" event on entering In Progress
-
-**`src/components/pages/TasksPage.tsx` — `handleMoveTask`**
-- After `updateTask`, if `newStatus === 'in_progress'` and `task.status !== 'in_progress'`:
-  - Fire `createTaskEvent({ taskId, eventType: 'status_change', content: 'Started', metadata: { old_status: task.status, new_status: 'in_progress' } })` (best-effort, already happens in TaskDetailSheet but NOT in TasksPage board moves)
-
-**`src/components/pages/TasksPage.tsx` — `handleMoveTask`** (kickoff message)
-- If the task has an `assigneeAgentKey` and `newStatus === 'in_progress'`:
-  - Call `sendChatMessage({ message: kickoff text, targetAgentKey: task.assigneeAgentKey })`
-  - Kickoff text: `"🚀 Task started: **{title}**\n\nDescription: {description}\n\nPlease begin work and post updates to the task timeline."`
-  - This uses existing delivery semantics (direct if Control API healthy, queued otherwise)
-
-### 3b. Stale task watchdog (client-side polling)
-
-This will be a lightweight React hook + UI component, not a server-side cron (keeping it simple and avoiding schema changes).
-
-**New file: `src/hooks/useStaleTaskWatchdog.ts`**
-- Accepts: list of tasks, agents list
-- Every 5 minutes, checks all `in_progress` tasks:
-  - For each, fetch latest `task_events` for that task
-  - If no events from an agent author within the last 30 minutes:
-    - Auto-post a system comment: `createTaskEvent({ taskId, eventType: 'comment', content: '⚠️ NEEDS ATTENTION: No agent activity in 30 minutes', author: 'system' })`
-    - Post to War Room: `sendChatMessage({ message: '⚠️ Stale task: "{title}" — no agent activity in 30 minutes', targetAgentKey: task.assigneeAgentKey || undefined })`
-    - Track which tasks have already been flagged (in a `Set`) to avoid re-flagging every 5 minutes. Reset when the task gets new activity.
-- Returns: `staleTasks: Task[]` for optional UI display
-
-**`src/components/pages/TasksPage.tsx`**
-- Use the watchdog hook
-- Optionally show a small amber banner at the top of the board: "N tasks need attention" when `staleTasks.length > 0`
-
-### Graceful degradation
-- All War Room messages use `sendChatMessage` which already handles offline queueing
-- All task events use `createTaskEvent` which writes directly to Supabase
-- If Control API is down, kickoff messages queue; watchdog comments still post to Supabase
+2. **War Room notification** (line 59): Change from notifying the assigned agent to notifying PM (the operator). Remove `targetAgentKey` so the message goes to the general War Room channel visible to the PM, not directed at a specific agent:
+   - From: `sendChatMessage({ message: '...', targetAgentKey: task.assigneeAgentKey || undefined })`
+   - To: `sendChatMessage({ message: '⚠️ Stale task: "{title}" (assigned to {agent name}) — no activity in 30m. Reassign or clarify.' })` — no `targetAgentKey`, so it surfaces in War Room for the PM.
 
 ---
 
@@ -97,17 +47,13 @@ This will be a lightweight React hook + UI component, not a server-side cron (ke
 
 | File | Change |
 |------|--------|
-| `src/components/dialogs/NewTaskDialog.tsx` | Add prefill props, `isProposed` flag, label changes |
-| `src/lib/api.ts` (`createTask`) | Accept `isProposed`, `contextSnapshot` params |
-| `src/components/pages/ChatPage.tsx` | Prefill dialog from message, update button label |
-| `src/components/pages/TasksPage.tsx` | Add "Started" event + kickoff message on in_progress, integrate watchdog hook, optional stale banner |
-| `src/hooks/useStaleTaskWatchdog.ts` | New hook for 30-min no-activity detection |
-| `changes.md` | Log all three features |
+| `src/components/pages/ChatPage.tsx` | Smart default assignee logic (1 line) |
+| `src/hooks/useStaleTaskWatchdog.ts` | Updated comment wording + War Room notification targets PM |
+| `changes.md` | Log the tweaks |
 
 ## What stays the same
-- No database schema changes
-- No new tables or columns
-- Task detail sheet, list view, blocked modal untouched
-- All existing delivery semantics preserved
-- All existing status flows preserved
+- 5-minute poll interval, 30-minute threshold — unchanged
+- "Started" event fires immediately on entering in_progress — already implemented
+- No schema changes
+- All existing flows preserved
 
