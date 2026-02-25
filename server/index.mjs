@@ -1927,8 +1927,16 @@ const server = http.createServer(async (req, res) => {
         if (threadIdParam) {
           query = query.eq('thread_id', threadIdParam);
         } else {
-          // War room = null thread_id (general channel)
-          query = query.is('thread_id', null);
+          // War room = default "General" thread when present.
+          // (Historically war room used null thread_id; we now attach to a real thread so the UI can filter reliably.)
+          const { data: t } = await sb
+            .from('project_chat_threads')
+            .select('id')
+            .eq('project_id', projectId)
+            .eq('title', 'General')
+            .maybeSingle();
+          if (t?.id) query = query.eq('thread_id', t.id);
+          else query = query.is('thread_id', null);
         }
 
         const { data, error } = await query;
