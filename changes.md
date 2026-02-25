@@ -1,3 +1,6 @@
+### Multiple-Choice Reply Buttons for NEEDS ATTENTION
+- **TaskTimeline.tsx**: Added `parseNeedsAttentionOptions` parser that detects "NEEDS ATTENTION" comments with `A) / B) / C)` options. Renders interactive buttons instead of raw text. One click posts a reply comment (`Answer: A — option text`) with `reply_to` metadata linking back to the question. Includes "Custom…" free-text option. Buttons disable after click; "Answered" badge shown once replied. No schema changes.
+
 ### Tweaks: Smart Default Assignee + Watchdog Language
 - **ChatPage.tsx**: "Suggest Task" now defaults assignee to the message author (if agent) or PM/first agent (if human). Prevents unowned suggested tasks.
 - **useStaleTaskWatchdog.ts**: Updated stale comment to "STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify." War Room notification now targets general channel (PM-visible) instead of the assigned agent.
