@@ -1947,6 +1947,38 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // GET /api/tasks/assigned?agent_key=...&status=in_progress — list tasks for an agent (service role)
+    if (req.method === 'GET' && url.pathname === '/api/tasks/assigned') {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const agentKey = String(url.searchParams.get('agent_key') || '').trim();
+        const status = String(url.searchParams.get('status') || '').trim();
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || '50')));
+
+        if (!agentKey) return sendJson(res, 400, { ok: false, error: 'missing_agent_key' });
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        let q = sb
+          .from('tasks')
+          .select('id,title,description,status,is_proposed,assignee_agent_key,updated_at,created_at')
+          .eq('project_id', projectId)
+          .eq('assignee_agent_key', agentKey)
+          .order('updated_at', { ascending: false })
+          .limit(limit);
+
+        if (status) q = q.eq('status', status);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        return sendJson(res, 200, { ok: true, tasks: data || [] });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // ---- WRITE ENDPOINTS (Heartbeat v2) ----
 
     // POST /api/tasks/:taskId/assign — update task assignment
