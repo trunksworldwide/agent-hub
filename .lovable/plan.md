@@ -1,59 +1,106 @@
 
 
-# Two Tweaks: Default Assignee + Watchdog Language
+# Plan: Multiple-Choice Reply Buttons for NEEDS ATTENTION
 
-## Tweak 1: Default assignee on "Suggest Task"
+## Overview
 
-**Current behavior:** `defaultAssignee` is set to `msg.targetAgentKey` — the agent the message was *sent to*, which is often null.
+When an agent posts a comment containing "STATUS: NEEDS ATTENTION" followed by lines like `A) ...`, `B) ...`, `C) ...`, the timeline renders clickable buttons instead of raw text. One click posts a reply comment in the same thread. No schema changes.
 
-**New behavior:** Smart default based on message author:
-- If `msg.author` matches an agent key in the agents list → default assignee = that agent (the agent proposed the idea, so they own the work)
-- Otherwise (author is "user" or unknown) → default assignee = first agent with role containing "PM", or fallback to the first agent in the list
+---
 
-**File: `src/components/pages/ChatPage.tsx`** (line ~527)
+## Detection logic
 
-Change the `defaultAssignee` prop on `NewTaskDialog`:
-```tsx
-defaultAssignee={
-  taskFromMessage
-    ? agents.find(a => a.id === taskFromMessage.author)
-      ? taskFromMessage.author                          // author is an agent
-      : (agents.find(a => a.role?.toLowerCase().includes('pm'))?.id || agents[0]?.id || undefined)  // fallback to PM or first agent
-    : undefined
+A pure function `parseNeedsAttentionOptions(content: string)` that returns:
+- `null` if the message doesn't match
+- `{ preamble: string, options: { label: string, text: string }[] }` if it does
+
+Pattern: content includes "NEEDS ATTENTION" (case-insensitive), then scan for lines matching `/^([A-Z])\)\s*(.+)/` — extract letter + text. Must find at least 2 options.
+
+---
+
+## Changes
+
+### `src/components/tasks/TaskTimeline.tsx`
+
+**1. Add `parseNeedsAttentionOptions` helper** (top of file, pure function):
+
+```ts
+function parseNeedsAttentionOptions(content: string | null) {
+  if (!content || !/needs attention/i.test(content)) return null;
+  const lines = content.split('\n');
+  const options: { label: string; text: string }[] = [];
+  const preambleLines: string[] = [];
+  let foundOptions = false;
+  for (const line of lines) {
+    const match = line.match(/^([A-Z])\)\s*(.+)/);
+    if (match) {
+      foundOptions = true;
+      options.push({ label: match[1], text: match[2].trim() });
+    } else if (!foundOptions) {
+      preambleLines.push(line);
+    }
+  }
+  if (options.length < 2) return null;
+  return { preamble: preambleLines.join('\n').trim(), options };
 }
 ```
 
-This is a single-line logic change. No new props or state needed.
+**2. Add `onQuickReply` callback prop to `TimelineEntry`**
+
+Pass it down from `TaskTimeline`. The callback:
+- Takes `(questionItemId: string, answerText: string)`
+- Calls `createTaskEvent({ taskId, eventType: 'comment', content: answerText })` 
+- Shows toast on success/failure
+
+**3. Track answered state**
+
+In `TaskTimeline`, derive which NEEDS ATTENTION items have already been answered by scanning the timeline for comments that start with `"Answer:"` and whose `metadata?.reply_to` matches the question's item ID. Also track a local `answeredIds` Set for optimistic UI.
+
+**4. Modify default comment rendering in `TimelineEntry`**
+
+In the default comment branch (line 474), check `parseNeedsAttentionOptions(item.content)`:
+
+- If it returns options, render:
+  - The preamble text in an amber-bordered card (similar to approval_request styling)
+  - An `AlertTriangle` icon + "Needs Attention" label
+  - One `Button` per option: label = `"A"`, tooltip/text = option text. Truncate long text to ~60 chars.
+  - A "Custom..." button that toggles a small inline textarea + send button
+  - If already answered: show all buttons disabled with an "Answered" badge
+
+- If it returns null, render the normal comment bubble (existing code, unchanged)
+
+**5. Quick reply action**
+
+When an option button is clicked:
+- Disable all buttons (set local `sendingId`)
+- Post: `createTaskEvent({ taskId, eventType: 'comment', content: 'Answer: {label} — {text}', metadata: { reply_to: item.id } })`
+- On success: toast "Reply sent", add to local `answeredIds`
+- On failure: toast error, re-enable buttons
+
+Custom reply posts: `Answer: Custom — {typed text}`
 
 ---
 
-## Tweak 2: Watchdog language — "NEEDS ATTENTION" + escalation to PM
+## UX details
 
-**Current behavior:** The watchdog already uses "NEEDS ATTENTION" language (confirmed in the code). Two small refinements:
+- Buttons are `size="sm"` `variant="outline"`, arranged in a vertical stack (options can be long)
+- Each button shows: `A) option text` (truncated)
+- "Custom..." opens a 1-line textarea inline, with a small Send button
+- After answering, buttons are replaced with a compact "Answered: A — option text" badge
+- The answer also appears as a normal comment in the timeline (via realtime subscription)
 
-**File: `src/hooks/useStaleTaskWatchdog.ts`**
+## What this does NOT change
 
-1. **Task thread comment** (line 53): Update message to match exact requested wording:
-   - From: `⚠️ NEEDS ATTENTION: No agent activity in 30 minutes`
-   - To: `⚠️ STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify.`
-
-2. **War Room notification** (line 59): Change from notifying the assigned agent to notifying PM (the operator). Remove `targetAgentKey` so the message goes to the general War Room channel visible to the PM, not directed at a specific agent:
-   - From: `sendChatMessage({ message: '...', targetAgentKey: task.assigneeAgentKey || undefined })`
-   - To: `sendChatMessage({ message: '⚠️ Stale task: "{title}" (assigned to {agent name}) — no activity in 30m. Reassign or clarify.' })` — no `targetAgentKey`, so it surfaces in War Room for the PM.
-
----
+- No database schema changes
+- No changes to `api.ts` — uses existing `createTaskEvent`
+- No changes to War Room (task timeline only, as requested)
+- No changes to approval flow or any other timeline entry types
+- Author on replies uses `'ui'` (existing convention for dashboard user)
 
 ## Files touched
 
 | File | Change |
 |------|--------|
-| `src/components/pages/ChatPage.tsx` | Smart default assignee logic (1 line) |
-| `src/hooks/useStaleTaskWatchdog.ts` | Updated comment wording + War Room notification targets PM |
-| `changes.md` | Log the tweaks |
-
-## What stays the same
-- 5-minute poll interval, 30-minute threshold — unchanged
-- "Started" event fires immediately on entering in_progress — already implemented
-- No schema changes
-- All existing flows preserved
+| `src/components/tasks/TaskTimeline.tsx` | Add parser, quick-reply callback, answered detection, render option buttons in comment entries |
+| `changes.md` | Log the feature |
 
