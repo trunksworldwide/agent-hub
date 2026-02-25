@@ -208,11 +208,11 @@ export function ChatPage() {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (scrollRef.current) {
-      // Use rAF to ensure DOM has painted before scrolling
+      // Radix ScrollArea: the actual scrollable element is the Viewport child, not Root
+      const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      const el = viewport || scrollRef.current;
       requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
+        el.scrollTop = el.scrollHeight;
       });
     }
   }, [messages]);
