@@ -2068,9 +2068,13 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 400, { ok: false, error: 'cannot_change_done_task' });
         }
 
+        const taskPatch = { status: newStatus, updated_at: new Date().toISOString() };
+        // Clear proposal flag when moving out of Inbox/Suggested.
+        if (newStatus !== 'inbox') taskPatch.is_proposed = false;
+
         const { error: updErr } = await sb
           .from('tasks')
-          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .update(taskPatch)
           .eq('id', taskId)
           .eq('project_id', projectId);
 
