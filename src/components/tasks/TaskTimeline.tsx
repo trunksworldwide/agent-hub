@@ -20,6 +20,26 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { getSelectedProjectId } from '@/lib/project';
 
+// ---- NEEDS ATTENTION option parser ----
+function parseNeedsAttentionOptions(content: string | null) {
+  if (!content || !/needs attention/i.test(content)) return null;
+  const lines = content.split('\n');
+  const options: { label: string; text: string }[] = [];
+  const preambleLines: string[] = [];
+  let foundOptions = false;
+  for (const line of lines) {
+    const match = line.match(/^([A-Z])\)\s*(.+)/);
+    if (match) {
+      foundOptions = true;
+      options.push({ label: match[1], text: match[2].trim() });
+    } else if (!foundOptions) {
+      preambleLines.push(line);
+    }
+  }
+  if (options.length < 2) return null;
+  return { preamble: preambleLines.join('\n').trim(), options };
+}
+
 // Unified timeline item that can be a task_event, legacy comment, or legacy output
 interface TimelineItem {
   id: string;
@@ -175,6 +195,32 @@ export function TaskTimeline({ taskId, agents }: TaskTimelineProps) {
 
   const timeline = mergeTimeline(events, legacyComments, legacyOutputs);
 
+  // Derive answered NEEDS ATTENTION items
+  const answeredMap = new Map<string, string>(); // questionId -> answer content
+  for (const item of timeline) {
+    if (item.eventType === 'comment' && item.content?.startsWith('Answer:') && item.metadata?.reply_to) {
+      answeredMap.set(item.metadata.reply_to as string, item.content);
+    }
+  }
+  const [localAnsweredIds, setLocalAnsweredIds] = useState<Set<string>>(new Set());
+
+  const handleQuickReply = async (questionItemId: string, answerText: string) => {
+    try {
+      const result = await createTaskEvent({
+        taskId,
+        eventType: 'comment',
+        content: answerText,
+        metadata: { reply_to: questionItemId },
+      });
+      if (!result.ok) throw new Error(result.error || 'Failed');
+      setLocalAnsweredIds((prev) => new Set(prev).add(questionItemId));
+      toast({ title: 'Reply sent' });
+    } catch (e) {
+      toast({ title: 'Failed to send reply', description: String(e), variant: 'destructive' });
+      throw e; // re-throw so the button knows it failed
+    }
+  };
+
   const handleSend = async () => {
     if (!newComment.trim()) return;
     setIsSending(true);
@@ -263,6 +309,9 @@ export function TaskTimeline({ taskId, agents }: TaskTimelineProps) {
               resolution={getResolution(item)}
               onResolve={handleResolve}
               resolvingId={resolvingId}
+              isAnswered={answeredMap.has(item.id) || localAnsweredIds.has(item.id)}
+              answeredContent={answeredMap.get(item.id) || null}
+              onQuickReply={handleQuickReply}
             />
           ))
         )}
@@ -299,6 +348,9 @@ function TimelineEntry({
   resolution,
   onResolve,
   resolvingId,
+  isAnswered,
+  answeredContent,
+  onQuickReply,
 }: {
   item: TimelineItem;
   getAuthorDisplay: (key: string) => { emoji: string; name: string };
@@ -306,6 +358,9 @@ function TimelineEntry({
   resolution?: 'approved' | 'rejected';
   onResolve: (item: TimelineItem, approved: boolean) => void;
   resolvingId: string | null;
+  isAnswered: boolean;
+  answeredContent: string | null;
+  onQuickReply: (questionItemId: string, answerText: string) => Promise<void>;
 }) {
   const author = getAuthorDisplay(item.author);
 
@@ -471,7 +526,22 @@ function TimelineEntry({
     );
   }
 
-  // Default: comment
+  // Default: comment — check for NEEDS ATTENTION options
+  const parsed = parseNeedsAttentionOptions(item.content);
+
+  if (parsed) {
+    return (
+      <NeedsAttentionCard
+        item={item}
+        author={author}
+        parsed={parsed}
+        isAnswered={isAnswered}
+        answeredContent={answeredContent}
+        onQuickReply={onQuickReply}
+      />
+    );
+  }
+
   return (
     <div className="bg-muted/50 rounded-lg p-3">
       <div className="flex items-center gap-2 mb-1">
@@ -482,6 +552,152 @@ function TimelineEntry({
         </span>
       </div>
       <p className="text-sm whitespace-pre-wrap">{item.content}</p>
+    </div>
+  );
+}
+
+// ============= NEEDS ATTENTION card with option buttons =============
+
+function NeedsAttentionCard({
+  item,
+  author,
+  parsed,
+  isAnswered,
+  answeredContent,
+  onQuickReply,
+}: {
+  item: TimelineItem;
+  author: { emoji: string; name: string };
+  parsed: { preamble: string; options: { label: string; text: string }[] };
+  isAnswered: boolean;
+  answeredContent: string | null;
+  onQuickReply: (questionItemId: string, answerText: string) => Promise<void>;
+}) {
+  const [sendingLabel, setSendingLabel] = useState<string | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customText, setCustomText] = useState('');
+
+  const handleOptionClick = async (label: string, text: string) => {
+    setSendingLabel(label);
+    try {
+      await onQuickReply(item.id, `Answer: ${label} — ${text}`);
+    } catch {
+      // error toast handled upstream
+    } finally {
+      setSendingLabel(null);
+    }
+  };
+
+  const handleCustomSend = async () => {
+    if (!customText.trim()) return;
+    setSendingLabel('Custom');
+    try {
+      await onQuickReply(item.id, `Answer: Custom — ${customText.trim()}`);
+      setCustomText('');
+      setShowCustom(false);
+    } catch {
+      // error toast handled upstream
+    } finally {
+      setSendingLabel(null);
+    }
+  };
+
+  const disabled = isAnswered || sendingLabel !== null;
+
+  return (
+    <div className={cn(
+      'border rounded-lg p-3',
+      isAnswered
+        ? 'border-muted bg-muted/20'
+        : 'border-amber-500/30 bg-amber-500/10'
+    )}>
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle className="w-4 h-4 text-amber-600" />
+        <span className="text-sm font-medium">Needs Attention</span>
+        {isAnswered && (
+          <Badge variant="outline" className="text-xs h-5 border-primary/50 text-primary">
+            ✓ Answered
+          </Badge>
+        )}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">{author.emoji}</span>
+        <span className="text-sm font-medium">{author.name}</span>
+      </div>
+
+      {parsed.preamble && (
+        <p className="text-sm text-muted-foreground whitespace-pre-wrap mb-3">
+          {parsed.preamble}
+        </p>
+      )}
+
+      {isAnswered && answeredContent ? (
+        <Badge variant="secondary" className="text-xs">
+          {answeredContent.length > 80 ? answeredContent.slice(0, 80) + '…' : answeredContent}
+        </Badge>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {parsed.options.map((opt) => (
+            <Button
+              key={opt.label}
+              size="sm"
+              variant="outline"
+              className="justify-start text-left h-auto py-1.5 px-3"
+              disabled={disabled}
+              onClick={() => handleOptionClick(opt.label, opt.text)}
+            >
+              {sendingLabel === opt.label ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+              ) : (
+                <span className="font-semibold mr-1.5">{opt.label})</span>
+              )}
+              <span className="truncate">
+                {opt.text.length > 60 ? opt.text.slice(0, 60) + '…' : opt.text}
+              </span>
+            </Button>
+          ))}
+
+          {!showCustom ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="justify-start text-muted-foreground text-xs"
+              disabled={disabled}
+              onClick={() => setShowCustom(true)}
+            >
+              Custom…
+            </Button>
+          ) : (
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCustomSend()}
+                placeholder="Type your answer…"
+                className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                disabled={disabled}
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={handleCustomSend}
+                disabled={disabled || !customText.trim()}
+              >
+                {sendingLabel === 'Custom' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
