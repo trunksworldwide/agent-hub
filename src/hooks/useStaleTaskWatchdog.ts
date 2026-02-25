@@ -5,6 +5,7 @@ import { getSelectedProjectId } from '@/lib/project';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours (prevent spam)
 
 /**
  * Watches in_progress tasks for agent inactivity (30 min).
@@ -43,18 +44,38 @@ export function useStaleTaskWatchdog(tasks: Task[]) {
         );
 
         if (!hasAgentActivity) {
-          // Flag it
+          // Prevent repeated spam across refreshes/reloads by checking for a recent watchdog alert.
+          const cooldownCutoff = new Date(now - STALE_ALERT_COOLDOWN_MS).toISOString();
+          const { data: recentAlerts } = await supabase
+            .from('task_events')
+            .select('id, created_at')
+            .eq('task_id', task.id)
+            .eq('project_id', projectId)
+            .eq('author', 'system')
+            // metadata is json; PostgREST supports ->> for text extraction
+            .eq('metadata->>kind', 'stale_watchdog')
+            .gte('created_at', cooldownCutoff)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if ((recentAlerts || []).length > 0) {
+            flaggedRef.current.add(task.id);
+            continue;
+          }
+
+          // Flag it (in-memory too)
           flaggedRef.current.add(task.id);
 
-          // Post system comment on task timeline
+          // Post system comment on task timeline (durable dedupe via metadata)
           createTaskEvent({
             taskId: task.id,
             eventType: 'comment',
             content: '⚠️ STATUS: NEEDS ATTENTION — no activity in 30m. Either reassign or clarify.',
             author: 'system',
+            metadata: { kind: 'stale_watchdog', thresholdMinutes: 30, cooldownHours: 6 },
           }).catch(console.error);
 
-          // Notify War Room
+          // Notify War Room (once per cooldown window)
           sendChatMessage({
             message: `⚠️ Stale task: "${task.title}" (assigned to ${task.assigneeAgentKey || 'unassigned'}) — no activity in 30m. Reassign or clarify.`,
           }).catch(console.error);
