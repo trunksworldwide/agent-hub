@@ -2115,6 +2115,46 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // POST /api/tasks/:taskId/outputs — create a task_outputs row via service role
+    if (req.method === 'POST' && url.pathname.startsWith('/api/tasks/') && url.pathname.endsWith('/outputs')) {
+      try {
+        const projectId = getProjectIdFromReq(req);
+        const taskId = decodeURIComponent(url.pathname.slice('/api/tasks/'.length, -'/outputs'.length));
+        if (!taskId) return sendJson(res, 400, { ok: false, error: 'missing_task_id' });
+
+        const body = await readBodyJson(req);
+        const createdBy = String(body.author || body.created_by || 'dashboard').trim();
+        const outputType = String(body.output_type || body.outputType || 'link').trim();
+        const title = body.title === undefined ? null : (String(body.title || '').trim() || null);
+        const contentText = body.content_text === undefined ? null : (String(body.content_text || '').trim() || null);
+        const linkUrl = body.link_url === undefined ? null : (String(body.link_url || '').trim() || null);
+
+        const sb = getSupabaseServerClient();
+        if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        const { data, error } = await sb
+          .from('task_outputs')
+          .insert({
+            project_id: projectId,
+            task_id: taskId,
+            output_type: outputType,
+            title,
+            content_text: contentText,
+            link_url: linkUrl,
+            created_by: createdBy,
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+
+        await bumpSupabaseAgentLastActivity({ projectId, agentKey: createdBy, whenIso: new Date().toISOString() });
+
+        return sendJson(res, 200, { ok: true, id: data?.id || null });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err?.message || err) });
+      }
+    }
+
     // POST /api/tasks/:taskId/events — insert a task_events row via service role (agents can call Control API; no Supabase keys in workspaces)
     if (req.method === 'POST' && url.pathname.startsWith('/api/tasks/') && url.pathname.endsWith('/events')) {
       try {
