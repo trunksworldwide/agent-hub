@@ -2146,7 +2146,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const projectId = getProjectIdFromReq(req);
         const body = await readBodyJson(req);
-        const threadId = body.thread_id === undefined ? null : (body.thread_id ? String(body.thread_id) : null);
+        let threadId = body.thread_id === undefined ? null : (body.thread_id ? String(body.thread_id) : null);
         const author = String(body.author || body.author_agent_key || body.actor || 'dashboard').trim();
         const message = String(body.message || '').trim();
         const targetAgentKey = body.target_agent_key ? String(body.target_agent_key).trim() : null;
@@ -2157,6 +2157,32 @@ const server = http.createServer(async (req, res) => {
 
         const sb = getSupabaseServerClient();
         if (!sb) return sendJson(res, 500, { ok: false, error: 'supabase_service_role_not_configured' });
+
+        // If thread_id is missing/null, attach to the default "General" thread.
+        // The UI typically filters by a selected thread; null thread_id messages can appear "missing".
+        if (!threadId) {
+          try {
+            const { data: existingThread } = await sb
+              .from('project_chat_threads')
+              .select('id')
+              .eq('project_id', projectId)
+              .eq('title', 'General')
+              .maybeSingle();
+
+            if (existingThread?.id) {
+              threadId = existingThread.id;
+            } else {
+              const { data: createdThread, error: createErr } = await sb
+                .from('project_chat_threads')
+                .insert({ project_id: projectId, title: 'General' })
+                .select('id')
+                .single();
+              if (!createErr && createdThread?.id) threadId = createdThread.id;
+            }
+          } catch {
+            // ignore; we can still insert with null thread_id
+          }
+        }
 
         const insertRow = {
           project_id: projectId,
